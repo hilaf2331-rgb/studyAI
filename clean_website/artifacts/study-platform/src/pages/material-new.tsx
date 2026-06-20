@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { getStoredToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-base";
 
 type ContentType = "text" | "youtube" | "url" | "pdf" | "audio" | "video";
 
@@ -82,13 +83,13 @@ export const MaterialNewPage: React.FC = () => {
         if (courseId) fd.append("courseId", courseId);
         fd.append("file", file);
 
-        response = await fetch("/api/materials", {
+        response = await fetch(apiUrl("/api/materials"), {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
         });
       } else {
-        response = await fetch("/api/materials", {
+        response = await fetch(apiUrl("/api/materials"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

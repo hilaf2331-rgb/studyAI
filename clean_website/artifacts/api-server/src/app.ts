@@ -36,19 +36,23 @@ app.use(
     credentials: true,
   }),
 );
-// Global error handler - ensures all errors return valid JSON instead of HTML
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error('Unhandled error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    message: 'An unexpected error occurred on the server.'
-  });
-});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", authRouter);
 app.use("/api", requireAuth, router);
+
+// Catch-all error handler. Must be registered last and take 4 args so
+// Express recognizes it as an error handler. Without this, an unhandled
+// throw anywhere in a route produces Express's default HTML error page,
+// which is what was causing "Unexpected end of JSON input" on the
+// frontend (res.json() on a non-JSON body).
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error({ err }, "Unhandled error");
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error. Please try again." });
+  }
+});
 
 export default app;

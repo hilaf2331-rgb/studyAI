@@ -25,7 +25,7 @@ app.use(
 const isProd = process.env.NODE_ENV === "production";
 
 const allowedOrigins = isProd
-  ? (process.env.REPLIT_DOMAINS ?? "").split(",").map(d => `https://${d.trim()}`).filter(Boolean)
+  ? (process.env.CORS_ORIGINS ?? "").split(",").map(d => d.trim()).filter(Boolean)
   : true;
 
 app.use(

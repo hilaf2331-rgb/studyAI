@@ -122,7 +122,7 @@ export const MaterialDetailPage: React.FC = () => {
     setProgressValue(0);
     try {
       const token = getStoredToken();
-      const res = await fetch(`/api/materials/${id}/generate-all`, {
+     const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

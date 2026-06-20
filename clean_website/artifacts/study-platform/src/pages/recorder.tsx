@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { useLanguage } from "@/lib/i18n";
 import { getStoredToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,7 +91,7 @@ export const RecorderPage: React.FC = () => {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch("/api/recordings", { headers: { Authorization: `Bearer ${getStoredToken()}` } });
+      const res = await fetch(apiUrl("/api/recordings"), { headers: { Authorization: `Bearer ${getStoredToken()}` } });
       if (res.ok) setHistory(await res.json());
     } catch {}
     setHistoryLoading(false);
@@ -183,7 +184,7 @@ export const RecorderPage: React.FC = () => {
       fd.append("recordedAt", recordedAtRef.current.toISOString());
       fd.append("durationSeconds", String(elapsed));
 
-      const res = await fetch("/api/recordings", {
+      const res = await fetch(apiUrl("/api/recordings"), {
         method: "POST",
         headers: { Authorization: `Bearer ${getStoredToken()}` },
         body: fd,

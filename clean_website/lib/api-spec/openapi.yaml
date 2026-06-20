@@ -1,0 +1,1175 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: AI Study Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: courses
+    description: Course management
+  - name: materials
+    description: Study materials
+  - name: summaries
+    description: AI summaries
+  - name: flashcards
+    description: Flashcard decks
+  - name: questions
+    description: Q&A generation
+  - name: exams
+    description: Exam generation & grading
+  - name: chat
+    description: AI tutor chat
+  - name: dashboard
+    description: Dashboard & analytics
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Courses ──────────────────────────────────────────────────────────────
+  /courses:
+    get:
+      operationId: listCourses
+      tags: [courses]
+      summary: List all courses
+      responses:
+        "200":
+          description: List of courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Course"
+    post:
+      operationId: createCourse
+      tags: [courses]
+      summary: Create a course
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+
+  /courses/{id}:
+    get:
+      operationId: getCourse
+      tags: [courses]
+      summary: Get a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Course
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateCourse
+      tags: [courses]
+      summary: Update a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+    delete:
+      operationId: deleteCourse
+      tags: [courses]
+      summary: Delete a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Study Materials ───────────────────────────────────────────────────────
+  /materials:
+    get:
+      operationId: listMaterials
+      tags: [materials]
+      summary: List materials, optionally filtered by courseId
+      parameters:
+        - name: courseId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of materials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Material"
+    post:
+      operationId: createMaterial
+      tags: [materials]
+      summary: Create/upload a material (text or URL)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaterialInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+
+  /materials/{id}:
+    get:
+      operationId: getMaterial
+      tags: [materials]
+      summary: Get a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteMaterial
+      tags: [materials]
+      summary: Delete a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Summaries ─────────────────────────────────────────────────────────────
+  /materials/{id}/summaries:
+    get:
+      operationId: listSummaries
+      tags: [summaries]
+      summary: List summaries for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Summary"
+    post:
+      operationId: generateSummary
+      tags: [summaries]
+      summary: Generate a summary for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SummaryRequest"
+      responses:
+        "201":
+          description: Generated summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+
+  /summaries/{id}:
+    get:
+      operationId: getSummary
+      tags: [summaries]
+      summary: Get a summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+    delete:
+      operationId: deleteSummary
+      tags: [summaries]
+      summary: Delete a summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Flashcards ────────────────────────────────────────────────────────────
+  /materials/{id}/flashcard-decks:
+    get:
+      operationId: listFlashcardDecks
+      tags: [flashcards]
+      summary: List flashcard decks for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Decks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlashcardDeck"
+    post:
+      operationId: generateFlashcards
+      tags: [flashcards]
+      summary: Generate flashcard deck from material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlashcardRequest"
+      responses:
+        "201":
+          description: Generated deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardDeck"
+
+  /flashcard-decks/{id}:
+    get:
+      operationId: getFlashcardDeck
+      tags: [flashcards]
+      summary: Get a flashcard deck with cards
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deck with cards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardDeck"
+    delete:
+      operationId: deleteFlashcardDeck
+      tags: [flashcards]
+      summary: Delete a flashcard deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /flashcards/{id}/review:
+    post:
+      operationId: reviewFlashcard
+      tags: [flashcards]
+      summary: Record flashcard review result (spaced repetition)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlashcardReview"
+      responses:
+        "200":
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flashcard"
+
+  # ── Questions & Answers ───────────────────────────────────────────────────
+  /materials/{id}/question-sets:
+    get:
+      operationId: listQuestionSets
+      tags: [questions]
+      summary: List question sets for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Question sets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QuestionSet"
+    post:
+      operationId: generateQuestions
+      tags: [questions]
+      summary: Generate questions from material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuestionRequest"
+      responses:
+        "201":
+          description: Generated question set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestionSet"
+
+  /question-sets/{id}:
+    get:
+      operationId: getQuestionSet
+      tags: [questions]
+      summary: Get a question set with questions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Question set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestionSet"
+    delete:
+      operationId: deleteQuestionSet
+      tags: [questions]
+      summary: Delete a question set
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Exams ─────────────────────────────────────────────────────────────────
+  /materials/{id}/exams:
+    get:
+      operationId: listExams
+      tags: [exams]
+      summary: List exams for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Exams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Exam"
+    post:
+      operationId: generateExam
+      tags: [exams]
+      summary: Generate an exam from material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExamRequest"
+      responses:
+        "201":
+          description: Generated exam
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exam"
+
+  /exams/{id}:
+    get:
+      operationId: getExam
+      tags: [exams]
+      summary: Get an exam with questions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Exam
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exam"
+    delete:
+      operationId: deleteExam
+      tags: [exams]
+      summary: Delete an exam
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /exams/{id}/submit:
+    post:
+      operationId: submitExam
+      tags: [exams]
+      summary: Submit exam answers for grading
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExamSubmission"
+      responses:
+        "200":
+          description: Graded result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamResult"
+
+  /exam-results/{id}:
+    get:
+      operationId: getExamResult
+      tags: [exams]
+      summary: Get a graded exam result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Exam result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamResult"
+
+  # ── AI Chat ───────────────────────────────────────────────────────────────
+  /materials/{id}/chat:
+    get:
+      operationId: getChatHistory
+      tags: [chat]
+      summary: Get chat history for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Chat messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessage"
+    post:
+      operationId: sendChatMessage
+      tags: [chat]
+      summary: Send a message to the AI tutor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessageInput"
+      responses:
+        "200":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessage"
+
+  # ── Dashboard ─────────────────────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent study activity
+      responses:
+        "200":
+          description: Activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/study-streak:
+    get:
+      operationId: getStudyStreak
+      tags: [dashboard]
+      summary: Get current study streak
+      responses:
+        "200":
+          description: Streak info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyStreak"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    # ── Course ──────────────────────────────────────────────────────────────
+    Course:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        university:
+          type: ["string", "null"]
+        semester:
+          type: ["string", "null"]
+        color:
+          type: ["string", "null"]
+        materialCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CourseInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        university:
+          type: string
+        semester:
+          type: string
+        color:
+          type: string
+
+    CourseUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        university:
+          type: string
+        semester:
+          type: string
+        color:
+          type: string
+
+    # ── Material ─────────────────────────────────────────────────────────────
+    Material:
+      type: object
+      required: [id, title, contentType, status, createdAt]
+      properties:
+        id:
+          type: integer
+        courseId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        contentType:
+          type: string
+          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+        status:
+          type: string
+          enum: [pending, processing, ready, error]
+        language:
+          type: string
+          enum: [he, en, mixed]
+        extractedText:
+          type: ["string", "null"]
+        sourceUrl:
+          type: ["string", "null"]
+        fileSize:
+          type: ["integer", "null"]
+        duration:
+          type: ["integer", "null"]
+        summaryCount:
+          type: integer
+        flashcardCount:
+          type: integer
+        questionCount:
+          type: integer
+        examCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    MaterialInput:
+      type: object
+      required: [title, contentType]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        courseId:
+          type: integer
+        contentType:
+          type: string
+          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+        language:
+          type: string
+          enum: [he, en, mixed]
+        text:
+          type: string
+        sourceUrl:
+          type: string
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    Summary:
+      type: object
+      required: [id, materialId, summaryType, language, content, createdAt]
+      properties:
+        id:
+          type: integer
+        materialId:
+          type: integer
+        summaryType:
+          type: string
+          enum: [quick, detailed, chapter, topic, key_takeaways, exam_focused]
+        language:
+          type: string
+          enum: [he, en]
+        content:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SummaryRequest:
+      type: object
+      required: [summaryType, language]
+      properties:
+        summaryType:
+          type: string
+          enum: [quick, detailed, chapter, topic, key_takeaways, exam_focused]
+        language:
+          type: string
+          enum: [he, en]
+        topic:
+          type: string
+
+    # ── Flashcards ────────────────────────────────────────────────────────────
+    FlashcardDeck:
+      type: object
+      required: [id, materialId, title, language, createdAt]
+      properties:
+        id:
+          type: integer
+        materialId:
+          type: integer
+        title:
+          type: string
+        language:
+          type: string
+          enum: [he, en]
+        cardCount:
+          type: integer
+        masteredCount:
+          type: integer
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Flashcard"
+        createdAt:
+          type: string
+          format: date-time
+
+    Flashcard:
+      type: object
+      required: [id, deckId, front, back, difficulty, createdAt]
+      properties:
+        id:
+          type: integer
+        deckId:
+          type: integer
+        front:
+          type: string
+        back:
+          type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        cardType:
+          type: string
+          enum: [qa, definition, formula, concept]
+        reviewCount:
+          type: integer
+        nextReviewAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    FlashcardRequest:
+      type: object
+      required: [language]
+      properties:
+        language:
+          type: string
+          enum: [he, en]
+        cardCount:
+          type: integer
+        cardTypes:
+          type: array
+          items:
+            type: string
+            enum: [qa, definition, formula, concept]
+
+    FlashcardReview:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [again, hard, good, easy]
+
+    # ── Questions ─────────────────────────────────────────────────────────────
+    QuestionSet:
+      type: object
+      required: [id, materialId, title, language, createdAt]
+      properties:
+        id:
+          type: integer
+        materialId:
+          type: integer
+        title:
+          type: string
+        language:
+          type: string
+          enum: [he, en]
+        questionCount:
+          type: integer
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Question"
+        createdAt:
+          type: string
+          format: date-time
+
+    Question:
+      type: object
+      required: [id, setId, questionType, question, answer, createdAt]
+      properties:
+        id:
+          type: integer
+        setId:
+          type: integer
+        questionType:
+          type: string
+          enum: [open, multiple_choice, true_false, fill_blank, short_answer]
+        question:
+          type: string
+        answer:
+          type: string
+        explanation:
+          type: ["string", "null"]
+        options:
+          type: array
+          items:
+            type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        createdAt:
+          type: string
+          format: date-time
+
+    QuestionRequest:
+      type: object
+      required: [language]
+      properties:
+        language:
+          type: string
+          enum: [he, en]
+        questionCount:
+          type: integer
+        questionTypes:
+          type: array
+          items:
+            type: string
+            enum: [open, multiple_choice, true_false, fill_blank, short_answer]
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, mixed]
+
+    # ── Exams ─────────────────────────────────────────────────────────────────
+    Exam:
+      type: object
+      required: [id, materialId, title, language, examType, questionCount, createdAt]
+      properties:
+        id:
+          type: integer
+        materialId:
+          type: integer
+        title:
+          type: string
+        language:
+          type: string
+          enum: [he, en]
+        examType:
+          type: string
+          enum: [practice, topic_quiz, midterm, final]
+        questionCount:
+          type: integer
+        timeLimitMinutes:
+          type: ["integer", "null"]
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, mixed]
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Question"
+        createdAt:
+          type: string
+          format: date-time
+
+    ExamRequest:
+      type: object
+      required: [language, examType]
+      properties:
+        language:
+          type: string
+          enum: [he, en]
+        examType:
+          type: string
+          enum: [practice, topic_quiz, midterm, final]
+        questionCount:
+          type: integer
+        timeLimitMinutes:
+          type: integer
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, mixed]
+        topics:
+          type: array
+          items:
+            type: string
+
+    ExamSubmission:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExamAnswer"
+        timeSpentSeconds:
+          type: integer
+
+    ExamAnswer:
+      type: object
+      required: [questionId, answer]
+      properties:
+        questionId:
+          type: integer
+        answer:
+          type: string
+
+    ExamResult:
+      type: object
+      required: [id, examId, score, totalQuestions, correctCount, createdAt]
+      properties:
+        id:
+          type: integer
+        examId:
+          type: integer
+        score:
+          type: number
+        totalQuestions:
+          type: integer
+        correctCount:
+          type: integer
+        timeSpentSeconds:
+          type: ["integer", "null"]
+        feedback:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuestionFeedback"
+        createdAt:
+          type: string
+          format: date-time
+
+    QuestionFeedback:
+      type: object
+      required: [questionId, correct, userAnswer, correctAnswer]
+      properties:
+        questionId:
+          type: integer
+        correct:
+          type: boolean
+        userAnswer:
+          type: string
+        correctAnswer:
+          type: string
+        explanation:
+          type: ["string", "null"]
+
+    # ── Chat ─────────────────────────────────────────────────────────────────
+    ChatMessage:
+      type: object
+      required: [id, materialId, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        materialId:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        language:
+          type: ["string", "null"]
+          enum: [he, en, mixed]
+        createdAt:
+          type: string
+          format: date-time
+
+    ChatMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+        language:
+          type: string
+          enum: [he, en]
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    DashboardStats:
+      type: object
+      required: [totalMaterials, totalCourses, totalFlashcards, totalExamsTaken, averageScore, studyMinutesThisWeek]
+      properties:
+        totalMaterials:
+          type: integer
+        totalCourses:
+          type: integer
+        totalFlashcards:
+          type: integer
+        totalExamsTaken:
+          type: integer
+        averageScore:
+          type: number
+        studyMinutesThisWeek:
+          type: integer
+        examReadinessScore:
+          type: number
+        masteredFlashcards:
+          type: integer
+
+    ActivityItem:
+      type: object
+      required: [id, activityType, description, createdAt]
+      properties:
+        id:
+          type: integer
+        activityType:
+          type: string
+          enum: [upload, summary, flashcards, questions, exam, chat]
+        description:
+          type: string
+        materialTitle:
+          type: ["string", "null"]
+        score:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    StudyStreak:
+      type: object
+      required: [currentStreak, longestStreak, lastStudyDate]
+      properties:
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        lastStudyDate:
+          type: ["string", "null"]
+          format: date
+        todayStudied:
+          type: boolean

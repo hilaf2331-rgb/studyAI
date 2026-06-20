@@ -1,0 +1,87 @@
+import { Router } from "express";
+import { db, summariesTable, materialsTable, activityTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
+import { generateSummary } from "../lib/ai";
+
+const router = Router();
+
+async function assertMaterialOwner(materialId: number, userId: number) {
+  const [m] = await db.select({ id: materialsTable.id }).from(materialsTable)
+    .where(and(eq(materialsTable.id, materialId), eq(materialsTable.userId, userId)));
+  return !!m;
+}
+
+router.get("/materials/:id/summaries", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = ListSummariesParams.parse({ id: Number(req.params.id) });
+  if (!await assertMaterialOwner(id, userId)) return res.status(404).json({ error: "Not found" });
+  const summaries = await db.select().from(summariesTable)
+    .where(eq(summariesTable.materialId, id))
+    .orderBy(summariesTable.createdAt);
+  res.json(summaries);
+});
+
+router.post("/materials/:id/summaries", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = GenerateSummaryParams.parse({ id: Number(req.params.id) });
+  const body = GenerateSummaryBody.parse(req.body);
+
+  const [material] = await db.select().from(materialsTable)
+    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
+  if (!material) return res.status(404).json({ error: "Not found" });
+
+  const result = await generateSummary({
+    language: body.language as "he" | "en",
+    materialContent: material.extractedText || material.title,
+    materialTitle: material.title,
+    summaryType: body.summaryType,
+    topic: body.topic,
+  });
+
+  const [summary] = await db.insert(summariesTable).values({
+    materialId: id,
+    summaryType: body.summaryType,
+    language: body.language,
+    content: result.content,
+    keyPoints: result.keyPoints,
+  }).returning();
+
+  await db.insert(activityTable).values({
+    userId,
+    activityType: "summary",
+    description: `Generated ${body.summaryType} summary for "${material.title}"`,
+    materialTitle: material.title,
+  });
+
+  res.status(201).json(summary);
+});
+
+router.get("/summaries/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = GetSummaryParams.parse({ id: Number(req.params.id) });
+
+  const [summary] = await db.select().from(summariesTable).where(eq(summariesTable.id, id));
+  if (!summary) return res.status(404).json({ error: "Not found" });
+
+  if (!await assertMaterialOwner(summary.materialId, userId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  res.json(summary);
+});
+
+router.delete("/summaries/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = DeleteSummaryParams.parse({ id: Number(req.params.id) });
+
+  const [summary] = await db.select().from(summariesTable).where(eq(summariesTable.id, id));
+  if (!summary) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(summary.materialId, userId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await db.delete(summariesTable).where(eq(summariesTable.id, id));
+  res.status(204).end();
+});
+
+export default router;

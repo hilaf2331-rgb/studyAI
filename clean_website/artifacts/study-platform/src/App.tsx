@@ -1,0 +1,84 @@
+import { Switch, Route, Router as WouterRouter } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "next-themes";
+import { LanguageProvider } from "@/lib/i18n";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { SidebarLayout } from "@/components/layout/sidebar-layout";
+import NotFound from "@/pages/not-found";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+
+import { Dashboard } from "@/pages/dashboard";
+import { CoursesPage } from "@/pages/courses";
+import { MaterialsPage } from "@/pages/materials";
+import { MaterialNewPage } from "@/pages/material-new";
+import { MaterialDetailPage } from "@/pages/material-detail";
+import { SummaryViewPage } from "@/pages/summary-view";
+import { FlashcardStudyPage } from "@/pages/flashcard-study";
+import { QuestionsPracticePage } from "@/pages/questions-practice";
+import { ExamTakePage } from "@/pages/exam-take";
+import { ExamResultPage } from "@/pages/exam-result";
+import { ChatPage } from "@/pages/chat";
+import { AuthPage } from "@/pages/auth";
+import { RecorderPage } from "@/pages/recorder";
+
+import { getStoredToken } from "@/lib/auth";
+
+setAuthTokenGetter(() => getStoredToken());
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 30_000 },
+  },
+});
+
+function AppRoutes() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  return (
+    <SidebarLayout>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/courses" component={CoursesPage} />
+        <Route path="/courses/:id" component={CoursesPage} />
+        <Route path="/materials" component={MaterialsPage} />
+        <Route path="/materials/new" component={MaterialNewPage} />
+        <Route path="/materials/:id" component={MaterialDetailPage} />
+        <Route path="/materials/:id/chat" component={ChatPage} />
+        <Route path="/summaries/:id" component={SummaryViewPage} />
+        <Route path="/flashcards/:id" component={FlashcardStudyPage} />
+        <Route path="/questions/:id" component={QuestionsPracticePage} />
+        <Route path="/exams/:id/result/:resultId" component={ExamResultPage} />
+        <Route path="/exams/:id" component={ExamTakePage} />
+        <Route path="/recorder" component={RecorderPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </SidebarLayout>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <LanguageProvider>
+          <AuthProvider>
+            <TooltipProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <AppRoutes />
+              </WouterRouter>
+              <Toaster />
+            </TooltipProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

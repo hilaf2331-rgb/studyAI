@@ -1,0 +1,22 @@
+[build]
+  # NOTE: base is intentionally left at the repo root (not artifacts/study-platform).
+  # This is a pnpm workspace monorepo: artifacts/study-platform depends on
+  # workspace packages (e.g. @workspace/api-client-react -> lib/*) via "workspace:*".
+  # pnpm can only resolve those links if install runs from the root, where
+  # pnpm-workspace.yaml lives. Scoping into the subfolder for install breaks
+  # dependency resolution entirely.
+  command = "pnpm install --frozen-lockfile && pnpm --filter @workspace/study-platform run build"
+  publish = "artifacts/study-platform/dist/public"
+
+[build.environment]
+  # vite.config.ts in artifacts/study-platform throws at config-load time if
+  # these are missing, which is what likely caused your build to get stuck/fail.
+  NODE_VERSION = "20"
+  BASE_PATH = "/"
+  PORT = "3000"
+
+[[redirects]]
+  # SPA fallback so client-side routing (wouter) works on refresh/deep links
+  from = "/*"
+  to = "/index.html"
+  status = 200

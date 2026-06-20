@@ -1,0 +1,476 @@
+import OpenAI from "openai";
+
+if (!process.env.GROQ_API_KEY) {
+  throw new Error("GROQ_API_KEY environment variable is required but was not provided.");
+}
+
+export const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: "https://api.groq.com/openai/v1",
+});
+
+// עדכון למודלים החדשים והיציבים ביותר של Groq
+const TEXT_MODEL = "llama-3.3-70b-versatile"; 
+export const AUDIO_MODEL = "whisper-large-v3";
+
+export interface AIGenerationOptions {
+  language: "he" | "en";
+  materialContent: string;
+  materialTitle: string;
+}
+
+// פונקציית עזר חסינת תקלות משופרת לחילוץ ופענוח JSON מה-AI
+function safeJsonParse(rawText: string): any {
+  if (!rawText) return {};
+  const cleaned = rawText.trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    try {
+      // חילוץ מדויק מהסוגריים המסולסלים הראשונים ועד האחרונים
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      }
+    } catch (innerError) {
+      console.error("Failed to parse AI JSON response:", rawText);
+    }
+    return {};
+  }
+}
+
+const SMART_STUDENT_SYSTEM_HE = `אתה תלמיד מחונן שמסכם חומרי לימוד עבור חבריו לכיתה.
+סגנון הכתיבה שלך: ברור, ממוקד, אקדמי אך נגיש.
+
+STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
+1. STRICT TRUTH: You must strictly rely ONLY on the provided text or audio transcript. DO NOT add outside knowledge.
+2. ZERO DUPLICATION: DO NOT generate the same question, concept, or answer more than once. Every single flashcard must test a COMPLETELY DIFFERENT fact.
+3. DIVERSITY: If you already asked about "the color of the fur", you CANNOT ask about it again in another card, not even with different wording.
+4. QUALITY OVER QUANTITY: Do not try to reach a high number of cards by repeating concepts or making up filler text. If the facts in the text are exhausted, STOP GENERATING MORE CARDS. It is better to return 6 unique cards than 15 repetitive ones.
+
+ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.
+הפלט חייב להיות קובץ JSON תקני בלבד — אל תוסיף שום מילה, הסבר או סימני Markdown לפני או אחרי ה-JSON.`;
+
+const SMART_STUDENT_SYSTEM_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates.
+Your writing style: clear, focused, academic yet accessible.
+You identify what truly matters for exams, what is hard to understand, and what is worth remembering.
+Always respond in clear English only.
+Output must be a valid JSON object only — do not include any markdown formatting or commentary outside the JSON.`;
+
+function contentSlice(text: string, maxChars = 10000): string {
+  return text.length > maxChars ? text.slice(0, maxChars) + "\n\n[...תוכן קוצר בגלל אורך...]" : text;
+}
+
+export async function generateSummary(
+  opts: AIGenerationOptions & { summaryType: string; topic?: string }
+): Promise<{ content: string; keyPoints: string[] }> {
+  const { language, materialContent, materialTitle, summaryType, topic } = opts;
+  const isHe = language === "he";
+
+  const typeMap: Record<string, { he: string; en: string }> = {
+    quick:         { he: "סיכום קצר ותמציתי (עד 400 מילה) עם הנקודות המרכזיות בלבד", en: "a short summary (up to 400 words) with only the key points" },
+    detailed:      { he: "סיכום מעמיק ומלא של כל הנושאים, עם דוגמאות", en: "a thorough, complete summary of all topics with examples" },
+    chapter:       { he: "סיכום לפי פרקים / חלקים, כל חלק בכותרת משנה", en: "a chapter-by-chapter summary, each section under its own heading" },
+    topic:         { he: `סיכום ממוקד על: ${topic || "הנושאים הראשיים"}`, en: `a summary focused on: ${topic || "the main topics"}` },
+    key_takeaways: { he: "עיקרי הדברים — רשימת תובנות מרכזיות שכדאי לזכור", en: "key takeaways — a list of the main insights worth remembering" },
+    exam_focused:  { he: "סיכום ממוקד מבחן: מה לדעת, מה לזכור, מה נשאל בבחינות", en: "exam-focused summary: what to know, what to memorize, what gets tested" },
+  };
+
+  const typeDesc = isHe
+    ? (typeMap[summaryType]?.he ?? typeMap.quick.he)
+    : (typeMap[summaryType]?.en ?? typeMap.quick.en);
+
+  const userPrompt = isHe
+    ? `## חומר לימוד: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+המשימה שלך: צור ${typeDesc}.
+
+הסיכום יכתב בעברית בפורמט Markdown מסודר עם:
+- כותרת ראשית (##) לכל נושא מרכזי
+- תתי-כותרות (###) לנושאי משנה
+- נקודות (- ) לפרטים חשובים
+- **הדגשה** למושגים ולמונחים קריטיים
+- בסוף: "## סיכום מנהלים" — פסקת מסכמת של 3-5 משפטים
+
+ה-keyPoints הוא מערך של 5–8 משפטים קצרים הכי חשובים מהחומר (מה שהייתה רוצה לדעת לפני הבחינה).
+
+החזר JSON בלבד במבנה הבא:
+{
+  "content": "סיכום בפורמט Markdown כאן",
+  "keyPoints": ["נקודה 1", "נקודה 2", "נקודה 3", "נקודה 4", "נקודה 5"]
+}`
+    : `## Study Material: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+Your task: Create ${typeDesc}.
+
+Write the summary in English using clean Markdown:
+- Main heading (##) for each major topic
+- Sub-headings (###) for sub-topics
+- Bullet points (- ) for important details
+- **Bold** key terms and critical concepts
+- At the end: "## Executive Summary" — a 3-5 sentence wrap-up
+
+keyPoints is an array of 5–8 short sentences covering the most important things to know (what you'd want to know before the exam).
+
+Return ONLY JSON matching this structure:
+{
+  "content": "Summary in Markdown format here",
+  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"]
+}`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.4,
+  });
+
+  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  return {
+    content: parsed.content || "",
+    keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+  };
+}
+
+export async function generateFlashcardsAI(
+  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[] }
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+  const { language, materialContent, materialTitle, cardCount, cardTypes } = opts;
+  const isHe = language === "he";
+
+  const typeGuide = isHe
+    ? `סוגי כרטיסיות אפשריים:
+- definition (הגדרה): "מהי/מהו [מושג]?" → הגדרה מדויקת ומלאה
+- formula (נוסחה): "נוסחת/חוק [שם]?" → הנוסחה + משמעות המשתנים
+- concept (מושג): "הסבר את [מושג]" → הסבר בשפה פשוטה עם דוגמה
+- qa (שאלה ותשובה): שאלה מעמיקה על עקרון/תהליך → תשובה מפורטת`
+    : `Card types:
+- definition: "What is [term]?" → precise, complete definition
+- formula: "Formula/Law of [name]?" → the formula + variable meanings
+- concept: "Explain [concept]" → plain-language explanation with example
+- qa: Deep question about a principle/process → detailed answer`;
+
+  const userPrompt = isHe
+    ? `## חומר לימוד: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+המשימה: צור ערכת כרטיסיות לימוד מגוונת בעברית (מקסימום ${cardCount} כרטיסיות).
+
+${typeGuide}
+
+חוקי ברזל חמושים (אי-ציות יגרום לשגיאה):
+1. אסור לחזור על שום מושג! כל כרטיסייה חייבת לעסוק בנושא, משפט או עובדה שונים לחלוטין מהטקסט.
+2. אם כבר שאלת על "פרווה", הנושא הזה חסום! עבור לעובדה הבאה (למשל: צבע העור, תזונה, יכולת שחייה, עובי השומן).
+3. אם נגמרו העובדות השונות בטקסט, עצור מיד ואל תייצר כרטיסיות נוספות. עדיף 4 כרטיסיות שונות לחלוטין מאשר 6 שחוזרות על עצמן.
+
+החזר JSON במבנה הבא בלבד:
+{
+  "cards": [
+    {"front": "שאלה ייחודית 1", "back": "תשובה מלאה 1", "difficulty": "medium", "cardType": "definition"},
+    {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה מלאה 2", "difficulty": "medium", "cardType": "concept"}
+  ]
+}`
+    : `## Study Material: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+Task: Create up to ${cardCount} interactive flashcards in English (fewer is allowed if the text is short to prevent duplication).
+
+${typeGuide}
+
+Strict rules to avoid duplication:
+1. Distribute across types: ${cardTypes.join(", ")}.
+2. ZERO REPETITION: Do not ask about the same fact, concept, or variable more than once. Every card must cover a completely unique piece of information.
+3. If a concept was tested once, do not create another card for it under a different type.
+4. Front = short, sharp question. Back = complete, accurate answer based strictly on the text.
+5. Difficulty: easy, medium, hard.
+
+Return ONLY JSON matching this structure:
+{
+  "cards": [
+    {"front": "question", "back": "complete answer", "difficulty": "medium", "cardType": "definition"}
+  ]
+}`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+  });
+
+  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  return Array.isArray(parsed.cards) ? parsed.cards : [];
+}
+
+export async function generateQuestionsAI(
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string }
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string }>> {
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty } = opts;
+  const isHe = language === "he";
+
+  const userPrompt = isHe
+    ? `## חומר לימוד: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+המשימה: צור בדיוק ${questionCount} שאלות תרגול בעברית.
+סוגי שאלות: ${questionTypes.join(", ")}
+רמת קושי: ${difficulty}
+
+כללים חשובים:
+- multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
+- true_false: options = ["נכון", "לא נכון"]. correctIndex = 0 (נכון) או 1 (לא נכון).
+- open: options = [], correctIndex = 0, answer הוא תשובה מלאה.
+- כל שאלה חייבת להיות על תוכן אמיתי מהחומר — אסור להמציא.
+- "explanation" מסביר למה התשובה נכונה בקצרה.
+
+החזר JSON במבנה הבא:
+{
+  "questions": [
+    {
+      "question": "שאלה בעברית",
+      "answer": "הטקסט המדויק של התשובה הנכונה",
+      "explanation": "הסבר קצר למה זו התשובה הנכונה",
+      "options": ["אפשרות א", "אפשרות ב", "אפשרות ג", "אפשרות ד"],
+      "correctIndex": 2,
+      "questionType": "multiple_choice",
+      "difficulty": "medium"
+    }
+  ]
+}`
+    : `## Study Material: "${materialTitle}"
+
+${contentSlice(materialContent)}
+
+---
+Task: Create exactly ${questionCount} practice questions in English.
+Question types: ${questionTypes.join(", ")}
+Difficulty: ${difficulty}
+
+Important rules:
+- multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index (0-3) of the correct option.
+- true_false: options = ["True", "False"]. correctIndex = 0 (True) or 1 (False).
+- open: options = [], correctIndex = 0, answer is a full response.
+- All questions must be based on actual content — no fabrication.
+- "explanation" briefly explains why the answer is correct.
+
+Return ONLY JSON matching this structure:
+{
+  "questions": [
+    {
+      "question": "Question text",
+      "answer": "Exact text of the correct answer",
+      "explanation": "Brief explanation of why this is correct",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 2,
+      "questionType": "multiple_choice",
+      "difficulty": "medium"
+    }
+  ]
+}`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.4,
+  });
+
+  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  return Array.isArray(parsed.questions)
+    ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+    : [];
+}
+
+export async function generateExamAI(
+  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[] }
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string }>> {
+  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics } = opts;
+  const isHe = language === "he";
+
+  const topicsLine = topics?.length
+    ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
+    : "";
+
+  const examTypeMap: Record<string, { he: string; en: string }> = {
+    practice:   { he: "תרגול (שאלות מגוונות בקצב נוח)", en: "practice (varied questions, relaxed pace)" },
+    topic_quiz: { he: "חידון נושאי (ממוקד בנושאים ספציפיים)", en: "topic quiz (focused on specific topics)" },
+    midterm:    { he: "מבחן אמצע סמסטר (מקיף, מעורב)", en: "midterm exam (comprehensive, mixed types)" },
+    final:      { he: "מבחן גמר (מקיף, קשה, מעמיק)", en: "final exam (comprehensive, challenging, in-depth)" },
+  };
+
+  const examDesc = isHe
+    ? (examTypeMap[examType]?.he ?? examTypeMap.practice.he)
+    : (examTypeMap[examType]?.en ?? examTypeMap.practice.en);
+
+  const userPrompt = isHe
+    ? `## חומר לימוד: "${materialTitle}"
+${topicsLine}
+סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
+
+${contentSlice(materialContent)}
+
+---
+המשימה: צור מבחן עם בדיוק ${questionCount} שאלות בעברית.
+שלב סוגי שאלות: multiple_choice (70%), true_false (15%), open (15%).
+
+כללי JSON:
+- multiple_choice: 4 אפשרויות, correctIndex = אינדקס 0-3 של הנכונה.
+- true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
+- open: options = [], correctIndex = 0.
+
+החזר JSON במבנה הבא בלבד:
+{
+  "questions": [
+    {
+      "question": "שאלה",
+      "answer": "טקסט התשובה הנכונה",
+      "explanation": "הסבר",
+      "options": ["א", "ב", "ג", "ד"],
+      "correctIndex": 1,
+      "questionType": "multiple_choice",
+      "difficulty": "medium"
+    }
+  ]
+}`
+    : `## Study Material: "${materialTitle}"
+${topicsLine}
+Exam type: ${examDesc} | Difficulty: ${difficulty}
+
+${contentSlice(materialContent)}
+
+---
+Task: Create an exam with exactly ${questionCount} questions in English.
+Mix question types: multiple_choice (70%), true_false (15%), open (15%).
+
+JSON rules:
+- multiple_choice: 4 options, correctIndex = 0-based index of the correct one.
+- true_false: options = ["True", "False"], correctIndex = 0 or 1.
+- open: options = [], correctIndex = 0.
+
+Return ONLY JSON matching this structure:
+{
+  "questions": [
+    {
+      "question": "Question",
+      "answer": "Exact text of correct answer",
+      "explanation": "Explanation",
+      "options": ["A", "B", "C", "D"],
+      "correctIndex": 1,
+      "questionType": "multiple_choice",
+      "difficulty": "medium"
+    }
+  ]
+}`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.4,
+  });
+
+  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  return Array.isArray(parsed.questions)
+    ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+    : [];
+}
+
+export async function chatWithMaterial(
+  materialContent: string,
+  materialTitle: string,
+  userMessage: string,
+  language: "he" | "en",
+  history: Array<{ role: "user" | "assistant"; content: string }>
+): Promise<string> {
+  const isHe = language === "he";
+
+  const systemPrompt = isHe
+    ? `אתה מורה-בוט חכם ונלהב שעוזר לסטודנטים להבין חומר לימוד.
+ענה בעברית תקינה, ברורה וממוקדת. היה אדיב ומעודד.
+אם שאלה אינה קשורה לחומר — ציין זאת בנימוס והפנה לחומר הלימוד.
+
+כותרת החומר: "${materialTitle}"
+
+תוכן החומר:
+${contentSlice(materialContent, 6000)}`
+    : `You are a smart and enthusiastic tutor bot helping students understand study material.
+Answer in clear, focused English. Be friendly and encouraging.
+If a question is unrelated to the material, politely note it and redirect to the study material.
+
+Material title: "${materialTitle}"
+
+Content:
+${contentSlice(materialContent, 6000)}`;
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
+    { role: "user", content: userMessage },
+  ];
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages,
+    temperature: 0.6,
+  });
+
+  return response.choices[0].message.content || "";
+}
+
+export async function gradeAnswer(
+  question: string,
+  correctAnswer: string,
+  userAnswer: string,
+  language: "he" | "en"
+): Promise<{ correct: boolean; explanation: string }> {
+  const isHe = language === "he";
+
+  const prompt = isHe
+    ? `שאלה: ${question}
+תשובה נכונה: ${correctAnswer}
+תשובת הסטודנט: ${userAnswer}
+
+בדוק אם תשובת הסטודנט נכונה מבחינה תוכנית (לא בהכרח ניסוח זהה).
+החזר JSON במבנה הבא: {"correct": true/false, "explanation": "הסבר קצר בעברית על מה שנכון ומה חסר"}`
+    : `Question: ${question}
+Correct answer: ${correctAnswer}
+Student's answer: ${userAnswer}
+
+Check if the student's answer is conceptually correct (exact wording not required).
+Return JSON matching this structure: {"correct": true/false, "explanation": "Brief explanation of what's right and what's missing"}`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    response_format: { type: "json_object" },
+    temperature: 0.2,
+  });
+
+  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  return { correct: !!parsed.correct, explanation: parsed.explanation || "" };
+}

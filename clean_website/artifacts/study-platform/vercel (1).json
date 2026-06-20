@@ -1,8 +1,0 @@
-{
-  "buildCommand": "vite build --config vite.config.ts",
-  "outputDirectory": "dist/public",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://study-okzw9pt0e-hila4.vercel.app/" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}

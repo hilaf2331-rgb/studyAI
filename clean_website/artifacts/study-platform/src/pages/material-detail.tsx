@@ -111,19 +111,24 @@ export const MaterialDetailPage: React.FC = () => {
         throw new Error(response.status >= 500 ? "Generation timed out. The server is working hard, please try again." : "Unexpected response from server.");
       }
 
-     if (!response.ok) throw new Error(payload.error || `Generation failed (${response.status})`);
+      if (!response.ok) throw new Error(payload.error || `Generation failed (${response.status})`);
 
-if (!payload.summary || !payload.deck || !payload.questionSet) {
-  throw new Error("Received an incomplete response. Please try again.");
-}
+      if (!payload.summary || !payload.deck || !payload.questionSet) {
+        throw new Error("Received an incomplete response. Please try again.");
+      }
 
-setKitResult(payload as KitResult);
-setProgressValue(100);
-      
       setKitResult(payload as KitResult);
       setProgressValue(100);
     } catch (err: any) {
-      setKitError(err.message || "An unknown error occurred");
+      // אם השרת החזיר שהחומר קצר מדי, נציג הודעה מותאמת אישית וידידותית
+      if (err.message && err.message.includes("insufficient_content")) {
+        setKitError(isRTL 
+          ? "היי! חומר הלימוד קצר מדי בשביל ליצור ערכה מלאה ומדויקת. אנא הוסיפי עוד תוכן." 
+          : "Hey! The provided material is too short to generate a full study kit. Please provide more content to ensure accuracy."
+        );
+      } else {
+        setKitError(err.message || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
+      }
     } finally {
       setKitLoading(false);
     }
@@ -171,7 +176,6 @@ setProgressValue(100);
           {kitError && !kitLoading && <p className="text-destructive text-sm">{kitError}</p>}
         </CardContent>
       </Card>
-      {/* (שאר הרכיבים שלך נשארים זהים למטה כפי שהיו) */}
     </div>
   );
 };

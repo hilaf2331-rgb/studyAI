@@ -98,11 +98,14 @@ export const MaterialDetailPage: React.FC = () => {
 
     try {
       const token = getStoredToken();
-      const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
+      // יצירת הכתובת כמחרוזת קשיחה ומפורשת כדי למנוע עיוות של Vercel
+      const targetUrl = "https://studyai-zhyy.onrender.com/api/materials/" + id + "/generate-all";
+
+      const response = await fetch(targetUrl, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json", 
-          "Authorization": `Bearer ${token}` 
+          "Authorization": "Bearer " + token
         },
       });
 

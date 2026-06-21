@@ -30,27 +30,53 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 router.post("/materials/:id/generate-all", async (req, res) => {
-  const userId = req.user!.userId;
-  const materialId = Number(req.params.id);
-  if (isNaN(materialId)) return res.status(400).json({ error: "Invalid material id" });
+  // EVERYTHING below is wrapped in one try/catch. This is the actual fix for
+  // "Unexpected end of JSON input": previously, an unhandled throw/rejection
+  // anywhere above the inner try block (auth, DB lookup, param parsing) would
+  // crash the request without ever calling res.json(), and Express 4 does not
+  // auto-catch async handler errors — the socket just closes with an empty
+  // body. Now, no matter where something fails, we always send valid JSON.
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated." });
+    }
 
-  const [material] = await db.select().from(materialsTable)
-    .where(and(eq(materialsTable.id, materialId), eq(materialsTable.userId, userId)));
-  if (!material) return res.status(404).json({ error: "Not found" });
+    const materialId = Number(req.params.id);
+    if (isNaN(materialId)) {
+      return res.status(400).json({ error: "Invalid material id" });
+    }
 
-  const content = material.extractedText || material.title;
-  const language = "he" as const;
+    const [material] = await db.select().from(materialsTable)
+      .where(and(eq(materialsTable.id, materialId), eq(materialsTable.userId, userId)));
+    if (!material) {
+      return res.status(404).json({ error: "Not found" });
+    }
 
-  // חישוב דינמי: אם הטקסט קצר מאוד (פחות מ-600 תווים), נבקש פחות פריטים כדי למנוע שכפולים וחרטוטים
-  const isShortText = content.length < 600;
-  const targetCards = isShortText ? 6 : 15;
-  const targetQuestions = isShortText ? 5 : 10;
+    const content = material.extractedText || material.title;
+    const language = "he" as const;
 
-  // Run all three generations in parallel, each with its own timeout, and
-  // never let one task's failure take down the others. We get back
-  // settled results instead of throwing, so we can decide per-task whether
-  // to fall back to an empty result or fail the whole request.
-  const [summarySettled, flashSettled, questionSettled] = await Promise.allSettled([
+    // Length & sufficiency check — run BEFORE any Groq calls. There is no
+    // point burning API calls (and risking hallucinated filler content) on
+    // material that's too thin to generate a meaningful study kit from.
+    const MIN_CONTENT_LENGTH = 150;
+    if (content.length < MIN_CONTENT_LENGTH) {
+      return res.status(400).json({
+        error: "insufficient_content",
+        message: "Hey! The provided material is too short to generate a full study kit. Please provide more content to ensure accuracy.",
+      });
+    }
+
+    // חישוב דינמי: אם הטקסט קצר מאוד (פחות מ-600 תווים), נבקש פחות פריטים כדי למנוע שכפולים וחרטוטים
+    const isShortText = content.length < 600;
+    const targetCards = isShortText ? 6 : 15;
+    const targetQuestions = isShortText ? 5 : 10;
+
+    // Run all three generations in parallel, each with its own timeout, and
+    // never let one task's failure take down the others. We get back
+    // settled results instead of throwing, so we can decide per-task whether
+    // to fall back to an empty result or fail the whole request.
+    const [summarySettled, flashSettled, questionSettled] = await Promise.allSettled([
     withTimeout(
       generateSummary({
         language,
@@ -107,7 +133,6 @@ router.post("/materials/:id/generate-all", async (req, res) => {
   const flashResult = flashSettled.status === "fulfilled" ? flashSettled.value : [];
   const questionResult = questionSettled.status === "fulfilled" ? questionSettled.value : [];
 
-  try {
     const [[summary], [deck], [qSet]] = await Promise.all([
       db.insert(summariesTable).values({
         materialId,
@@ -165,16 +190,31 @@ router.post("/materials/:id/generate-all", async (req, res) => {
       }),
     ]);
 
-    res.status(201).json({
-      summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
-      deck: { id: deck.id, cardCount: flashResult.length },
-      questionSet: { id: qSet.id, questionCount: questionResult.length },
+    const payload = {
+      summary: { id: summary?.id, keyPointCount: summaryResult.keyPoints.length },
+      deck: { id: deck?.id, cardCount: flashResult.length },
+      questionSet: { id: qSet?.id, questionCount: questionResult.length },
       partialFailure: flashSettled.status === "rejected" || questionSettled.status === "rejected",
-    });
+    };
+
+    // Validation: never send an empty/incomplete body. If any of the three
+    // inserts didn't actually come back with an id (e.g. .returning() gave
+    // back an empty array for some driver-specific reason), treat it as a
+    // failure instead of silently shipping a payload the client can't use.
+    if (!payload.summary.id || !payload.deck.id || !payload.questionSet.id) {
+      logger.error({ payload, materialId }, "generate-all: incomplete payload after insert, refusing to send");
+      return res.status(500).json({ error: "Generated content was incomplete. Please try again." });
+    }
+
+    return res.status(201).json(payload);
   } catch (err) {
-    logger.error({ err, materialId }, "generate-all: failed while saving generated content");
+    // This catch wraps the WHOLE handler — auth, param parsing, the DB
+    // lookup, the Groq calls, and the inserts. Whatever breaks, anywhere,
+    // the client always gets valid JSON and a real status code instead of
+    // an empty body / dropped connection.
+    logger.error({ err, materialId: req.params.id }, "generate-all: unhandled failure");
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to save generated content. Please try again." });
+      res.status(500).json({ error: "Something went wrong while generating your study kit. Please try again." });
     }
   }
 });

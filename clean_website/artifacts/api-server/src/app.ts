@@ -37,17 +37,21 @@ app.use(
 const isProd = process.env.NODE_ENV === "production";
 
 const allowedOrigins = isProd
-  ? (process.env.CORS_ORIGINS ?? "").split(",").map(d => d.trim()).filter(Boolean)
+  ? function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+      // מאפשר לכל דומיין שמסתיים ב-vercel.app או localhost לגשת לשרת
+      if (!origin || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+        callback(null, true);
+      } else {
+        // בודק גם מול רשימת הדומיינים הקבועה במשתני הסביבה (אם יש דומיין קסטום משלך)
+        const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map(d => d.trim()).filter(Boolean);
+        if (envOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      }
+    }
   : true;
-
-app.use(
-  cors({
-    origin: allowedOrigins,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  }),
-);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

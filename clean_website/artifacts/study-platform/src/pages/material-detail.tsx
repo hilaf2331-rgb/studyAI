@@ -124,13 +124,13 @@ export const MaterialDetailPage: React.FC = () => {
     try {
       const token = getStoredToken();
       // משתמשים בכתובת המלאה עם ה-API
-      const response = await fetch(`${process.env.VITE_API_URL || process.env.NEXT_PUBLIC_API_URL}/api/materials/${id}/generate-all`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` 
-        },
-      });
+      const response = await fetch("https://studyai-zhyy.onrender.com/api/materials/" + id + "/generate-all", {
+  method: "POST",
+  headers: { 
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}` 
+  },
+});
 
       // בדיקת תקינות התגובה
       if (!response.ok) {

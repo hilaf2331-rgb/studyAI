@@ -98,9 +98,6 @@ export const MaterialDetailPage: React.FC = () => {
 
     try {
       const token = getStoredToken();
-      // תחליפי את שורת ה-fetch הנוכחית בשורה המדויקת הזו:
-try {
-      const token = getStoredToken();
       const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
         method: "POST",
         headers: { 
@@ -108,7 +105,6 @@ try {
           "Authorization": `Bearer ${token}` 
         },
       });
-   
 
       const rawBody = await response.text();
       let payload: any;
@@ -127,7 +123,6 @@ try {
       setKitResult(payload as KitResult);
       setProgressValue(100);
     } catch (err: any) {
-      // אם השרת החזיר שהחומר קצר מדי, נציג הודעה מותאמת אישית וידידותית
       if (err.message && err.message.includes("insufficient_content")) {
         setKitError(isRTL 
           ? "היי! חומר הלימוד קצר מדי בשביל ליצור ערכה מלאה ומדויקת. אנא הוסיפי עוד תוכן." 

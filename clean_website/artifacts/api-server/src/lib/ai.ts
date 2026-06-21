@@ -48,6 +48,7 @@ STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
 2. ZERO DUPLICATION: DO NOT generate the same question, concept, or answer more than once. Every single flashcard must test a COMPLETELY DIFFERENT fact.
 3. DIVERSITY: If you already asked about "the color of the fur", you CANNOT ask about it again in another card, not even with different wording.
 4. QUALITY OVER QUANTITY: Do not try to reach a high number of cards by repeating concepts or making up filler text. If the facts in the text are exhausted, STOP GENERATING MORE CARDS. It is better to return 6 unique cards than 15 repetitive ones.
+5. STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts. Quality and precision always come before filling up quantity.
 
 ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.
 הפלט חייב להיות קובץ JSON תקני בלבד — אל תוסיף שום מילה, הסבר או סימני Markdown לפני או אחרי ה-JSON.`;
@@ -55,6 +56,9 @@ STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
 const SMART_STUDENT_SYSTEM_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates.
 Your writing style: clear, focused, academic yet accessible.
 You identify what truly matters for exams, what is hard to understand, and what is worth remembering.
+
+STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts. Quality and precision always come before filling up quantity.
+
 Always respond in clear English only.
 Output must be a valid JSON object only — do not include any markdown formatting or commentary outside the JSON.`;
 

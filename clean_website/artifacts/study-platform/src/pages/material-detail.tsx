@@ -120,29 +120,37 @@ export const MaterialDetailPage: React.FC = () => {
     setKitError("");
     setProgressStep(0);
     setProgressValue(0);
+
     try {
-    const token = getStoredToken();
-  console.log("DEBUG: I am hitting the Render URL!");
-      const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-      if (!res.ok) {
-        const d = await res.json();
+      const token = getStoredToken();
+      // משתמשים בכתובת המלאה עם ה-API
+      const response = await fetch(`${process.env.VITE_API_URL || process.env.NEXT_PUBLIC_API_URL}/api/materials/${id}/generate-all`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+      });
+
+      // בדיקת תקינות התגובה
+      if (!response.ok) {
+        const d = await response.json();
         throw new Error(d.error || "Generation failed");
       }
-      const data: KitResult = await res.json();
+
+      const data: KitResult = await response.json();
+      
       setProgressValue(100);
       setKitResult(data);
-      // Refresh all lists so content shows up immediately
+      
+      // רענון הנתונים
       await Promise.all([
         qc.invalidateQueries({ queryKey: getListSummariesQueryKey(id) }),
         qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) }),
         qc.invalidateQueries({ queryKey: getListQuestionSetsQueryKey(id) }),
       ]);
     } catch (err: any) {
+      console.error("Generate All Error:", err);
       setKitError(err.message || "Something went wrong");
     } finally {
       setKitLoading(false);

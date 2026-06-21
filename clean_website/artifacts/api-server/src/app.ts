@@ -8,6 +8,18 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// TEMPORARY DIAGNOSTIC — remove once the 405 is resolved. This sits before
+// CORS, before auth, before everything. If you see a request logged here for
+// a call that the browser reports as 405, the 405 is coming from inside this
+// Express app (most likely the cors middleware's preflight handling). If you
+// DON'T see it logged at all, the request is being intercepted before it
+// ever reaches Node — i.e. Render's edge/proxy layer, not your code.
+app.use((req, res, next) => {
+  console.log(`[DIAG] ${req.method} ${req.originalUrl} | Origin: ${req.headers.origin}`);
+  next();
+});
+
+
 app.use(
   pinoHttp({
     logger,

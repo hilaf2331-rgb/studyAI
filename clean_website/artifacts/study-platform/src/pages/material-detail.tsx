@@ -122,10 +122,12 @@ export const MaterialDetailPage: React.FC = () => {
     setProgressValue(0);
     try {
       const token = getStoredToken();
-     const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+   const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
       if (!res.ok) {
         const d = await res.json();
         throw new Error(d.error || "Generation failed");

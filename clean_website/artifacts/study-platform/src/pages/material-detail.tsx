@@ -111,7 +111,14 @@ export const MaterialDetailPage: React.FC = () => {
         throw new Error(response.status >= 500 ? "Generation timed out. The server is working hard, please try again." : "Unexpected response from server.");
       }
 
-      if (!response.ok) throw new Error(payload.error || `Generation failed (${response.status})`);
+     if (!response.ok) throw new Error(payload.error || `Generation failed (${response.status})`);
+
+if (!payload.summary || !payload.deck || !payload.questionSet) {
+  throw new Error("Received an incomplete response. Please try again.");
+}
+
+setKitResult(payload as KitResult);
+setProgressValue(100);
       
       setKitResult(payload as KitResult);
       setProgressValue(100);

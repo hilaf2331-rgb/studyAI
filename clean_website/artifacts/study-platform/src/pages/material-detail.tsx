@@ -121,8 +121,9 @@ export const MaterialDetailPage: React.FC = () => {
     setProgressStep(0);
     setProgressValue(0);
     try {
-      const token = getStoredToken();
-   const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
+    const token = getStoredToken();
+  console.log("DEBUG: I am hitting the Render URL!");
+      const response = await fetch(`https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',

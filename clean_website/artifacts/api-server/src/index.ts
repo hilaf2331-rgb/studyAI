@@ -14,7 +14,13 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+// הוספת נתיב כדי למנוע מהשרת להירדם
+app.get("/ping", (_req, res) => {
+  res.status(200).send("OK");
+});
 
+const server = app.listen(port, (err) => {
+  // ... שאר הקוד שלך נשאר כפי שהוא
 const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");

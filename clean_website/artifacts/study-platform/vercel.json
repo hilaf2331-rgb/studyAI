@@ -5,7 +5,7 @@
       "destination": "https://studyai-zhyy.onrender.com/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!.*\\.).*)",
       "destination": "/index.html"
     }
   ],

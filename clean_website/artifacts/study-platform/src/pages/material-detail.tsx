@@ -98,9 +98,7 @@ export const MaterialDetailPage: React.FC = () => {
 
     try {
       const token = getStoredToken();
-      const response = await fetch("https://studyai-zhyy.onrender.com/api/materials/" + id + "/generate-all", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      const response = await fetch(`/api/materials/${id}/generate-all`, {
       });
 
       const rawBody = await response.text();

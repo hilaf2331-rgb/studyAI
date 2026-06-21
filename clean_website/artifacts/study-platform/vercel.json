@@ -1,7 +1,12 @@
 {
-  "buildCommand": "vite build --config vite.config.ts",
-  "outputDirectory": "dist/public",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "https://studyai-zhyy.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

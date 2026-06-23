@@ -10,6 +10,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { getStoredToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -201,7 +202,7 @@ export const MaterialDetailPage: React.FC = () => {
 
     try {
       const token = getStoredToken();
-      const targetUrl = "https://studyai-zhyy.onrender.com/api/materials/" + id + "/generate-all";
+      const targetUrl = apiUrl(`/api/materials/${id}/generate-all`);
 
       const response = await fetch(targetUrl, {
         method: "POST",

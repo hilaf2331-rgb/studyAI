@@ -11,6 +11,7 @@ import { setAuthTokenGetter } from "@workspace/api-client-react";
 
 import { Dashboard } from "@/pages/dashboard";
 import { CoursesPage } from "@/pages/courses";
+import { CourseDetailPage } from "@/pages/course-detail";
 import { MaterialsPage } from "@/pages/materials";
 import { MaterialNewPage } from "@/pages/material-new";
 import { MaterialDetailPage } from "@/pages/material-detail";
@@ -45,7 +46,7 @@ function AppRoutes() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/courses" component={CoursesPage} />
-        <Route path="/courses/:id" component={CoursesPage} />
+        <Route path="/courses/:id" component={CourseDetailPage} />
         <Route path="/materials" component={MaterialsPage} />
         <Route path="/materials/new" component={MaterialNewPage} />
         <Route path="/materials/:id" component={MaterialDetailPage} />

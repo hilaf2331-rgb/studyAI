@@ -101,18 +101,18 @@ export const MaterialsPage: React.FC = () => {
             <Link key={m.id} href={`/materials/${m.id}`}>
               <Card className="cursor-pointer hover:shadow-md transition-all group">
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4">
                     <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
                       <FileText className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold truncate">{m.title}</span>
+                        <span className="font-semibold break-words">{m.title}</span>
                         <StatusBadge status={m.status} isRTL={isRTL} />
                         <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
                         <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
                       </div>
-                      <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                      <div className="flex gap-3 sm:gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{m.summaryCount} {isRTL ? "סיכומים" : "summaries"}</span>
                         <span className="flex items-center gap-1"><BrainCircuit className="w-3 h-3" />{m.flashcardCount} {isRTL ? "כרטיסיות" : "cards"}</span>
                         <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" />{m.questionCount} {isRTL ? "שאלות" : "questions"}</span>
@@ -120,7 +120,7 @@ export const MaterialsPage: React.FC = () => {
                       </div>
                     </div>
                     <button onClick={(e) => handleDelete(e, m.id)}
-                      className="opacity-0 group-hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-all shrink-0">
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-all shrink-0">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

@@ -136,20 +136,24 @@ export const Dashboard: React.FC = () => {
         ) : (
           <div className="space-y-2">
             {activity.slice(0, 8).map(item => (
-              <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ACTIVITY_COLORS[item.activityType] || "bg-muted"}`}>
-                  {ACTIVITY_ICONS[item.activityType] || <BookOpen className="w-4 h-4" />}
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ACTIVITY_COLORS[item.activityType] || "bg-muted"}`}>
+                    {ACTIVITY_ICONS[item.activityType] || <BookOpen className="w-4 h-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium break-words sm:truncate">{item.description}</p>
+                    {item.materialTitle && <p className="text-xs text-muted-foreground break-words sm:truncate">{item.materialTitle}</p>}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{item.description}</p>
-                  {item.materialTitle && <p className="text-xs text-muted-foreground truncate">{item.materialTitle}</p>}
+                <div className="flex items-center gap-2 shrink-0 ps-11 sm:ps-0 sm:ms-auto">
+                  {item.score !== null && item.score !== undefined && (
+                    <Badge variant={item.score >= 60 ? "outline" : "secondary"} className={`text-xs shrink-0 ${item.score >= 60 ? "text-green-600 border-green-300" : ""}`}>
+                      {item.score}%
+                    </Badge>
+                  )}
+                  <p className="text-xs text-muted-foreground shrink-0">{new Date(item.createdAt).toLocaleDateString()}</p>
                 </div>
-                {item.score !== null && item.score !== undefined && (
-                  <Badge variant={item.score >= 60 ? "outline" : "secondary"} className={`text-xs shrink-0 ${item.score >= 60 ? "text-green-600 border-green-300" : ""}`}>
-                    {item.score}%
-                  </Badge>
-                )}
-                <p className="text-xs text-muted-foreground shrink-0">{new Date(item.createdAt).toLocaleDateString()}</p>
               </div>
             ))}
           </div>

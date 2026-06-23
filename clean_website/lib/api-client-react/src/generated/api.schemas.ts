@@ -589,6 +589,13 @@ export interface StudyStreak {
   todayStudied?: boolean;
 }
 
+export interface TokenBalance {
+  tokensRemaining: number;
+  monthlyTokenQuota: number;
+  estimatedSummariesRemaining: number;
+  estimatedExamsRemaining: number;
+}
+
 export type ListMaterialsParams = {
 courseId?: number;
 };

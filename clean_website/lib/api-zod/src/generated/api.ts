@@ -695,3 +695,14 @@ export const GetStudyStreakResponse = zod.object({
 })
 
 
+/**
+ * @summary Get the current user's token balance
+ */
+export const GetTokenBalanceResponse = zod.object({
+  "tokensRemaining": zod.number(),
+  "monthlyTokenQuota": zod.number(),
+  "estimatedSummariesRemaining": zod.number(),
+  "estimatedExamsRemaining": zod.number()
+})
+
+

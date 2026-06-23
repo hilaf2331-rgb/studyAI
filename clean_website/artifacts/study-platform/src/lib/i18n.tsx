@@ -10,6 +10,7 @@ interface LanguageContextType {
 
 const translations: Record<string, string> = {
   dashboard: "לוח בקרה",
+  profile: "פרופיל",
   courses: "קורסים",
   materials: "חומרי לימוד",
   settings: "הגדרות",

@@ -8,6 +8,7 @@ import {
 import { generateExamAI, gradeAnswer } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 
@@ -44,12 +45,15 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
 
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
-  const contentLength = (material.extractedText || material.title).trim().length;
+  const materialContent = material.extractedText || material.title;
+  const contentLength = materialContent.trim().length;
   const questionCount = clampToContentLength(body.questionCount || 10, contentLength, "questions");
+
+  await requireTokenBalance(userId);
 
   const generated = await generateExamAI({
     language: body.language as "he" | "en",
-    materialContent: material.extractedText || material.title,
+    materialContent,
     materialTitle: material.title,
     questionCount,
     examType: body.examType,
@@ -57,6 +61,7 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
     topics: body.topics,
     materialId: id,
   });
+  await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
 
   const [exam] = await db.insert(examsTable).values({
     materialId: id,

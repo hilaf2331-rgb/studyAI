@@ -4,6 +4,7 @@ import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTabl
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -91,11 +92,19 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const content = extractedText;
   const language = "he" as const;
   try {
+    await requireTokenBalance(userId);
+
     const [summaryResult, flashResult, questionResult] = await Promise.all([
       generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed" }),
       generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
       generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
     ]);
+
+    await deductTokensForGeneration(
+      userId,
+      content,
+      summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
+    );
 
     const [[summary], [deck], [qSet]] = await Promise.all([
       db.insert(summariesTable).values({ materialId: material.id, summaryType: "detailed", language, content: summaryResult.content, keyPoints: summaryResult.keyPoints }).returning(),

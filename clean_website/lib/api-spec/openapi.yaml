@@ -705,6 +705,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/StudyStreak"
 
+  /dashboard/tokens:
+    get:
+      operationId: getTokenBalance
+      tags: [dashboard]
+      summary: Get the current user's token balance
+      responses:
+        "200":
+          description: Token balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenBalance"
+
 components:
   schemas:
     HealthStatus:
@@ -1236,3 +1249,16 @@ components:
           format: date
         todayStudied:
           type: boolean
+
+    TokenBalance:
+      type: object
+      required: [tokensRemaining, monthlyTokenQuota, estimatedSummariesRemaining, estimatedExamsRemaining]
+      properties:
+        tokensRemaining:
+          type: integer
+        monthlyTokenQuota:
+          type: integer
+        estimatedSummariesRemaining:
+          type: integer
+        estimatedExamsRemaining:
+          type: integer

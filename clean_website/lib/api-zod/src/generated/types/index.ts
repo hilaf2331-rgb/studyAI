@@ -66,3 +66,4 @@ export * from './summaryRequest';
 export * from './summaryRequestLanguage';
 export * from './summaryRequestSummaryType';
 export * from './summarySummaryType';
+export * from './tokenBalance';

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu } from "lucide-react";
+import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [location] = useLocation();
@@ -26,6 +26,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
     { href: "/courses", label: "courses", icon: BookOpen },
     { href: "/materials", label: "materials", icon: BookText },
     { href: "/recorder", label: "הקלטות", icon: Mic },
+    { href: "/profile", label: "profile", icon: UserIcon },
   ];
 
   const CollapseIcon = open ? ChevronRight : ChevronLeft;

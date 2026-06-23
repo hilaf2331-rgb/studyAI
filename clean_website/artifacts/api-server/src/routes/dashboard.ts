@@ -1,6 +1,14 @@
 import { Router } from "express";
 import { db, coursesTable, materialsTable, flashcardsTable, examResultsTable, activityTable } from "@workspace/db";
 import { count, avg, desc, eq, and } from "drizzle-orm";
+import { getTokenBalance } from "../lib/tokens";
+
+// Rough estimated token cost of one generation of each kind, used only to
+// turn a raw token balance into a friendly "enough for ~X" estimate on the
+// frontend. Based on a typical chunk-sized material (well under
+// CHUNK_TRIGGER_CHAR_LENGTH) going through ai.ts's prompt + response.
+const ESTIMATED_TOKENS_PER_SUMMARY = 3000;
+const ESTIMATED_TOKENS_PER_EXAM = 6000;
 
 const router = Router();
 
@@ -56,6 +64,19 @@ router.get("/dashboard/study-streak", async (req, res) => {
     longestStreak: 1,
     lastStudyDate,
     todayStudied: lastStudyDate === today,
+  });
+});
+
+router.get("/dashboard/tokens", async (req, res) => {
+  const userId = req.user!.userId;
+  const balance = await getTokenBalance(userId);
+  if (!balance) return res.status(404).json({ error: "Not found" });
+
+  res.json({
+    tokensRemaining: balance.tokensRemaining,
+    monthlyTokenQuota: balance.monthlyTokenQuota,
+    estimatedSummariesRemaining: Math.floor(balance.tokensRemaining / ESTIMATED_TOKENS_PER_SUMMARY),
+    estimatedExamsRemaining: Math.floor(balance.tokensRemaining / ESTIMATED_TOKENS_PER_EXAM),
   });
 });
 

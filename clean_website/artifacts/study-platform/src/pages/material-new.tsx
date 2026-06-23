@@ -11,16 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, CheckCircle2, AlertCircle, Camera, Image as ImageIcon } from "lucide-react";
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
 
-type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "audio" | "video";
+type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "video";
 
 // "document" is a UI-only grouping over pdf/docx/pptx/xlsx -- the picker
 // shows one "Upload Academic File" tile, and the real contentType is
 // resolved from the selected file's extension in handleFileChange.
-type PickerCategory = "text" | "youtube" | "url" | "document" | "audio" | "video";
+type PickerCategory = "text" | "youtube" | "url" | "document" | "image" | "audio" | "video";
 
 const DOCUMENT_EXT_TO_CONTENT_TYPE: Record<string, ContentType> = {
   pdf: "pdf",
@@ -45,6 +45,7 @@ const PICKER_CONFIG: Record<PickerCategory, {
   url:      { icon: Link,      labelHe: "קישור",          labelEn: "Web URL",       color: "bg-green-500/10 text-green-600", acceptsFile: false },
   document: { icon: FileText,  labelHe: "מסמך אקדמי",     labelEn: "Academic File", color: "bg-amber-500/10 text-amber-600", acceptsFile: true,
     acceptAttr: ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  image:    { icon: ImageIcon, labelHe: "תמונה",          labelEn: "Photo",         color: "bg-pink-500/10 text-pink-600",   acceptsFile: true, acceptAttr: "image/*" },
   audio:    { icon: Mic,       labelHe: "הקלטה קולית",   labelEn: "Voice / Audio", color: "bg-purple-500/10 text-purple-600", acceptsFile: true, acceptAttr: "audio/*,.mp3,.m4a,.wav,.ogg,.webm" },
   video:    { icon: FileVideo, labelHe: "וידאו",          labelEn: "Video File",    color: "bg-indigo-500/10 text-indigo-600", acceptsFile: true, acceptAttr: "video/*,.mp4,.webm,.mov" },
 };
@@ -72,6 +73,7 @@ export const MaterialNewPage: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [uploadId, setUploadId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const cfg = PICKER_CONFIG[category];
 
@@ -103,6 +105,8 @@ export const MaterialNewPage: React.FC = () => {
       }
       setError("");
       setContentType(resolvedType);
+    } else if (f && category === "image") {
+      setContentType("image");
     } else if (f && category === "audio") {
       setContentType("audio");
     } else if (f && category === "video") {
@@ -214,6 +218,7 @@ export const MaterialNewPage: React.FC = () => {
                         if (cat === "text") setContentType("text");
                         else if (cat === "youtube") setContentType("youtube");
                         else if (cat === "url") setContentType("url");
+                        else if (cat === "image") setContentType("image");
                         else if (cat === "audio") setContentType("audio");
                         else if (cat === "video") setContentType("video");
                         else if (cat === "document") setContentType("pdf");
@@ -311,7 +316,65 @@ export const MaterialNewPage: React.FC = () => {
             )}
 
             {/* File upload */}
-            {cfg.acceptsFile && (
+            {cfg.acceptsFile && category === "image" && (
+              <div className="space-y-1.5">
+                <Label>{isRTL ? "צילום או בחירת תמונה" : "Take a Photo or Choose an Image"}</Label>
+                {file ? (
+                  <div
+                    onClick={() => setFile(null)}
+                    className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer border-primary bg-primary/5"
+                  >
+                    <div className="space-y-1">
+                      <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto" />
+                      <p className="font-medium text-sm">{file.name}</p>
+                      <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                      <p className="text-xs text-muted-foreground">{isRTL ? "לחץ להחליף" : "Click to replace"}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-border hover:border-muted-foreground/40 transition-colors"
+                    >
+                      <Camera className="w-7 h-7 text-muted-foreground" />
+                      <span className="text-sm font-medium">{isRTL ? "צלם תמונה" : "Take Photo"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-border hover:border-muted-foreground/40 transition-colors"
+                    >
+                      <ImageIcon className="w-7 h-7 text-muted-foreground" />
+                      <span className="text-sm font-medium">{isRTL ? "בחר מהגלריה" : "Choose from Gallery"}</span>
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {isRTL
+                    ? "התמונה תתומלל אוטומטית באמצעות Gemini — מצוין לתמונות של דפים כתובים, שקפים או לוח"
+                    : "The image will be automatically transcribed using Gemini — great for photos of notes, slides, or a whiteboard"}
+                </p>
+              </div>
+            )}
+
+            {cfg.acceptsFile && category !== "image" && (
               <div className="space-y-1.5">
                 <Label>{
                   category === "document"

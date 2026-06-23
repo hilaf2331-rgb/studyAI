@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
 import { generationRateLimiter } from "../lib/rate-limit";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 
@@ -32,14 +33,18 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
   if (!material) return res.status(404).json({ error: "Not found" });
 
+  await requireTokenBalance(userId);
+
+  const materialContent = material.extractedText || material.title;
   const result = await generateSummary({
     language: body.language as "he" | "en",
-    materialContent: material.extractedText || material.title,
+    materialContent,
     materialTitle: material.title,
     summaryType: body.summaryType,
     topic: body.topic,
     materialId: id,
   });
+  await deductTokensForGeneration(userId, materialContent, result.content);
 
   const [summary] = await db.insert(summariesTable).values({
     materialId: id,

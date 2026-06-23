@@ -8,6 +8,7 @@ import {
 import { generateQuestionsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 
@@ -44,22 +45,26 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
 
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
-  const contentLength = (material.extractedText || material.title).trim().length;
+  const materialContent = material.extractedText || material.title;
+  const contentLength = materialContent.trim().length;
   // Cap the requested count when the material is short-but-valid (between
   // MIN_CONTENT_LENGTH and SHORT_CONTENT_THRESHOLD). Asking for 10 questions
   // out of ~500-799 characters is exactly what causes Groq to duplicate
   // questions, pad with filler, or come back with an empty array.
   const questionCount = clampToContentLength(body.questionCount || 5, contentLength, "questions");
 
+  await requireTokenBalance(userId);
+
   const generated = await generateQuestionsAI({
     language: body.language as "he" | "en",
-    materialContent: material.extractedText || material.title,
+    materialContent,
     materialTitle: material.title,
     questionCount,
     questionTypes: body.questionTypes?.length ? body.questionTypes : ["open", "multiple_choice"],
     difficulty: body.difficulty || "mixed",
     materialId: id,
   });
+  await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
 
   const [set] = await db.insert(questionSetsTable).values({
     materialId: id,

@@ -8,6 +8,7 @@ import {
 import { generateFlashcardsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 
@@ -46,17 +47,21 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
   const cardTypes = body.cardTypes?.length ? body.cardTypes : ["qa", "definition"];
-  const contentLength = (material.extractedText || material.title).trim().length;
+  const materialContent = material.extractedText || material.title;
+  const contentLength = materialContent.trim().length;
   const cardCount = clampToContentLength(body.cardCount || 10, contentLength, "flashcards");
+
+  await requireTokenBalance(userId);
 
   const cards = await generateFlashcardsAI({
     language: body.language as "he" | "en",
-    materialContent: material.extractedText || material.title,
+    materialContent,
     materialTitle: material.title,
     cardCount,
     cardTypes,
     materialId: id,
   });
+  await deductTokensForGeneration(userId, materialContent, JSON.stringify(cards));
 
   const [deck] = await db.insert(flashcardDecksTable).values({
     materialId: id,

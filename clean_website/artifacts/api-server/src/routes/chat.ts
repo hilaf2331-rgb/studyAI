@@ -3,6 +3,7 @@ import { db, chatMessagesTable, materialsTable, activityTable } from "@workspace
 import { eq, and } from "drizzle-orm";
 import { GetChatHistoryParams, SendChatMessageParams, SendChatMessageBody } from "@workspace/api-zod";
 import { chatWithMaterial } from "../lib/ai";
+import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
 const router = Router();
 
@@ -45,13 +46,17 @@ router.post("/materials/:id/chat", async (req, res) => {
     content: m.content,
   }));
 
+  await requireTokenBalance(userId);
+
+  const materialContent = material.extractedText || material.title;
   const aiResponse = await chatWithMaterial(
-    material.extractedText || material.title,
+    materialContent,
     material.title,
     body.content,
     (body.language || material.language || "en") as "he" | "en",
     prevMessages,
   );
+  await deductTokensForGeneration(userId, body.content, aiResponse);
 
   const [assistantMsg] = await db.insert(chatMessagesTable).values({
     materialId: id,

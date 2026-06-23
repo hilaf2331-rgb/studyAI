@@ -6,6 +6,7 @@ import authRouter from "./routes/auth";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { RateLimitExhaustedError, SystemBlockedError } from "./lib/ai";
+import { InsufficientTokensError } from "./lib/tokens";
 import { globalRateLimiter } from "./lib/rate-limit";
 
 const app: Express = express();
@@ -77,6 +78,10 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   if (res.headersSent) return;
   if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError) {
     res.status(429).json({ error: err.message });
+    return;
+  }
+  if (err instanceof InsufficientTokensError) {
+    res.status(402).json({ error: err.message });
     return;
   }
   res.status(500).json({ error: "Internal server error. Please try again." });

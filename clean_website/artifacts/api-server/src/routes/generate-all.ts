@@ -5,6 +5,7 @@ import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitEx
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
+import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
 
 const router = Router();
 
@@ -82,6 +83,8 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     const targetCards = maxFlashcards;
     const targetQuestions = maxQuestions;
 
+    await requireTokenBalance(userId);
+
     // Run all three generations in parallel, each with its own timeout, and
     // never let one task's failure take down the others. We get back
     // settled results instead of throwing, so we can decide per-task whether
@@ -145,6 +148,12 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
 
   const flashResult = flashSettled.status === "fulfilled" ? flashSettled.value : [];
   const questionResult = questionSettled.status === "fulfilled" ? questionSettled.value : [];
+
+  await deductTokensForGeneration(
+    userId,
+    content,
+    summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
+  );
 
     const [[summary], [deck], [qSet]] = await Promise.all([
       db.insert(summariesTable).values({
@@ -227,6 +236,10 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     // an empty body / dropped connection.
     logger.error({ err, materialId: req.params.id }, "generate-all: unhandled failure");
     if (!res.headersSent) {
+      if (err instanceof InsufficientTokensError) {
+        res.status(402).json({ error: err.message });
+        return;
+      }
       res.status(500).json({ error: "Something went wrong while generating your study kit. Please try again." });
     }
   }

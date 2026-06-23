@@ -23,6 +23,7 @@ import { ExamResultPage } from "@/pages/exam-result";
 import { ChatPage } from "@/pages/chat";
 import { AuthPage } from "@/pages/auth";
 import { RecorderPage } from "@/pages/recorder";
+import { ProfilePage } from "@/pages/profile";
 
 import { getStoredToken } from "@/lib/auth";
 
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="/exams/:id/result/:resultId" component={ExamResultPage} />
         <Route path="/exams/:id" component={ExamTakePage} />
         <Route path="/recorder" component={RecorderPage} />
+        <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>
     </SidebarLayout>

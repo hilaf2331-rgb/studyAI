@@ -44,7 +44,8 @@ import type {
   QuestionSet,
   StudyStreak,
   Summary,
-  SummaryRequest
+  SummaryRequest,
+  TokenBalance
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -2732,6 +2733,83 @@ export function useGetStudyStreak<TData = Awaited<ReturnType<typeof getStudyStre
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStudyStreakQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetTokenBalanceUrl = () => {
+
+
+
+
+  return `/api/dashboard/tokens`
+}
+
+/**
+ * @summary Get the current user's token balance
+ */
+export const getTokenBalance = async ( options?: RequestInit): Promise<TokenBalance> => {
+
+  return customFetch<TokenBalance>(getGetTokenBalanceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTokenBalanceQueryKey = () => {
+    return [
+    `/api/dashboard/tokens`
+    ] as const;
+    }
+
+
+export const getGetTokenBalanceQueryOptions = <TData = Awaited<ReturnType<typeof getTokenBalance>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTokenBalance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTokenBalanceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTokenBalance>>> = ({ signal }) => getTokenBalance({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTokenBalance>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTokenBalanceQueryResult = NonNullable<Awaited<ReturnType<typeof getTokenBalance>>>
+export type GetTokenBalanceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the current user's token balance
+ */
+
+export function useGetTokenBalance<TData = Awaited<ReturnType<typeof getTokenBalance>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTokenBalance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTokenBalanceQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

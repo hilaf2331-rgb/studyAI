@@ -6,6 +6,8 @@ import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, Delete
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
+import { generationRateLimiter } from "../lib/rate-limit";
+import { sanitizeExtractedText } from "../lib/sanitize";
 
 const router = Router();
 
@@ -61,7 +63,7 @@ router.get("/materials", async (req, res) => {
   res.json(withCounts.filter(Boolean));
 });
 
-router.post("/materials", upload.single("file"), async (req, res) => {
+router.post("/materials", generationRateLimiter, upload.single("file"), async (req, res) => {
   const userId = req.user!.userId;
 
   let body: any;
@@ -75,7 +77,7 @@ router.post("/materials", upload.single("file"), async (req, res) => {
     }
   }
 
-  const title = body.title || "Untitled Material";
+  const title = sanitizeExtractedText(body.title || "Untitled Material");
   const contentType = body.contentType || "text";
   const language = body.language || "he";
   const courseId = body.courseId ? Number(body.courseId) : undefined;
@@ -91,7 +93,7 @@ router.post("/materials", upload.single("file"), async (req, res) => {
       })
     : undefined;
 
-  let extractedText = body.text || "";
+  let extractedText = body.text ? sanitizeExtractedText(body.text) : "";
   let duration: number | undefined;
   let processingError: string | undefined;
 

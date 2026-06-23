@@ -3,6 +3,7 @@ import { groq, AUDIO_MODEL } from "./ai";
 import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
+import { sanitizeExtractedText } from "./sanitize";
 
 export type ExtractedContent = {
   text: string;
@@ -33,7 +34,7 @@ export async function extractYouTube(url: string, onProgress?: ProgressCallback)
     throw new Error("No transcript available for this video");
   }
 
-  const text = transcript.map(t => t.text).join(" ").replace(/\s+/g, " ").trim();
+  const text = sanitizeExtractedText(transcript.map(t => t.text).join(" "));
   const duration = transcript.reduce((sum, t) => sum + (t.duration || 0), 0);
 
   onProgress?.(100);
@@ -55,7 +56,7 @@ export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
   const { getDocumentProxy, extractText } = await import("unpdf");
   const doc = await getDocumentProxy(new Uint8Array(buffer));
   const { text: rawText, totalPages } = await extractText(doc, { mergePages: true });
-  const text = rawText.replace(/\s+/g, " ").trim();
+  const text = sanitizeExtractedText(rawText);
 
   console.log(`extractPDF: extracted ${text.length} chars from ${totalPages} pages`);
   if (!text) {
@@ -115,7 +116,7 @@ export async function transcribeAudio(
   const result = (await response.json()) as { text: string; duration?: number };
   onProgress?.(100);
   return {
-    text: result.text || "",
+    text: sanitizeExtractedText(result.text || ""),
     duration: result.duration ? Math.round(result.duration) : undefined,
   };
 }
@@ -150,15 +151,17 @@ export async function extractFromUrl(url: string, onProgress?: ProgressCallback)
   const mainMatch = withoutBoilerplate.match(/<(article|main)[^>]*>([\s\S]*?)<\/\1>/i);
   const contentHtml = mainMatch ? mainMatch[2] : withoutBoilerplate;
 
-  const text = contentHtml
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 20000);
+  // Strip tags first, then sanitize the decoded entities (&lt;script&gt; etc.
+  // unescape to literal "<script>" text below) so anything that round-trips
+  // back into tag-shaped text is stripped again rather than stored verbatim.
+  const text = sanitizeExtractedText(
+    contentHtml
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+  ).slice(0, 20000);
 
   if (!text) {
     throw new Error("No readable text content found at this URL");

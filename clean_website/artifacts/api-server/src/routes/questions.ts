@@ -7,6 +7,7 @@ import {
 } from "@workspace/api-zod";
 import { generateQuestionsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { generationRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get("/materials/:id/question-sets", async (req, res) => {
   res.json(withQ.filter(Boolean));
 });
 
-router.post("/materials/:id/question-sets", async (req, res) => {
+router.post("/materials/:id/question-sets", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = GenerateQuestionsParams.parse({ id: Number(req.params.id) });
   const body = GenerateQuestionsBody.parse(req.body);

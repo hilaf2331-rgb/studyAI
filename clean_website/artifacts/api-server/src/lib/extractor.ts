@@ -66,6 +66,32 @@ export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
   return { text };
 }
 
+const OFFICE_FILE_TYPES = ["docx", "pptx", "xlsx"] as const;
+type OfficeFileType = (typeof OFFICE_FILE_TYPES)[number];
+
+// officeparser reads the OOXML zip structure with pure JS (no native deps,
+// no macro execution) and never touches embedded VBA/scripts -- it only
+// walks the document/slide/sheet XML for text nodes.
+export async function extractOffice(buffer: Buffer, fileType: OfficeFileType, onProgress?: ProgressCallback): Promise<ExtractedContent> {
+  if (!buffer || buffer.length === 0) {
+    throw new Error(`Received an empty ${fileType.toUpperCase()} file buffer`);
+  }
+
+  onProgress?.(20);
+  const { OfficeParser } = await import("officeparser");
+  const ast = await OfficeParser.parseOffice(buffer, { fileType, ocr: false });
+  onProgress?.(70);
+  const { value: rawText } = await ast.to("text");
+  const text = sanitizeExtractedText(rawText);
+
+  if (!text) {
+    throw new Error(`${fileType.toUpperCase()} parsed successfully but contained no extractable text`);
+  }
+
+  onProgress?.(100);
+  return { text };
+}
+
 export async function transcribeAudio(
   buffer: Buffer,
   mimeType: string,

@@ -781,7 +781,7 @@ components:
           type: string
         contentType:
           type: string
-          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+          enum: [text, url, youtube, pdf, docx, pptx, xlsx, image, audio, video]
         status:
           type: string
           enum: [pending, processing, ready, error]
@@ -837,7 +837,7 @@ components:
           type: integer
         contentType:
           type: string
-          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+          enum: [text, url, youtube, pdf, docx, pptx, xlsx, image, audio, video]
         language:
           type: string
           enum: [he, en, mixed]

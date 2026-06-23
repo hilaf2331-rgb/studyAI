@@ -3,7 +3,7 @@ import multer from "multer";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
 import { eq, count, and } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams } from "@workspace/api-zod";
-import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl } from "../lib/extractor";
+import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -107,6 +107,9 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
       extractedText = result.text;
     } else if (contentType === "pdf" && req.file) {
       const result = await extractPDF(req.file.buffer);
+      extractedText = result.text;
+    } else if ((contentType === "docx" || contentType === "pptx" || contentType === "xlsx") && req.file) {
+      const result = await extractOffice(req.file.buffer, contentType, reportProgress);
       extractedText = result.text;
     } else if ((contentType === "audio" || contentType === "video") && req.file) {
       const result = await transcribeAudio(

@@ -3,6 +3,7 @@ import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTabl
 import { eq, and } from "drizzle-orm";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
 import { logger } from "../lib/logger";
+import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 
 const router = Router();
 
@@ -59,18 +60,26 @@ router.post("/materials/:id/generate-all", async (req, res) => {
     // Length & sufficiency check — run BEFORE any Groq calls. There is no
     // point burning API calls (and risking hallucinated filler content) on
     // material that's too thin to generate a meaningful study kit from.
-    const MIN_CONTENT_LENGTH = 150;
-    if (content.length < MIN_CONTENT_LENGTH) {
+    // Uses the same 500-char threshold enforced on upload and on the
+    // single-item summary/quiz generation routes, so the rule is consistent
+    // everywhere in the app.
+    if (content.trim().length < MIN_CONTENT_LENGTH) {
       return res.status(400).json({
         error: "insufficient_content",
-        message: "Hey! The provided material is too short to generate a full study kit. Please provide more content to ensure accuracy.",
+        message: insufficientContentMessage(language),
+        minLength: MIN_CONTENT_LENGTH,
+        receivedLength: content.trim().length,
       });
     }
 
-    // חישוב דינמי: אם הטקסט קצר מאוד (פחות מ-600 תווים), נבקש פחות פריטים כדי למנוע שכפולים וחרטוטים
-    const isShortText = content.length < 600;
-    const targetCards = isShortText ? 6 : 15;
-    const targetQuestions = isShortText ? 5 : 10;
+    // Dynamic scaling: short-but-valid material (>= 500 chars but
+    // < SHORT_CONTENT_THRESHOLD) gets fewer requested cards/questions, so
+    // Groq doesn't duplicate, pad, or come back empty. Uses the same
+    // helper (and the same 800-char threshold) as the single-item
+    // flashcards/questions routes, so behavior is consistent everywhere.
+    const { maxFlashcards, maxQuestions } = getDynamicGenerationLimits(content.length);
+    const targetCards = maxFlashcards;
+    const targetQuestions = maxQuestions;
 
     // Run all three generations in parallel, each with its own timeout, and
     // never let one task's failure take down the others. We get back

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
-import { useListCourses, getListMaterialsQueryKey } from "@workspace/api-client-react";
+import { useListCourses, getListMaterialsQueryKey, useGetUploadProgress, getGetUploadProgressQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -53,9 +53,21 @@ export const MaterialNewPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [uploadId, setUploadId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const cfg = TYPE_CONFIG[contentType];
+
+  const { data: uploadProgress } = useGetUploadProgress(uploadId ?? "", {
+    query: {
+      enabled: !!uploadId && isSubmitting,
+      refetchInterval: uploadId && isSubmitting ? 800 : false,
+      queryKey: getGetUploadProgressQueryKey(uploadId ?? ""),
+    },
+  });
+  const percent = uploadProgress?.stage === "extracting" || uploadProgress?.stage === "error"
+    ? uploadProgress.percentage
+    : (isSubmitting ? 0 : null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -74,6 +86,8 @@ export const MaterialNewPage: React.FC = () => {
       setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
     }
 
+    const newUploadId = crypto.randomUUID();
+    setUploadId(newUploadId);
     setIsSubmitting(true);
     try {
       const token = getStoredToken();
@@ -85,6 +99,7 @@ export const MaterialNewPage: React.FC = () => {
         fd.append("contentType", contentType);
         fd.append("language", language);
         if (courseId) fd.append("courseId", courseId);
+        fd.append("uploadId", newUploadId);
         fd.append("file", file);
 
         response = await fetch(apiUrl("/api/materials"), {
@@ -106,6 +121,7 @@ export const MaterialNewPage: React.FC = () => {
             courseId: courseId ? Number(courseId) : undefined,
             text: contentType === "text" ? text : undefined,
             sourceUrl: (contentType === "youtube" || contentType === "url") ? sourceUrl : undefined,
+            uploadId: newUploadId,
           }),
         });
       }
@@ -122,6 +138,7 @@ export const MaterialNewPage: React.FC = () => {
       setError(err.message || "Something went wrong");
     } finally {
       setIsSubmitting(false);
+      setUploadId(null);
     }
   };
 
@@ -312,12 +329,28 @@ export const MaterialNewPage: React.FC = () => {
                 : <><Upload className="w-4 h-4 me-2" />{isRTL ? "הוסף חומר" : "Add Material"}</>}
             </Button>
 
-            {isSubmitting && (contentType === "youtube" || cfg.acceptsFile) && (
-              <p className="text-center text-xs text-muted-foreground animate-pulse">
-                {isRTL
-                  ? "מחלץ תוכן וממיר... זה עשוי לקחת מספר שניות"
-                  : "Extracting and processing content... this may take a few seconds"}
-              </p>
+            {isSubmitting && (contentType === "youtube" || contentType === "url" || cfg.acceptsFile) && (
+              <div className="space-y-1.5">
+                {percent !== null ? (
+                  <>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{ width: `${Math.max(percent, 4)}%` }}
+                      />
+                    </div>
+                    <p className="text-center text-xs text-muted-foreground">
+                      {isRTL ? `מחלץ תוכן... ${percent}%` : `Extracting content... ${percent}%`}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-center text-xs text-muted-foreground animate-pulse">
+                    {isRTL
+                      ? "מחלץ תוכן וממיר... זה עשוי לקחת מספר שניות"
+                      : "Extracting and processing content... this may take a few seconds"}
+                  </p>
+                )}
+              </div>
             )}
           </form>
         </CardContent>

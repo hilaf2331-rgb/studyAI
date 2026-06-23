@@ -882,6 +882,83 @@ export function useGetMaterialProgress<TData = Awaited<ReturnType<typeof getMate
 
 
 
+export const getGetUploadProgressUrl = (uploadId: string,) => {
+
+
+
+
+  return `/api/materials/upload-progress/${uploadId}`
+}
+
+/**
+ * @summary Poll extraction progress for an in-flight material upload, before the material row exists
+ */
+export const getUploadProgress = async (uploadId: string, options?: RequestInit): Promise<GenerationProgress> => {
+
+  return customFetch<GenerationProgress>(getGetUploadProgressUrl(uploadId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUploadProgressQueryKey = (uploadId: string,) => {
+    return [
+    `/api/materials/upload-progress/${uploadId}`
+    ] as const;
+    }
+
+
+export const getGetUploadProgressQueryOptions = <TData = Awaited<ReturnType<typeof getUploadProgress>>, TError = ErrorType<unknown>>(uploadId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUploadProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUploadProgressQueryKey(uploadId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUploadProgress>>> = ({ signal }) => getUploadProgress(uploadId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(uploadId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUploadProgress>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUploadProgressQueryResult = NonNullable<Awaited<ReturnType<typeof getUploadProgress>>>
+export type GetUploadProgressQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Poll extraction progress for an in-flight material upload, before the material row exists
+ */
+
+export function useGetUploadProgress<TData = Awaited<ReturnType<typeof getUploadProgress>>, TError = ErrorType<unknown>>(
+ uploadId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUploadProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUploadProgressQueryOptions(uploadId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getListSummariesUrl = (id: number,) => {
 
 

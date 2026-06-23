@@ -222,6 +222,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenerationProgress"
 
+  /materials/upload-progress/{uploadId}:
+    get:
+      operationId: getUploadProgress
+      tags: [materials]
+      summary: Poll extraction progress for an in-flight material upload, before the material row exists
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Extraction progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationProgress"
+
   # ── Summaries ─────────────────────────────────────────────────────────────
   /materials/{id}/summaries:
     get:
@@ -805,7 +824,7 @@ components:
           type: integer
         stage:
           type: string
-          enum: [chunking, done, idle]
+          enum: [chunking, extracting, done, idle, error]
 
     MaterialInput:
       type: object
@@ -826,6 +845,9 @@ components:
           type: string
         sourceUrl:
           type: string
+        uploadId:
+          type: string
+          description: Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight.
 
     # ── Summary ──────────────────────────────────────────────────────────────
     Summary:

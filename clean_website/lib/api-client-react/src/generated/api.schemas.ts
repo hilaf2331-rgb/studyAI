@@ -106,8 +106,10 @@ export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeo
 
 export const GenerationProgressStage = {
   chunking: 'chunking',
+  extracting: 'extracting',
   done: 'done',
   idle: 'idle',
+  error: 'error',
 } as const;
 
 export interface GenerationProgress {
@@ -149,6 +151,8 @@ export interface MaterialInput {
   language?: MaterialInputLanguage;
   text?: string;
   sourceUrl?: string;
+  /** Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight. */
+  uploadId?: string;
 }
 
 export type SummarySummaryType = typeof SummarySummaryType[keyof typeof SummarySummaryType];

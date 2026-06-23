@@ -9,6 +9,8 @@ export type ExtractedContent = {
   duration?: number;
 };
 
+export type ProgressCallback = (percentage: number) => void;
+
 function getYouTubeId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/\s]{11})/,
@@ -21,10 +23,11 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
-export async function extractYouTube(url: string): Promise<ExtractedContent> {
+export async function extractYouTube(url: string, onProgress?: ProgressCallback): Promise<ExtractedContent> {
   const videoId = getYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube URL");
 
+  onProgress?.(20);
   const transcript = await YoutubeTranscript.fetchTranscript(videoId);
   if (!transcript || transcript.length === 0) {
     throw new Error("No transcript available for this video");
@@ -33,6 +36,7 @@ export async function extractYouTube(url: string): Promise<ExtractedContent> {
   const text = transcript.map(t => t.text).join(" ").replace(/\s+/g, " ").trim();
   const duration = transcript.reduce((sum, t) => sum + (t.duration || 0), 0);
 
+  onProgress?.(100);
   return { text, duration: Math.round(duration) };
 }
 
@@ -64,7 +68,8 @@ export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
 export async function transcribeAudio(
   buffer: Buffer,
   mimeType: string,
-  filename: string
+  filename: string,
+  onProgress?: ProgressCallback
 ): Promise<ExtractedContent> {
   const form = new FormData();
   form.append("file", buffer, {
@@ -75,14 +80,32 @@ export async function transcribeAudio(
   form.append("response_format", "verbose_json");
   form.append("language", "he");
 
-  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      ...form.getHeaders(),
-    },
-    body: form,
-  });
+  onProgress?.(10);
+
+  // Whisper's response only arrives once transcription is fully done -- there's
+  // no native streaming progress -- so we simulate a smooth climb from 10% to
+  // 90% while the request is in flight, and snap to 100% once it resolves.
+  let simulatedPercentage = 10;
+  const ticker = onProgress
+    ? setInterval(() => {
+        simulatedPercentage = Math.min(simulatedPercentage + 5, 90);
+        onProgress(simulatedPercentage);
+      }, 1500)
+    : undefined;
+
+  let response;
+  try {
+    response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        ...form.getHeaders(),
+      },
+      body: form,
+    });
+  } finally {
+    if (ticker) clearInterval(ticker);
+  }
 
   if (!response.ok) {
     const errText = await response.text();
@@ -90,6 +113,7 @@ export async function transcribeAudio(
   }
 
   const result = (await response.json()) as { text: string; duration?: number };
+  onProgress?.(100);
   return {
     text: result.text || "",
     duration: result.duration ? Math.round(result.duration) : undefined,
@@ -102,13 +126,15 @@ export async function transcribeAudio(
 // either, since some sites nest a sidebar/ad block inside their <main>.
 const BOILERPLATE_TAGS = ["script", "style", "noscript", "iframe", "svg", "form", "nav", "header", "footer", "aside", "button"];
 
-export async function extractFromUrl(url: string): Promise<ExtractedContent> {
+export async function extractFromUrl(url: string, onProgress?: ProgressCallback): Promise<ExtractedContent> {
+  onProgress?.(20);
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyAI/1.0)" },
     redirect: "follow",
   });
   if (!res.ok) throw new Error(`Failed to fetch URL: ${res.status}`);
   const html = await res.text();
+  onProgress?.(60);
 
   const withoutComments = html.replace(/<!--[\s\S]*?-->/g, "");
   const withoutBoilerplate = BOILERPLATE_TAGS.reduce(
@@ -138,5 +164,6 @@ export async function extractFromUrl(url: string): Promise<ExtractedContent> {
     throw new Error("No readable text content found at this URL");
   }
 
+  onProgress?.(100);
   return { text };
 }

@@ -5,7 +5,7 @@ import { eq, count, and } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
-import { getGenerationProgress } from "../lib/progress";
+import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 
 const router = Router();
 
@@ -80,6 +80,16 @@ router.post("/materials", upload.single("file"), async (req, res) => {
   const language = body.language || "he";
   const courseId = body.courseId ? Number(body.courseId) : undefined;
   const sourceUrl = body.sourceUrl || undefined;
+  const uploadId = body.uploadId || undefined;
+
+  const reportProgress = uploadId
+    ? (percentage: number) => setGenerationProgress(uploadId, {
+        currentChunk: 0,
+        totalChunks: 0,
+        percentage,
+        stage: "extracting",
+      })
+    : undefined;
 
   let extractedText = body.text || "";
   let duration: number | undefined;
@@ -87,11 +97,11 @@ router.post("/materials", upload.single("file"), async (req, res) => {
 
   try {
     if (contentType === "youtube" && sourceUrl) {
-      const result = await extractYouTube(sourceUrl);
+      const result = await extractYouTube(sourceUrl, reportProgress);
       extractedText = result.text;
       duration = result.duration;
     } else if (contentType === "url" && sourceUrl) {
-      const result = await extractFromUrl(sourceUrl);
+      const result = await extractFromUrl(sourceUrl, reportProgress);
       extractedText = result.text;
     } else if (contentType === "pdf" && req.file) {
       const result = await extractPDF(req.file.buffer);
@@ -100,17 +110,27 @@ router.post("/materials", upload.single("file"), async (req, res) => {
       const result = await transcribeAudio(
         req.file.buffer,
         req.file.mimetype,
-        req.file.originalname
+        req.file.originalname,
+        reportProgress
       );
       extractedText = result.text;
       duration = result.duration;
     } else if (!extractedText && sourceUrl) {
       extractedText = sourceUrl;
+    } else {
+      reportProgress?.(100);
     }
   } catch (err: any) {
     req.log.error({ err }, "Content extraction failed");
     processingError = err.message || "Extraction failed";
     extractedText = sourceUrl || body.text || `[Extraction failed: ${processingError}]`;
+    if (uploadId) {
+      setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 100, stage: "error" });
+    }
+  }
+
+  if (uploadId && !processingError) {
+    clearGenerationProgress(uploadId);
   }
 
   const status = processingError ? "error" : "ready";
@@ -150,6 +170,11 @@ router.get("/materials/:id", async (req, res) => {
   const material = await getMaterialWithCounts(id, userId);
   if (!material) return res.status(404).json({ error: "Not found" });
   res.json(material);
+});
+
+router.get("/materials/upload-progress/:uploadId", async (req, res) => {
+  const progress = getGenerationProgress(req.params.uploadId);
+  res.json(progress ?? { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "idle" });
 });
 
 router.get("/materials/:id/progress", async (req, res) => {

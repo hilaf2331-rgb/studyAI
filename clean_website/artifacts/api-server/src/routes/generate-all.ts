@@ -6,6 +6,7 @@ import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
+import { setGenerationProgress } from "../lib/progress";
 
 const router = Router();
 
@@ -34,128 +35,85 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-router.post("/materials/:id/generate-all", generationRateLimiter, async (req, res) => {
-  // EVERYTHING below is wrapped in one try/catch. This is the actual fix for
-  // "Unexpected end of JSON input": previously, an unhandled throw/rejection
-  // anywhere above the inner try block (auth, DB lookup, param parsing) would
-  // crash the request without ever calling res.json(), and Express 4 does not
-  // auto-catch async handler errors — the socket just closes with an empty
-  // body. Now, no matter where something fails, we always send valid JSON.
+type MaterialRow = typeof materialsTable.$inferSelect;
+
+// The actual Gemini + DB-insert pipeline, run after the 202 has already gone
+// out to the client. Nothing in here can hold an HTTP response open, so
+// however long Gemini takes, Render's proxy never sees it -- the frontend
+// finds out via polling GET /materials/:id/progress instead. Every exit path
+// (success or failure) ends by writing a terminal "done"/"error" progress
+// entry, since that's the only signal the polling frontend ever gets.
+async function runGenerateAll(material: MaterialRow, userId: number, content: string): Promise<void> {
+  const materialId = material.id;
+  const language = "he" as const;
+
   try {
-    const userId = req.user?.userId;
-    if (!userId) {
-      return res.status(401).json({ error: "Not authenticated." });
-    }
-
-    const materialId = Number(req.params.id);
-    if (isNaN(materialId)) {
-      return res.status(400).json({ error: "Invalid material id" });
-    }
-
-    const [material] = await db.select().from(materialsTable)
-      .where(and(eq(materialsTable.id, materialId), eq(materialsTable.userId, userId)));
-    if (!material) {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    const content = material.extractedText || material.title;
-    const language = "he" as const;
-
-    // Length & sufficiency check — run BEFORE any Groq calls. There is no
-    // point burning API calls (and risking hallucinated filler content) on
-    // material that's too thin to generate a meaningful study kit from.
-    // Uses the same 500-char threshold enforced on upload and on the
-    // single-item summary/quiz generation routes, so the rule is consistent
-    // everywhere in the app.
-    if (content.trim().length < MIN_CONTENT_LENGTH) {
-      return res.status(400).json({
-        error: "insufficient_content",
-        message: insufficientContentMessage(language),
-        minLength: MIN_CONTENT_LENGTH,
-        receivedLength: content.trim().length,
-      });
-    }
-
-    // Dynamic scaling: short-but-valid material (>= 500 chars but
-    // < SHORT_CONTENT_THRESHOLD) gets fewer requested cards/questions, so
-    // Groq doesn't duplicate, pad, or come back empty. Uses the same
-    // helper (and the same 800-char threshold) as the single-item
-    // flashcards/questions routes, so behavior is consistent everywhere.
     const { maxFlashcards, maxQuestions } = getDynamicGenerationLimits(content.length);
-    const targetCards = maxFlashcards;
-    const targetQuestions = maxQuestions;
 
-    await requireTokenBalance(userId);
-
-    // Run all three generations in parallel, each with its own timeout, and
-    // never let one task's failure take down the others. We get back
-    // settled results instead of throwing, so we can decide per-task whether
-    // to fall back to an empty result or fail the whole request.
     const [summarySettled, flashSettled, questionSettled] = await Promise.allSettled([
-    withTimeout(
-      generateSummary({
-        language,
-        materialContent: content,
-        materialTitle: material.title,
-        summaryType: "detailed",
-      }),
-      AI_TASK_TIMEOUT_MS,
-      "generateSummary",
-    ),
-    withTimeout(
-      generateFlashcardsAI({
-        language,
-        materialContent: content,
-        materialTitle: material.title,
-        cardCount: targetCards, // עבר לחישוב דינמי וחכם!
-        cardTypes: ["definition", "qa", "formula", "concept"],
-      }),
-      AI_TASK_TIMEOUT_MS,
-      "generateFlashcardsAI",
-    ),
-    withTimeout(
-      generateQuestionsAI({
-        language,
-        materialContent: content,
-        materialTitle: material.title,
-        questionCount: targetQuestions, // עבר לחישוב דינמי וחכם!
-        questionTypes: ["multiple_choice", "true_false"],
-        difficulty: "mixed",
-      }),
-      AI_TASK_TIMEOUT_MS,
-      "generateQuestionsAI",
-    ),
-  ]);
+      withTimeout(
+        generateSummary({
+          language,
+          materialContent: content,
+          materialTitle: material.title,
+          summaryType: "detailed",
+        }),
+        AI_TASK_TIMEOUT_MS,
+        "generateSummary",
+      ),
+      withTimeout(
+        generateFlashcardsAI({
+          language,
+          materialContent: content,
+          materialTitle: material.title,
+          cardCount: maxFlashcards,
+          cardTypes: ["definition", "qa", "formula", "concept"],
+        }),
+        AI_TASK_TIMEOUT_MS,
+        "generateFlashcardsAI",
+      ),
+      withTimeout(
+        generateQuestionsAI({
+          language,
+          materialContent: content,
+          materialTitle: material.title,
+          questionCount: maxQuestions,
+          questionTypes: ["multiple_choice", "true_false"],
+          difficulty: "mixed",
+        }),
+        AI_TASK_TIMEOUT_MS,
+        "generateQuestionsAI",
+      ),
+    ]);
 
-  // If the summary itself failed, there's nothing useful to save — bail
-  // out with a clear JSON error instead of a half-built result.
-  if (summarySettled.status === "rejected") {
-    logger.error({ err: summarySettled.reason, materialId }, "generate-all: summary generation failed");
-    if (summarySettled.reason instanceof RateLimitExhaustedError || summarySettled.reason instanceof SystemBlockedError) {
-      return res.status(429).json({ error: summarySettled.reason.message });
+    if (summarySettled.status === "rejected") {
+      logger.error({ err: summarySettled.reason, materialId }, "generate-all: summary generation failed");
+      const reason = summarySettled.reason;
+      const message =
+        reason instanceof RateLimitExhaustedError || reason instanceof SystemBlockedError
+          ? reason.message
+          : "Failed to generate summary. Please try again.";
+      setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
+      return;
     }
-    return res.status(502).json({
-      error: "Failed to generate summary. Please try again.",
-    });
-  }
 
-  const summaryResult = summarySettled.value;
+    const summaryResult = summarySettled.value;
 
-  if (flashSettled.status === "rejected") {
-    logger.warn({ err: flashSettled.reason, materialId }, "generate-all: flashcard generation failed, continuing without it");
-  }
-  if (questionSettled.status === "rejected") {
-    logger.warn({ err: questionSettled.reason, materialId }, "generate-all: question generation failed, continuing without it");
-  }
+    if (flashSettled.status === "rejected") {
+      logger.warn({ err: flashSettled.reason, materialId }, "generate-all: flashcard generation failed, continuing without it");
+    }
+    if (questionSettled.status === "rejected") {
+      logger.warn({ err: questionSettled.reason, materialId }, "generate-all: question generation failed, continuing without it");
+    }
 
-  const flashResult = flashSettled.status === "fulfilled" ? flashSettled.value : [];
-  const questionResult = questionSettled.status === "fulfilled" ? questionSettled.value : [];
+    const flashResult = flashSettled.status === "fulfilled" ? flashSettled.value : [];
+    const questionResult = questionSettled.status === "fulfilled" ? questionSettled.value : [];
 
-  await deductTokensForGeneration(
-    userId,
-    content,
-    summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
-  );
+    await deductTokensForGeneration(
+      userId,
+      content,
+      summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
+    );
 
     const [[summary], [deck], [qSet]] = await Promise.all([
       db.insert(summariesTable).values({
@@ -214,29 +172,84 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
       }),
     ]);
 
-    const payload = {
-      summary: { id: summary?.id, keyPointCount: summaryResult.keyPoints.length },
-      deck: { id: deck?.id, cardCount: flashResult.length },
-      questionSet: { id: qSet?.id, questionCount: questionResult.length },
-      partialFailure: flashSettled.status === "rejected" || questionSettled.status === "rejected",
-    };
-
-    // Validation: never send an empty/incomplete body. If any of the three
-    // inserts didn't actually come back with an id (e.g. .returning() gave
-    // back an empty array for some driver-specific reason), treat it as a
-    // failure instead of silently shipping a payload the client can't use.
-    if (!payload.summary.id || !payload.deck.id || !payload.questionSet.id) {
-      logger.error({ payload, materialId }, "generate-all: incomplete payload after insert, refusing to send");
-      return res.status(500).json({ error: "Generated content was incomplete. Please try again." });
+    if (!summary?.id || !deck?.id || !qSet?.id) {
+      logger.error({ materialId }, "generate-all: incomplete insert result, reporting failure");
+      setGenerationProgress(materialId, {
+        currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+        error: "Generated content was incomplete. Please try again.",
+      });
+      return;
     }
 
-    return res.status(201).json(payload);
+    setGenerationProgress(materialId, {
+      currentChunk: 0,
+      totalChunks: 0,
+      percentage: 100,
+      stage: "done",
+      result: {
+        summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
+        deck: { id: deck.id, cardCount: flashResult.length },
+        questionSet: { id: qSet.id, questionCount: questionResult.length },
+        partialFailure: flashSettled.status === "rejected" || questionSettled.status === "rejected",
+      },
+    });
   } catch (err) {
-    // This catch wraps the WHOLE handler — auth, param parsing, the DB
-    // lookup, the Groq calls, and the inserts. Whatever breaks, anywhere,
-    // the client always gets valid JSON and a real status code instead of
-    // an empty body / dropped connection.
-    logger.error({ err, materialId: req.params.id }, "generate-all: unhandled failure");
+    logger.error({ err, materialId }, "generate-all: unhandled background failure");
+    const message = err instanceof InsufficientTokensError
+      ? err.message
+      : "Something went wrong while generating your study kit. Please try again.";
+    setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
+  }
+}
+
+// Fire-and-forget by design: Render's free-tier proxy cuts the connection
+// well before a multi-Gemini-call pipeline can finish, turning an in-flight
+// generation into a bare 502 regardless of what our own retry/timeout logic
+// decides. So this handler only does the fast, synchronous checks (auth,
+// lookup, content length, token balance) before responding -- the actual
+// generation runs after the response is sent, and the frontend finds out
+// how it went by polling GET /materials/:id/progress.
+router.post("/materials/:id/generate-all", generationRateLimiter, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated." });
+    }
+
+    const materialId = Number(req.params.id);
+    if (isNaN(materialId)) {
+      return res.status(400).json({ error: "Invalid material id" });
+    }
+
+    const [material] = await db.select().from(materialsTable)
+      .where(and(eq(materialsTable.id, materialId), eq(materialsTable.userId, userId)));
+    if (!material) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    const content = material.extractedText || material.title;
+    const language = "he";
+
+    // Length & sufficiency check — run BEFORE any Gemini calls. There is no
+    // point burning API calls (and risking hallucinated filler content) on
+    // material that's too thin to generate a meaningful study kit from.
+    if (content.trim().length < MIN_CONTENT_LENGTH) {
+      return res.status(400).json({
+        error: "insufficient_content",
+        message: insufficientContentMessage(language),
+        minLength: MIN_CONTENT_LENGTH,
+        receivedLength: content.trim().length,
+      });
+    }
+
+    await requireTokenBalance(userId);
+
+    setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "running" });
+    res.status(202).json({ materialId, status: "running" });
+
+    void runGenerateAll(material, userId, content);
+  } catch (err) {
+    logger.error({ err, materialId: req.params.id }, "generate-all: failed before dispatch");
     if (!res.headersSent) {
       if (err instanceof InsufficientTokensError) {
         res.status(402).json({ error: err.message });

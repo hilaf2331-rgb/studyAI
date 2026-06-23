@@ -12,6 +12,7 @@ export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeo
 export const GenerationProgressStage = {
   chunking: 'chunking',
   extracting: 'extracting',
+  running: 'running',
   done: 'done',
   idle: 'idle',
   error: 'error',

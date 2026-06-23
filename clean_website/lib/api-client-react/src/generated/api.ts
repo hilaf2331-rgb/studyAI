@@ -815,7 +815,7 @@ export const getGetMaterialProgressUrl = (id: number,) => {
 }
 
 /**
- * @summary Poll chunked-generation progress for a material
+ * @summary Poll chunked-generation progress for a material, or the status of a background generate-all job for it
  */
 export const getMaterialProgress = async (id: number, options?: RequestInit): Promise<GenerationProgress> => {
 
@@ -862,7 +862,7 @@ export type GetMaterialProgressQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Poll chunked-generation progress for a material
+ * @summary Poll chunked-generation progress for a material, or the status of a background generate-all job for it
  */
 
 export function useGetMaterialProgress<TData = Awaited<ReturnType<typeof getMaterialProgress>>, TError = ErrorType<unknown>>(

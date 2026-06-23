@@ -108,16 +108,43 @@ export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeo
 export const GenerationProgressStage = {
   chunking: 'chunking',
   extracting: 'extracting',
+  running: 'running',
   done: 'done',
   idle: 'idle',
   error: 'error',
 } as const;
+
+export type GenerateAllResultSummary = {
+  id: number;
+  keyPointCount: number;
+};
+
+export type GenerateAllResultDeck = {
+  id: number;
+  cardCount: number;
+};
+
+export type GenerateAllResultQuestionSet = {
+  id: number;
+  questionCount: number;
+};
+
+export interface GenerateAllResult {
+  summary: GenerateAllResultSummary;
+  deck: GenerateAllResultDeck;
+  questionSet: GenerateAllResultQuestionSet;
+  partialFailure: boolean;
+}
 
 export interface GenerationProgress {
   currentChunk: number;
   totalChunks: number;
   percentage: number;
   stage: GenerationProgressStage;
+  /** Present once stage is "done" — the ids/counts of the generated study kit. */
+  result?: GenerateAllResult;
+  /** Present once stage is "error" — a user-facing failure message. */
+  error?: string;
 }
 
 export type MaterialInputContentType = typeof MaterialInputContentType[keyof typeof MaterialInputContentType];

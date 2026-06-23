@@ -5,6 +5,7 @@
  * AI Study Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { GenerateAllResult } from './generateAllResult';
 import type { GenerationProgressStage } from './generationProgressStage';
 
 export interface GenerationProgress {
@@ -12,4 +13,8 @@ export interface GenerationProgress {
   totalChunks: number;
   percentage: number;
   stage: GenerationProgressStage;
+  /** Present once stage is "done" — the ids/counts of the generated study kit. */
+  result?: GenerateAllResult;
+  /** Present once stage is "error" — a user-facing failure message. */
+  error?: string;
 }

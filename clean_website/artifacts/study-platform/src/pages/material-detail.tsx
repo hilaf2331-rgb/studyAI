@@ -181,7 +181,7 @@ export const MaterialDetailPage: React.FC = () => {
   // the backend's "chunk X of Y" tracker so the dialog can show real
   // progress instead of a bare spinner during the (now strictly sequential,
   // multi-minute) chunked processing of large documents.
-  const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || genExam.isPending;
+  const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || genExam.isPending || kitLoading;
   const { data: generationProgress } = useGetMaterialProgress(id, {
     query: { enabled: !!id && anyGenerating, refetchInterval: anyGenerating ? 1500 : false, queryKey: getGetMaterialProgressQueryKey(id) },
   });
@@ -192,6 +192,26 @@ export const MaterialDetailPage: React.FC = () => {
     const barInterval = setInterval(() => setProgressValue(v => (v >= 90 ? 90 : v + 2)), 600);
     return () => { clearInterval(stepInterval); clearInterval(barInterval); };
   }, [kitLoading]);
+
+  // generate-all itself returns as soon as the background job is kicked off
+  // (see handleGenerateAll) -- the actual outcome lands here, via the same
+  // GET /materials/:id/progress poll used for chunk progress above, once the
+  // background pipeline writes a terminal "done"/"error" entry.
+  useEffect(() => {
+    if (!kitLoading || !generationProgress) return;
+    if (generationProgress.stage === "done" && generationProgress.result) {
+      setKitResult(generationProgress.result);
+      setProgressValue(100);
+      setKitLoading(false);
+      qc.invalidateQueries({ queryKey: getListSummariesQueryKey(id) });
+      qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) });
+      qc.invalidateQueries({ queryKey: getListQuestionSetsQueryKey(id) });
+      qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
+    } else if (generationProgress.stage === "error") {
+      setKitError(generationProgress.error || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
+      setKitLoading(false);
+    }
+  }, [generationProgress, kitLoading, id, qc, isRTL]);
 
   const handleGenerateAll = async () => {
     setKitLoading(true);
@@ -222,21 +242,11 @@ export const MaterialDetailPage: React.FC = () => {
 
       if (!response.ok) throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
 
-      if (!payload.summary || !payload.deck || !payload.questionSet) {
-        throw new Error("Received an incomplete response. Please try again.");
-      }
-
-      setKitResult(payload as KitResult);
-      setProgressValue(100);
-
-      // The kit generated brand-new summary/deck/question-set rows directly
-      // via a raw fetch (bypassing react-query's mutation cache), so the
-      // lists rendered below won't know about them yet. Refetch everything
-      // for this material so the new items + View buttons show up right away.
-      qc.invalidateQueries({ queryKey: getListSummariesQueryKey(id) });
-      qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) });
-      qc.invalidateQueries({ queryKey: getListQuestionSetsQueryKey(id) });
-      qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
+      // 202 just confirms the background job started -- it carries no
+      // summary/deck/questionSet yet. The actual result (or failure) shows
+      // up via the generationProgress poll effect above once the pipeline
+      // finishes, since Render's proxy would 502 long before this request
+      // could ever wait for that itself. kitLoading stays true until then.
     } catch (err: any) {
       if (err.message && err.message.includes("insufficient_content")) {
         setKitError(isRTL
@@ -246,7 +256,6 @@ export const MaterialDetailPage: React.FC = () => {
       } else {
         setKitError(err.message || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
       }
-    } finally {
       setKitLoading(false);
     }
   };

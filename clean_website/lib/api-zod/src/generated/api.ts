@@ -187,7 +187,7 @@ export const DeleteMaterialParams = zod.object({
 
 
 /**
- * @summary Poll chunked-generation progress for a material
+ * @summary Poll chunked-generation progress for a material, or the status of a background generate-all job for it
  */
 export const GetMaterialProgressParams = zod.object({
   "id": zod.coerce.number()
@@ -197,7 +197,23 @@ export const GetMaterialProgressResponse = zod.object({
   "currentChunk": zod.number(),
   "totalChunks": zod.number(),
   "percentage": zod.number(),
-  "stage": zod.enum(['chunking', 'extracting', 'done', 'idle', 'error'])
+  "stage": zod.enum(['chunking', 'extracting', 'running', 'done', 'idle', 'error']),
+  "result": zod.object({
+  "summary": zod.object({
+  "id": zod.number(),
+  "keyPointCount": zod.number()
+}),
+  "deck": zod.object({
+  "id": zod.number(),
+  "cardCount": zod.number()
+}),
+  "questionSet": zod.object({
+  "id": zod.number(),
+  "questionCount": zod.number()
+}),
+  "partialFailure": zod.boolean()
+}).optional().describe('Present once stage is \"done\" — the ids\/counts of the generated study kit.'),
+  "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
 
 
@@ -212,7 +228,23 @@ export const GetUploadProgressResponse = zod.object({
   "currentChunk": zod.number(),
   "totalChunks": zod.number(),
   "percentage": zod.number(),
-  "stage": zod.enum(['chunking', 'extracting', 'done', 'idle', 'error'])
+  "stage": zod.enum(['chunking', 'extracting', 'running', 'done', 'idle', 'error']),
+  "result": zod.object({
+  "summary": zod.object({
+  "id": zod.number(),
+  "keyPointCount": zod.number()
+}),
+  "deck": zod.object({
+  "id": zod.number(),
+  "cardCount": zod.number()
+}),
+  "questionSet": zod.object({
+  "id": zod.number(),
+  "questionCount": zod.number()
+}),
+  "partialFailure": zod.boolean()
+}).optional().describe('Present once stage is \"done\" — the ids\/counts of the generated study kit.'),
+  "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
 
 

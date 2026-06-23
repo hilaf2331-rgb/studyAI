@@ -207,7 +207,7 @@ paths:
     get:
       operationId: getMaterialProgress
       tags: [materials]
-      summary: Poll chunked-generation progress for a material
+      summary: Poll chunked-generation progress for a material, or the status of a background generate-all job for it
       parameters:
         - name: id
           in: path
@@ -837,7 +837,44 @@ components:
           type: integer
         stage:
           type: string
-          enum: [chunking, extracting, done, idle, error]
+          enum: [chunking, extracting, running, done, idle, error]
+        result:
+          description: Present once stage is "done" — the ids/counts of the generated study kit.
+          $ref: "#/components/schemas/GenerateAllResult"
+        error:
+          description: Present once stage is "error" — a user-facing failure message.
+          type: string
+
+    GenerateAllResult:
+      type: object
+      required: [summary, deck, questionSet, partialFailure]
+      properties:
+        summary:
+          type: object
+          required: [id, keyPointCount]
+          properties:
+            id:
+              type: integer
+            keyPointCount:
+              type: integer
+        deck:
+          type: object
+          required: [id, cardCount]
+          properties:
+            id:
+              type: integer
+            cardCount:
+              type: integer
+        questionSet:
+          type: object
+          required: [id, questionCount]
+          properties:
+            id:
+              type: integer
+            questionCount:
+              type: integer
+        partialFailure:
+          type: boolean
 
     MaterialInput:
       type: object

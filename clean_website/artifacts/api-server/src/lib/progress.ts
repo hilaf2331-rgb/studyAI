@@ -1,8 +1,24 @@
+export interface GenerateAllResult {
+  summary: { id: number; keyPointCount: number };
+  deck: { id: number; cardCount: number };
+  questionSet: { id: number; questionCount: number };
+  partialFailure: boolean;
+}
+
 export interface GenerationProgress {
   currentChunk: number;
   totalChunks: number;
   percentage: number;
-  stage: "chunking" | "extracting" | "done" | "idle" | "error";
+  // "running" covers the whole background generate-all job, from the moment
+  // the 202 is sent until the background work finishes -- it's set up front
+  // so a poll that lands before the first Gemini call still sees something
+  // other than "idle". "chunking"/"extracting" remain for the existing
+  // per-call chunk tracking nested inside that job.
+  stage: "chunking" | "extracting" | "running" | "done" | "idle" | "error";
+  // Present once stage is "done".
+  result?: GenerateAllResult;
+  // Present once stage is "error" -- a user-facing failure message.
+  error?: string;
 }
 
 // Key is either the numeric material id (post-creation chunked generation)

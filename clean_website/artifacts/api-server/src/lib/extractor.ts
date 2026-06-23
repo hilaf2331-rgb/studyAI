@@ -37,19 +37,28 @@ export async function extractYouTube(url: string): Promise<ExtractedContent> {
 }
 
 export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
-  // pdf-parse v2 dropped the v1 default-function export in favor of a
-  // PDFParse class — calling it as a function (the old API) silently fails
-  // extraction, leaving materials with empty/error placeholder text that the
-  // AI then has nothing real to ground its answers in.
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const result = await parser.getText();
-    const text = result.text.replace(/\s+/g, " ").trim();
-    return { text };
-  } finally {
-    await parser.destroy();
+  if (!buffer || buffer.length === 0) {
+    throw new Error("Received an empty PDF file buffer");
   }
+  console.log(`extractPDF: received buffer of ${buffer.length} bytes`);
+
+  // pdf-parse v2 (pdfjs-dist under the hood) requires DOM canvas APIs
+  // (DOMMatrix/ImageData/Path2D) that aren't available in our bundled Node
+  // server and aren't installed as a native dependency — it was throwing
+  // "DOMMatrix is not defined" on every PDF, which the caller's catch block
+  // silently turned into placeholder text. `unpdf` wraps a canvas-free
+  // pdfjs-dist build made specifically for serverless/edge Node runtimes.
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const doc = await getDocumentProxy(new Uint8Array(buffer));
+  const { text: rawText, totalPages } = await extractText(doc, { mergePages: true });
+  const text = rawText.replace(/\s+/g, " ").trim();
+
+  console.log(`extractPDF: extracted ${text.length} chars from ${totalPages} pages`);
+  if (!text) {
+    throw new Error("PDF parsed successfully but contained no extractable text (likely a scanned/image-only PDF)");
+  }
+
+  return { text };
 }
 
 export async function transcribeAudio(

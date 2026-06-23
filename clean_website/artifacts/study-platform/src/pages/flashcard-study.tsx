@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
 import { useGetFlashcardDeck, useReviewFlashcard, getGetFlashcardDeckQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,10 +21,30 @@ export const FlashcardStudyPage: React.FC = () => {
   const { data: deck, isLoading } = useGetFlashcardDeck(id, { query: { enabled: !!id, queryKey: getGetFlashcardDeckQueryKey(id) } });
   const reviewCard = useReviewFlashcard();
 
-  if (isLoading) return <div className="space-y-4">{[1,2].map(i => <Skeleton key={i} className="h-48" />)}</div>;
-  if (!deck || !deck.cards?.length) return <p className="text-muted-foreground">{isRTL ? "אין כרטיסיות" : "No flashcards"}</p>;
+  // Freeze the card order for this study session. The deck query gets
+  // invalidated/refetched after every review (since reviewing changes that
+  // card's nextReviewAt/interval), which can reorder deck.cards if the
+  // backend sorts by review priority. Deriving `cards` directly from the
+  // live query on every render meant currentIndex pointed into a shifting
+  // array - you'd advance to the next card, then the refetch would resolve
+  // and currentIndex would land on a different (often the previous) card.
+  // Snapshotting cards once per deck load fixes that.
+  const [cards, setCards] = useState<NonNullable<typeof deck>["cards"] | null>(null);
+  const initializedDeckId = useRef<number | null>(null);
 
-  const cards = deck.cards;
+  useEffect(() => {
+    if (deck?.cards?.length && initializedDeckId.current !== id) {
+      setCards(deck.cards);
+      initializedDeckId.current = id;
+      setCurrentIndex(0);
+      setFlipped(false);
+      setDone(false);
+    }
+  }, [deck, id]);
+
+  if (isLoading || !cards) return <div className="space-y-4">{[1,2].map(i => <Skeleton key={i} className="h-48" />)}</div>;
+  if (!deck || !cards.length) return <p className="text-muted-foreground">{isRTL ? "אין כרטיסיות" : "No flashcards"}</p>;
+
   const current = cards[currentIndex];
   const isHebrew = deck.language === "he";
   const progress = ((currentIndex) / cards.length) * 100;
@@ -32,12 +52,15 @@ export const FlashcardStudyPage: React.FC = () => {
   const handleReview = (result: "again" | "hard" | "good" | "easy") => {
     reviewCard.mutate({ id: current.id, data: { result } }, {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getGetFlashcardDeckQueryKey(id) });
-        if (currentIndex < cards.length - 1) {
+        const isLastCard = currentIndex >= cards.length - 1;
+        if (isLastCard) {
+          // Safe to invalidate now - no active index pointing into the
+          // array anymore, so a reordered refetch can't pull the rug out.
+          qc.invalidateQueries({ queryKey: getGetFlashcardDeckQueryKey(id) });
+          setDone(true);
+        } else {
           setCurrentIndex(i => i + 1);
           setFlipped(false);
-        } else {
-          setDone(true);
         }
       }
     });
@@ -48,7 +71,7 @@ export const FlashcardStudyPage: React.FC = () => {
       <div className="text-6xl">🎉</div>
       <h2 className="text-2xl font-bold">{isRTL ? "סיימת את החפיסה!" : "Deck Complete!"}</h2>
       <p className="text-muted-foreground">{isRTL ? `עברת על ${cards.length} כרטיסיות` : `You reviewed ${cards.length} cards`}</p>
-      <Button onClick={() => { setCurrentIndex(0); setFlipped(false); setDone(false); }}>
+      <Button onClick={() => { if (deck?.cards) setCards(deck.cards); setCurrentIndex(0); setFlipped(false); setDone(false); }}>
         <RotateCcw className="w-4 h-4 me-2" />{isRTL ? "התחל מחדש" : "Start Over"}
       </Button>
     </div>

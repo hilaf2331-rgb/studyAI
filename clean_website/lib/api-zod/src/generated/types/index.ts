@@ -38,6 +38,8 @@ export * from './flashcardRequestCardTypesItem';
 export * from './flashcardRequestLanguage';
 export * from './flashcardReview';
 export * from './flashcardReviewResult';
+export * from './generationProgress';
+export * from './generationProgressStage';
 export * from './healthStatus';
 export * from './listMaterialsParams';
 export * from './material';

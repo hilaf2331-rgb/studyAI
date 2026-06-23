@@ -54,6 +54,7 @@ router.post("/materials/:id/flashcard-decks", async (req, res) => {
     materialTitle: material.title,
     cardCount,
     cardTypes,
+    materialId: id,
   });
 
   const [deck] = await db.insert(flashcardDecksTable).values({

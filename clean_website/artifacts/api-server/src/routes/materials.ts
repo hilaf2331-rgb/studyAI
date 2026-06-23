@@ -5,6 +5,7 @@ import { eq, count, and } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
+import { getGenerationProgress } from "../lib/progress";
 
 const router = Router();
 
@@ -149,6 +150,12 @@ router.get("/materials/:id", async (req, res) => {
   const material = await getMaterialWithCounts(id, userId);
   if (!material) return res.status(404).json({ error: "Not found" });
   res.json(material);
+});
+
+router.get("/materials/:id/progress", async (req, res) => {
+  const { id } = GetMaterialParams.parse({ id: Number(req.params.id) });
+  const progress = getGenerationProgress(id);
+  res.json(progress ?? { currentChunk: 0, totalChunks: 0, stage: "idle" });
 });
 
 router.delete("/materials/:id", async (req, res) => {

@@ -57,6 +57,7 @@ router.post("/materials/:id/question-sets", async (req, res) => {
     questionCount,
     questionTypes: body.questionTypes?.length ? body.questionTypes : ["open", "multiple_choice"],
     difficulty: body.difficulty || "mixed",
+    materialId: id,
   });
 
   const [set] = await db.insert(questionSetsTable).values({

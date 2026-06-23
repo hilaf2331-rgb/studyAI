@@ -35,6 +35,7 @@ import type {
   FlashcardDeck,
   FlashcardRequest,
   FlashcardReview,
+  GenerationProgress,
   HealthStatus,
   ListMaterialsParams,
   Material,
@@ -803,6 +804,83 @@ export const useDeleteMaterial = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDeleteMaterialMutationOptions(options));
     }
+
+export const getGetMaterialProgressUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}/progress`
+}
+
+/**
+ * @summary Poll chunked-generation progress for a material
+ */
+export const getMaterialProgress = async (id: number, options?: RequestInit): Promise<GenerationProgress> => {
+
+  return customFetch<GenerationProgress>(getGetMaterialProgressUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMaterialProgressQueryKey = (id: number,) => {
+    return [
+    `/api/materials/${id}/progress`
+    ] as const;
+    }
+
+
+export const getGetMaterialProgressQueryOptions = <TData = Awaited<ReturnType<typeof getMaterialProgress>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMaterialProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMaterialProgressQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMaterialProgress>>> = ({ signal }) => getMaterialProgress(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMaterialProgress>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMaterialProgressQueryResult = NonNullable<Awaited<ReturnType<typeof getMaterialProgress>>>
+export type GetMaterialProgressQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Poll chunked-generation progress for a material
+ */
+
+export function useGetMaterialProgress<TData = Awaited<ReturnType<typeof getMaterialProgress>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMaterialProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMaterialProgressQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getListSummariesUrl = (id: number,) => {
 

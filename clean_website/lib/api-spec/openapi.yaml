@@ -203,6 +203,25 @@ paths:
         "204":
           description: Deleted
 
+  /materials/{id}/progress:
+    get:
+      operationId: getMaterialProgress
+      tags: [materials]
+      summary: Poll chunked-generation progress for a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Generation progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationProgress"
+
   # ── Summaries ─────────────────────────────────────────────────────────────
   /materials/{id}/summaries:
     get:
@@ -773,6 +792,18 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    GenerationProgress:
+      type: object
+      required: [currentChunk, totalChunks, stage]
+      properties:
+        currentChunk:
+          type: integer
+        totalChunks:
+          type: integer
+        stage:
+          type: string
+          enum: [chunking, done, idle]
 
     MaterialInput:
       type: object

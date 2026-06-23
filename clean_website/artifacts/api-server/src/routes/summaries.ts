@@ -37,6 +37,7 @@ router.post("/materials/:id/summaries", async (req, res) => {
     materialTitle: material.title,
     summaryType: body.summaryType,
     topic: body.topic,
+    materialId: id,
   });
 
   const [summary] = await db.insert(summariesTable).values({

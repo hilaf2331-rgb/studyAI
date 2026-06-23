@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { splitTextIntoChunks } from "./chunker";
+import { setGenerationProgress, clearGenerationProgress } from "./progress";
 
 if (!process.env.GROQ_API_KEY) {
   throw new Error("GROQ_API_KEY environment variable is required but was not provided.");
@@ -18,6 +19,10 @@ export interface AIGenerationOptions {
   language: "he" | "en";
   materialContent: string;
   materialTitle: string;
+  // When provided, chunked generation reports "chunk X of Y" progress here
+  // so the frontend can poll GET /materials/:id/progress and show a real
+  // status instead of a generic spinner during long sequential processing.
+  materialId?: number;
 }
 
 // פונקציית עזר חסינת תקלות משופרת לחילוץ ופענוח JSON מה-AI
@@ -164,11 +169,17 @@ async function summarizeChunk(
  * A chunk that still fails after all retries is replaced with a placeholder
  * note instead of throwing, so one bad chunk doesn't take down the whole
  * request with a 500 — the rest of the document is still summarized.
+ *
+ * When materialId is given, "chunk X of Y" progress is recorded after every
+ * chunk so the frontend can poll GET /materials/:id/progress and show the
+ * user real status during the (now strictly sequential, multi-minute)
+ * processing instead of a bare spinner.
  */
 async function buildAggregatedContent(
   materialContent: string,
   materialTitle: string,
-  isHe: boolean
+  isHe: boolean,
+  materialId?: number
 ): Promise<string> {
   if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
     return materialContent;
@@ -191,6 +202,9 @@ async function buildAggregatedContent(
           : "[This part of the material could not be processed due to a temporary error]"
       );
     }
+    if (materialId !== undefined) {
+      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, stage: "chunking" });
+    }
     // Mandatory pause before the next chunk, regardless of success/failure,
     // to keep our request rate well below Groq's free-tier limit. Skipped
     // after the last chunk since there's nothing left to wait for.
@@ -207,7 +221,7 @@ async function buildAggregatedContent(
 export async function generateSummary(
   opts: AIGenerationOptions & { summaryType: string; topic?: string }
 ): Promise<{ content: string; keyPoints: string[] }> {
-  const { language, materialContent, materialTitle, summaryType, topic } = opts;
+  const { language, materialContent, materialTitle, summaryType, topic, materialId } = opts;
   const isHe = language === "he";
 
   const typeMap: Record<string, { he: string; en: string }> = {
@@ -234,7 +248,8 @@ export async function generateSummary(
 - Wherever students commonly get confused, mix up similar terms, or miss a key nuance, add a "> 💡 **Pro Tip:** ..." line (as a Markdown blockquote) with a short, sharp reminder
 `;
 
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
+  try {
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -295,14 +310,18 @@ Return ONLY JSON matching this structure:
     content: parsed.content || "",
     keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
   };
+  } finally {
+    if (materialId !== undefined) clearGenerationProgress(materialId);
+  }
 }
 
 export async function generateFlashcardsAI(
   opts: AIGenerationOptions & { cardCount: number; cardTypes: string[] }
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
-  const { language, materialContent, materialTitle, cardCount, cardTypes } = opts;
+  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId } = opts;
   const isHe = language === "he";
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
+  try {
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const typeGuide = isHe
     ? `סוגי כרטיסיות אפשריים:
@@ -373,14 +392,18 @@ Return ONLY JSON matching this structure:
 
   const parsed = safeJsonParse(response.choices[0].message.content || "{}");
   return Array.isArray(parsed.cards) ? parsed.cards : [];
+  } finally {
+    if (materialId !== undefined) clearGenerationProgress(materialId);
+  }
 }
 
 export async function generateQuestionsAI(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId } = opts;
   const isHe = language === "he";
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
+  try {
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -462,14 +485,18 @@ Return ONLY JSON matching this structure:
   return Array.isArray(parsed.questions)
     ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
     : [];
+  } finally {
+    if (materialId !== undefined) clearGenerationProgress(materialId);
+  }
 }
 
 export async function generateExamAI(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics } = opts;
+  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId } = opts;
   const isHe = language === "he";
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
+  try {
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
@@ -566,6 +593,9 @@ Return ONLY JSON matching this structure:
   return Array.isArray(parsed.questions)
     ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
     : [];
+  } finally {
+    if (materialId !== undefined) clearGenerationProgress(materialId);
+  }
 }
 
 export async function chatWithMaterial(

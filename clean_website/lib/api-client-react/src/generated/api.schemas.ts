@@ -101,6 +101,21 @@ export interface Material {
   createdAt: string;
 }
 
+export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeof GenerationProgressStage];
+
+
+export const GenerationProgressStage = {
+  chunking: 'chunking',
+  done: 'done',
+  idle: 'idle',
+} as const;
+
+export interface GenerationProgress {
+  currentChunk: number;
+  totalChunks: number;
+  stage: GenerationProgressStage;
+}
+
 export type MaterialInputContentType = typeof MaterialInputContentType[keyof typeof MaterialInputContentType];
 
 

@@ -186,6 +186,20 @@ export const DeleteMaterialParams = zod.object({
 
 
 /**
+ * @summary Poll chunked-generation progress for a material
+ */
+export const GetMaterialProgressParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetMaterialProgressResponse = zod.object({
+  "currentChunk": zod.number(),
+  "totalChunks": zod.number(),
+  "stage": zod.enum(['chunking', 'done', 'idle'])
+})
+
+
+/**
  * @summary List summaries for a material
  */
 export const ListSummariesParams = zod.object({

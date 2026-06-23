@@ -3,8 +3,9 @@ import { useLocation, useParams } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions, useGenerateExam,
+  useGetMaterialProgress,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
-  getListQuestionSetsQueryKey, getListExamsQueryKey
+  getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -25,13 +26,31 @@ import {
 import { Link } from "wouter";
 
 function GenerateDialog({
-  open, onClose, title, onGenerate, isGenerating, isRTL, children
-}: { open: boolean; onClose: () => void; title: string; onGenerate: () => void; isGenerating: boolean; isRTL: boolean; children: React.ReactNode }) {
+  open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
+}: {
+  open: boolean; onClose: () => void; title: string; onGenerate: () => void; isGenerating: boolean; isRTL: boolean; children: React.ReactNode;
+  progress?: { currentChunk: number; totalChunks: number; stage: string };
+}) {
+  // Only the chunked path (large documents, multiple sequential Groq calls)
+  // ever reports totalChunks > 0 — short materials finish in one call before
+  // a poll can even land, so they just show the plain spinner below.
+  const showChunkProgress = isGenerating && !!progress && progress.totalChunks > 0;
+  const percent = showChunkProgress ? Math.round((progress!.currentChunk / progress!.totalChunks) * 100) : 0;
+
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" />{title}</DialogTitle></DialogHeader>
         <div className="space-y-4">{children}</div>
+        {showChunkProgress && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span>{isRTL ? `מעבד חלק ${progress!.currentChunk} מ-${progress!.totalChunks}` : `Processing chunk ${progress!.currentChunk} of ${progress!.totalChunks}`}</span>
+              <span className="text-muted-foreground">{percent}%</span>
+            </div>
+            <Progress value={percent} className="h-2" />
+          </div>
+        )}
         <Button onClick={onGenerate} disabled={isGenerating} className="w-full gap-2">
           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {isGenerating ? (isRTL ? "מייצר..." : "Generating...") : (isRTL ? "צור עכשיו" : "Generate Now")}
@@ -156,6 +175,15 @@ export const MaterialDetailPage: React.FC = () => {
   const genFlash = useGenerateFlashcards();
   const genQA = useGenerateQuestions();
   const genExam = useGenerateExam();
+
+  // While any of the four individual generation requests is in flight, poll
+  // the backend's "chunk X of Y" tracker so the dialog can show real
+  // progress instead of a bare spinner during the (now strictly sequential,
+  // multi-minute) chunked processing of large documents.
+  const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || genExam.isPending;
+  const { data: generationProgress } = useGetMaterialProgress(id, {
+    query: { enabled: !!id && anyGenerating, refetchInterval: anyGenerating ? 1500 : false, queryKey: getGetMaterialProgressQueryKey(id) },
+  });
 
   useEffect(() => {
     if (!kitLoading) { setProgressStep(0); setProgressValue(0); return; }
@@ -415,6 +443,7 @@ export const MaterialDetailPage: React.FC = () => {
         title={isRTL ? "צור סיכום" : "Generate Summary"}
         onGenerate={handleGenerateSummary}
         isGenerating={genSummary.isPending}
+        progress={generationProgress}
         isRTL={isRTL}
       >
         <div className="space-y-2">
@@ -449,6 +478,7 @@ export const MaterialDetailPage: React.FC = () => {
         title={isRTL ? "צור כרטיסיות לימוד" : "Generate Flashcards"}
         onGenerate={handleGenerateFlashcards}
         isGenerating={genFlash.isPending}
+        progress={generationProgress}
         isRTL={isRTL}
       >
         <div className="space-y-2">
@@ -470,6 +500,7 @@ export const MaterialDetailPage: React.FC = () => {
         title={isRTL ? "צור שאלות תרגול" : "Generate Quiz"}
         onGenerate={handleGenerateQuestions}
         isGenerating={genQA.isPending}
+        progress={generationProgress}
         isRTL={isRTL}
       >
         <div className="space-y-2">
@@ -491,6 +522,7 @@ export const MaterialDetailPage: React.FC = () => {
         title={isRTL ? "צור מבחן" : "Generate Exam"}
         onGenerate={handleGenerateExam}
         isGenerating={genExam.isPending}
+        progress={generationProgress}
         isRTL={isRTL}
       >
         <div className="space-y-2">

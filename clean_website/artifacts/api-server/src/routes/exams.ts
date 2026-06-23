@@ -54,6 +54,7 @@ router.post("/materials/:id/exams", async (req, res) => {
     examType: body.examType,
     difficulty: body.difficulty || "mixed",
     topics: body.topics,
+    materialId: id,
   });
 
   const [exam] = await db.insert(examsTable).values({

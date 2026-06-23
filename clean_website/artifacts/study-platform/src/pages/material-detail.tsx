@@ -29,13 +29,13 @@ function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
 }: {
   open: boolean; onClose: () => void; title: string; onGenerate: () => void; isGenerating: boolean; isRTL: boolean; children: React.ReactNode;
-  progress?: { currentChunk: number; totalChunks: number; stage: string };
+  progress?: { currentChunk: number; totalChunks: number; percentage: number; stage: string };
 }) {
   // Only the chunked path (large documents, multiple sequential Groq calls)
   // ever reports totalChunks > 0 — short materials finish in one call before
   // a poll can even land, so they just show the plain spinner below.
   const showChunkProgress = isGenerating && !!progress && progress.totalChunks > 0;
-  const percent = showChunkProgress ? Math.round((progress!.currentChunk / progress!.totalChunks) * 100) : 0;
+  const percent = showChunkProgress ? progress!.percentage : 0;
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>

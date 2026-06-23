@@ -1,6 +1,7 @@
 export interface GenerationProgress {
   currentChunk: number;
   totalChunks: number;
+  percentage: number;
   stage: "chunking" | "done" | "idle";
 }
 

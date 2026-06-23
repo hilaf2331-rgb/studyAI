@@ -378,8 +378,14 @@ async function buildAggregatedContent(
           : "[This part of the material could not be processed due to a temporary error]"
       );
     }
+    // Computed after every chunk regardless of success/failure (the catch
+    // block above only rethrows for RateLimitExhaustedError, which aborts
+    // the whole loop) so the reported percentage always reflects exactly
+    // how much of the document has actually been attempted so far.
+    const percentage = Math.round(((i + 1) / chunks.length) * 100);
+    console.log(`Processed ${i + 1} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
-      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, stage: "chunking" });
+      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, percentage, stage: "chunking" });
     }
     // Mandatory pause before the next chunk, regardless of success/failure,
     // to keep our request rate well below Groq's free-tier limit. Skipped

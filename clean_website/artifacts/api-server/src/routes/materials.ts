@@ -155,7 +155,7 @@ router.get("/materials/:id", async (req, res) => {
 router.get("/materials/:id/progress", async (req, res) => {
   const { id } = GetMaterialParams.parse({ id: Number(req.params.id) });
   const progress = getGenerationProgress(id);
-  res.json(progress ?? { currentChunk: 0, totalChunks: 0, stage: "idle" });
+  res.json(progress ?? { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "idle" });
 });
 
 router.delete("/materials/:id", async (req, res) => {

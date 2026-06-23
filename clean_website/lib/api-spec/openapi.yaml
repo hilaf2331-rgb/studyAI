@@ -795,11 +795,13 @@ components:
 
     GenerationProgress:
       type: object
-      required: [currentChunk, totalChunks, stage]
+      required: [currentChunk, totalChunks, percentage, stage]
       properties:
         currentChunk:
           type: integer
         totalChunks:
+          type: integer
+        percentage:
           type: integer
         stage:
           type: string

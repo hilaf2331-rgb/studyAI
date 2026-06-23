@@ -195,6 +195,7 @@ export const GetMaterialProgressParams = zod.object({
 export const GetMaterialProgressResponse = zod.object({
   "currentChunk": zod.number(),
   "totalChunks": zod.number(),
+  "percentage": zod.number(),
   "stage": zod.enum(['chunking', 'done', 'idle'])
 })
 

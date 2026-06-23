@@ -6,6 +6,7 @@ import {
   GetQuestionSetParams, DeleteQuestionSetParams
 } from "@workspace/api-zod";
 import { generateQuestionsAI } from "../lib/ai";
+import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 
 const router = Router();
 
@@ -40,11 +41,20 @@ router.post("/materials/:id/question-sets", async (req, res) => {
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
   if (!material) return res.status(404).json({ error: "Not found" });
 
+  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
+  const contentLength = (material.extractedText || material.title).trim().length;
+  // Cap the requested count when the material is short-but-valid (between
+  // MIN_CONTENT_LENGTH and SHORT_CONTENT_THRESHOLD). Asking for 10 questions
+  // out of ~500-799 characters is exactly what causes Groq to duplicate
+  // questions, pad with filler, or come back with an empty array.
+  const questionCount = clampToContentLength(body.questionCount || 5, contentLength, "questions");
+
   const generated = await generateQuestionsAI({
     language: body.language as "he" | "en",
     materialContent: material.extractedText || material.title,
     materialTitle: material.title,
-    questionCount: body.questionCount || 5,
+    questionCount,
     questionTypes: body.questionTypes?.length ? body.questionTypes : ["open", "multiple_choice"],
     difficulty: body.difficulty || "mixed",
   });
@@ -63,6 +73,7 @@ router.post("/materials/:id/question-sets", async (req, res) => {
         question: q.question,
         answer: q.answer,
         explanation: q.explanation || null,
+        modelAnswer: q.modelAnswer || null,
         options: q.options || [],
         difficulty: q.difficulty || "medium",
       }))

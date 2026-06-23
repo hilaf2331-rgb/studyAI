@@ -68,6 +68,7 @@ router.post("/materials/:id/exams", async (req, res) => {
         question: q.question,
         answer: q.answer,
         explanation: q.explanation || null,
+        modelAnswer: q.modelAnswer || null,
         options: q.options || [],
         difficulty: q.difficulty || "medium",
       }))
@@ -126,11 +127,20 @@ router.post("/exams/:id/submit", async (req, res) => {
         correct = graded.correct;
         explanation = graded.explanation;
       }
-      return { questionId: answer.questionId, correct, userAnswer: answer.answer, correctAnswer: question.answer, explanation };
+      return {
+        questionId: answer.questionId,
+        correct,
+        userAnswer: answer.answer,
+        correctAnswer: question.answer,
+        explanation,
+        // Only meaningful for open questions; omitted (undefined) otherwise
+        // so JSON.stringify drops the key for MC/true-false entries.
+        modelAnswer: qType === "open" ? (question.modelAnswer || undefined) : undefined,
+      };
     })
   );
 
-  const valid = feedback.filter(Boolean) as Array<{ questionId: number; correct: boolean; userAnswer: string; correctAnswer: string; explanation: string }>;
+  const valid = feedback.filter(Boolean) as Array<{ questionId: number; correct: boolean; userAnswer: string; correctAnswer: string; explanation: string; modelAnswer?: string }>;
   const correctCount = valid.filter(f => f.correct).length;
   const score = exam.questions.length > 0 ? Math.round((correctCount / exam.questions.length) * 100) : 0;
 

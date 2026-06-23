@@ -96,6 +96,12 @@ export async function transcribeAudio(
   };
 }
 
+// Tags that are essentially never part of the article body — nav bars,
+// headers/footers, cookie banners, ads, embeds. Stripped before any other
+// processing so they can never end up inside an <article>/<main> match
+// either, since some sites nest a sidebar/ad block inside their <main>.
+const BOILERPLATE_TAGS = ["script", "style", "noscript", "iframe", "svg", "form", "nav", "header", "footer", "aside", "button"];
+
 export async function extractFromUrl(url: string): Promise<ExtractedContent> {
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyAI/1.0)" },
@@ -103,9 +109,22 @@ export async function extractFromUrl(url: string): Promise<ExtractedContent> {
   });
   if (!res.ok) throw new Error(`Failed to fetch URL: ${res.status}`);
   const html = await res.text();
-  const text = html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+
+  const withoutComments = html.replace(/<!--[\s\S]*?-->/g, "");
+  const withoutBoilerplate = BOILERPLATE_TAGS.reduce(
+    (acc, tag) => acc.replace(new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi"), ""),
+    withoutComments
+  );
+
+  // Most articles/blogs wrap their actual body copy in <article> or <main> —
+  // preferring that (once boilerplate siblings are already gone) keeps the
+  // extracted text to roughly just the content itself, instead of every
+  // related-posts list and sidebar widget on the page, which otherwise
+  // bloats the chunked-summarization token bill for no benefit.
+  const mainMatch = withoutBoilerplate.match(/<(article|main)[^>]*>([\s\S]*?)<\/\1>/i);
+  const contentHtml = mainMatch ? mainMatch[2] : withoutBoilerplate;
+
+  const text = contentHtml
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -114,5 +133,10 @@ export async function extractFromUrl(url: string): Promise<ExtractedContent> {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 20000);
+
+  if (!text) {
+    throw new Error("No readable text content found at this URL");
+  }
+
   return { text };
 }

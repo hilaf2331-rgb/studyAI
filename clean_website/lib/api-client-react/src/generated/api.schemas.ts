@@ -314,6 +314,8 @@ export interface Question {
   answer: string;
   /** @nullable */
   explanation?: string | null;
+  /** @nullable */
+  modelAnswer?: string | null;
   options?: string[];
   difficulty?: QuestionDifficulty;
   createdAt: string;
@@ -461,6 +463,8 @@ export interface QuestionFeedback {
   correctAnswer: string;
   /** @nullable */
   explanation?: string | null;
+  /** @nullable */
+  modelAnswer?: string | null;
 }
 
 export interface ExamResult {
@@ -564,4 +568,5 @@ export interface StudyStreak {
 export type ListMaterialsParams = {
 courseId?: number;
 };
+
 

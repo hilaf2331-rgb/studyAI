@@ -83,6 +83,11 @@ export const ExamResultPage: React.FC = () => {
                         </>
                       )}
                       {f.correct && <p className="text-sm text-green-700 dark:text-green-300">{f.userAnswer}</p>}
+                      {f.modelAnswer && (
+                        <p className="text-xs text-muted-foreground mt-1.5 border-t pt-1.5 italic">
+                          <span className="font-medium">{isRTL ? "תשובת מודל: " : "Model answer: "}</span>{f.modelAnswer}
+                        </p>
+                      )}
                       {f.explanation && <p className="text-xs text-muted-foreground mt-1.5 border-t pt-1.5">{f.explanation}</p>}
                     </div>
                   </div>

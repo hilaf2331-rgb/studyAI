@@ -86,6 +86,11 @@ export const QuestionsPracticePage: React.FC = () => {
                         <div>
                           <p className="font-semibold text-sm text-green-800 dark:text-green-300">{q.answer}</p>
                           {q.explanation && <p className="text-xs text-green-700 dark:text-green-400 mt-1">{q.explanation}</p>}
+                          {q.questionType === "open" && q.modelAnswer && (
+                            <p className="text-xs text-green-700 dark:text-green-400 mt-2 pt-2 border-t border-green-200 dark:border-green-800 italic">
+                              {isRTL ? "תשובת מודל: " : "Model answer: "}{q.modelAnswer}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

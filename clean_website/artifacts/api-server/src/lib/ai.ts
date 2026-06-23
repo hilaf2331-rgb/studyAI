@@ -68,6 +68,50 @@ function contentSlice(text: string, maxChars = 20000): string {
   return text.length > maxChars ? text.slice(0, maxChars) + "\n\n[...תוכן קוצר בגלל אורך...]" : text;
 }
 
+// Retries on rate limits (429) and transient server/network errors. Other
+// errors (bad request, auth, etc.) are not retryable and fail immediately.
+const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_RETRY_ATTEMPTS = 4;
+const BASE_RETRY_DELAY_MS = 1000;
+
+function isRetryableError(error: any): boolean {
+  const status = error?.status ?? error?.response?.status;
+  if (typeof status === "number") return RETRYABLE_STATUS_CODES.has(status);
+  // Network-level failures (no HTTP status) are typically transient.
+  return error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Wraps a Groq chat-completion call with exponential backoff retry for
+ * rate limits (429) and transient errors, so a single flaky request doesn't
+ * take down the whole pipeline (and, in turn, the HTTP response) with it.
+ */
+async function callGroqWithRetry(
+  params: Parameters<typeof groq.chat.completions.create>[0]
+): Promise<OpenAI.Chat.ChatCompletion> {
+  let lastError: any;
+  for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return (await groq.chat.completions.create(params)) as OpenAI.Chat.ChatCompletion;
+    } catch (error: any) {
+      lastError = error;
+      if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
+        throw error;
+      }
+      const delay = BASE_RETRY_DELAY_MS * 2 ** attempt + Math.random() * 250;
+      console.warn(
+        `Groq call failed (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS + 1}, status ${error?.status ?? "?"}). Retrying in ${Math.round(delay)}ms...`
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+}
+
 // Above this length, a single Groq call risks silently dropping the tail of
 // the document (or the model just skims the title and hallucinates) — so we
 // chunk instead of truncating. Below it, material is short enough to pass
@@ -76,8 +120,9 @@ const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
 // ~2-3 pages per chunk, per the task spec.
 const CHUNK_WORD_LIMIT = 1200;
 // Caps how many chunk summaries run at once so we don't blow past Groq's
-// rate limits on very large (80+ page) documents.
-const MAX_CONCURRENT_CHUNK_CALLS = 4;
+// rate limits, or stack up enough in-flight requests to trip Render's
+// request timeout, on very large (80+ page) documents.
+const MAX_CONCURRENT_CHUNK_CALLS = 2;
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -107,7 +152,7 @@ async function summarizeChunk(
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בקצרה (כ-150-300 מילים) את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
     : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nBriefly summarize (~150-300 words) all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [
       { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
@@ -125,6 +170,10 @@ async function summarizeChunk(
  * shorter string that still covers the *entire* document, so the downstream
  * generation call (summary/flashcards/questions/exam) never has to silently
  * truncate the tail of a large file. Short documents pass through unchanged.
+ *
+ * A chunk that still fails after all retries is replaced with a placeholder
+ * note instead of throwing, so one bad chunk doesn't take down the whole
+ * request with a 500 — the rest of the document is still summarized.
  */
 async function buildAggregatedContent(
   materialContent: string,
@@ -140,9 +189,16 @@ async function buildAggregatedContent(
     return materialContent;
   }
 
-  const partials = await mapWithConcurrency(chunks, MAX_CONCURRENT_CHUNK_CALLS, (chunk, i) =>
-    summarizeChunk(chunk, materialTitle, isHe, i + 1, chunks.length)
-  );
+  const partials = await mapWithConcurrency(chunks, MAX_CONCURRENT_CHUNK_CALLS, async (chunk, i) => {
+    try {
+      return await summarizeChunk(chunk, materialTitle, isHe, i + 1, chunks.length);
+    } catch (error) {
+      console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, error);
+      return isHe
+        ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
+        : "[This part of the material could not be processed due to a temporary error]";
+    }
+  });
 
   return partials
     .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))
@@ -225,7 +281,7 @@ Return ONLY JSON matching this structure:
   "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"]
 }`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [
       { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
@@ -306,7 +362,7 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [
       { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
@@ -393,7 +449,7 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [
       { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
@@ -497,7 +553,7 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [
       { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
@@ -546,7 +602,7 @@ ${contentSlice(materialContent, 6000)}`;
     { role: "user", content: userMessage },
   ];
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages,
     temperature: 0.6,
@@ -577,7 +633,7 @@ Student's answer: ${userAnswer}
 Check if the student's answer is conceptually correct (exact wording not required).
 Return JSON matching this structure: {"correct": true/false, "explanation": "Brief explanation of what's right and what's missing"}`;
 
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry({
     model: TEXT_MODEL,
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },

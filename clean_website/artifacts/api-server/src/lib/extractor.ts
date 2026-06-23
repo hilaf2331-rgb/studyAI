@@ -1,5 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
-import { groq, AUDIO_MODEL } from "./ai";
+import { AUDIO_MODEL, extractTextFromImage } from "./ai";
 import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
@@ -63,6 +63,27 @@ export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
     throw new Error("PDF parsed successfully but contained no extractable text (likely a scanned/image-only PDF)");
   }
 
+  return { text };
+}
+
+// Routes a photo (e.g. a phone snapshot of handwritten or printed notes) to
+// Gemini 1.5 Flash's native vision support for transcription, so a future
+// camera/gallery upload button on the frontend can plug straight into the
+// existing extraction pipeline without any backend changes.
+export async function extractImage(buffer: Buffer, mimeType: string, onProgress?: ProgressCallback): Promise<ExtractedContent> {
+  if (!buffer || buffer.length === 0) {
+    throw new Error("Received an empty image file buffer");
+  }
+
+  onProgress?.(30);
+  const rawText = await extractTextFromImage(buffer, mimeType);
+  const text = sanitizeExtractedText(rawText);
+
+  if (!text) {
+    throw new Error("Image processed successfully but contained no extractable text");
+  }
+
+  onProgress?.(100);
   return { text };
 }
 

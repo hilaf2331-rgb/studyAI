@@ -1,29 +1,48 @@
-import OpenAI from "openai";
+import { GoogleGenerativeAI, type Content } from "@google/generative-ai";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
 
-if (!process.env.GROQ_API_KEY) {
-  throw new Error("GROQ_API_KEY environment variable is required but was not provided.");
+// SECURITY: the Gemini API key must only ever come from the environment —
+// never hardcode it here or anywhere else in source. Render (and local
+// .env files) are expected to provide GEMINI_API_KEY at runtime.
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY environment variable is required but was not provided.");
 }
 
-export const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Primary model for every chunk/call. Using the 8b model instead of the 70b
-// one keeps us on Groq's much larger free-tier daily token allowance
-// (500k/day vs 100k/day), which matters for large multi-chunk PDFs. Only an
-// individual chunk that hits a 429 and exhausts its retries drops down to
-// FALLBACK_TEXT_MODEL.
-const TEXT_MODEL = "llama-3.1-8b-instant";
-// Used only as a last resort for a single chunk after the primary model has
-// exhausted its retries — a different lightweight model on a separate Groq
-// rate-limit bucket, so a chunk can often still succeed even while
-// llama-3.1-8b is being throttled. Only ever used for the specific chunk(s)
-// that were rate-limited, not the whole document.
-const FALLBACK_TEXT_MODEL = "gemma2-9b-it";
+const TEXT_MODEL = "gemini-1.5-flash";
+// Audio transcription (Whisper) stays on Groq — see extractor.ts, which
+// reads GROQ_API_KEY directly via a raw fetch call. This constant is kept
+// here only because extractor.ts imports it alongside other AI helpers.
 export const AUDIO_MODEL = "whisper-large-v3";
+
+// gemini-1.5-flash is natively multimodal -- the same model handles this
+// image-understanding call as well as every text call above, no separate
+// vision model needed. This is what lets the frontend later add a
+// camera/gallery upload that sends a photo (e.g. of handwritten notes or a
+// textbook page) straight through to material extraction.
+export async function extractTextFromImage(buffer: Buffer, mimeType: string): Promise<string> {
+  const prompt =
+    "Extract and transcribe all visible text from this image exactly as written, preserving structure (headings, lists, etc). " +
+    "If it's a photo of handwritten or printed study material, return only the transcribed text -- no commentary, no markdown fences.";
+
+  try {
+    return await callGeminiWithRetry({
+      contents: [
+        {
+          role: "user",
+          parts: [{ inlineData: { mimeType, data: buffer.toString("base64") } }, { text: prompt }],
+        },
+      ],
+      temperature: 0.1,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitExhaustedError || error instanceof SystemBlockedError) throw error;
+    console.error("extractTextFromImage failed:", error);
+    throw new Error("Could not read this image. Please try a clearer photo or a different file.");
+  }
+}
 
 export interface AIGenerationOptions {
   language: "he" | "en";
@@ -99,24 +118,27 @@ function isRetryableError(error: any): boolean {
   return error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND";
 }
 
-// Thrown instead of retrying when Groq reports a retry-after long enough
-// that waiting it out within the request would be pointless (and would just
-// keep hammering an already-exhausted rate-limit window). Carries a
+function isRateLimitError(error: any): boolean {
+  return (error?.status ?? error?.response?.status) === 429;
+}
+
+// Thrown after a 429 survives every retry attempt, so callers stop instead
+// of silently hammering an already-exhausted rate-limit window. Carries a
 // user-facing message so app.ts's catch-all handler can surface it as-is.
 export class RateLimitExhaustedError extends Error {
   constructor(public readonly retryAfterSeconds: number) {
-    super("System is currently at maximum capacity. Please try again in 20 minutes.");
+    super("System is currently at maximum capacity. Please try again in a few minutes.");
     this.name = "RateLimitExhaustedError";
     tripCircuitBreaker(retryAfterSeconds);
   }
 }
 
 // Circuit breaker: once a hard rate limit is confirmed (see
-// RateLimitExhaustedError above), every subsequent Groq call across the
+// RateLimitExhaustedError above), every subsequent Gemini call across the
 // whole process is blocked until the cool-down passes — instead of letting
 // a stray click or a new request slip through and extend the penalty.
 // Module-level state is sufficient here: this is a single-process API
-// server, and the goal is just to stop hammering Groq, not to coordinate
+// server, and the goal is just to stop hammering the API, not to coordinate
 // across instances.
 const CIRCUIT_BREAKER_MAX_COOLDOWN_MS = 60 * 60 * 1000;
 let circuitBreakerBlockedUntil: number | null = null;
@@ -127,7 +149,7 @@ function tripCircuitBreaker(retryAfterSeconds: number): void {
   if (!circuitBreakerBlockedUntil || until > circuitBreakerBlockedUntil) {
     circuitBreakerBlockedUntil = until;
   }
-  console.error(`Circuit breaker tripped: blocking all Groq calls until ${new Date(circuitBreakerBlockedUntil).toISOString()}.`);
+  console.error(`Circuit breaker tripped: blocking all Gemini calls until ${new Date(circuitBreakerBlockedUntil).toISOString()}.`);
 }
 
 export class SystemBlockedError extends Error {
@@ -137,7 +159,7 @@ export class SystemBlockedError extends Error {
   }
 }
 
-// Must be called as the first step before any Groq call (and explicitly
+// Must be called as the first step before any Gemini call (and explicitly
 // before any aggregation/chunking work begins) so an already-confirmed hard
 // limit fails instantly without burning more budget or wasted chunking work.
 function checkCircuitBreaker(): void {
@@ -150,150 +172,86 @@ function checkCircuitBreaker(): void {
   throw new SystemBlockedError(Math.ceil(remainingMs / 60000));
 }
 
-const HARD_LIMIT_RETRY_AFTER_THRESHOLD_S = 60;
-
-function getRetryAfterSeconds(error: any): number | undefined {
-  const status = error?.status ?? error?.response?.status;
-  if (status !== 429) return undefined;
-  const headers = error?.headers ?? error?.response?.headers;
-  const raw = typeof headers?.get === "function" ? headers.get("retry-after") : headers?.["retry-after"];
-  const seconds = Number(raw);
-  return Number.isFinite(seconds) ? seconds : undefined;
-}
-
-// Logs every 429 with the data needed to tell a per-request burst apart from
-// a per-token-volume throttle: the rate-limit headers Groq sends back (when
-// present) report remaining requests/tokens for the window, and approxTokens
-// (a rough chars/4 estimate) shows how big the offending request actually was.
-function log429(context: string, error: any, approxTokens?: number) {
-  const status = error?.status ?? error?.response?.status;
-  if (status !== 429) return;
-  const headers = error?.headers ?? error?.response?.headers;
-  const get = (name: string) => (typeof headers?.get === "function" ? headers.get(name) : headers?.[name]);
-  console.warn(
-    `[429] ${context} | remaining-requests=${get("x-ratelimit-remaining-requests") ?? "?"} ` +
-    `remaining-tokens=${get("x-ratelimit-remaining-tokens") ?? "?"} ` +
-    `retry-after=${get("retry-after") ?? "?"}s ` +
-    `approxTokens=${approxTokens ?? "?"}`
-  );
-}
+// Used when a 429 survives all retries -- Gemini's error shape doesn't
+// reliably expose a retry-after value the way Groq's headers did, so we just
+// cool down for a fixed window comfortably longer than its per-minute quota.
+const RATE_LIMIT_COOLDOWN_SECONDS = 90;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+interface GeminiCallParams {
+  systemInstruction?: string;
+  contents: Content[];
+  temperature?: number;
+  maxOutputTokens?: number;
+  jsonMode?: boolean;
+}
+
 /**
- * Wraps a Groq chat-completion call with exponential backoff retry for
+ * Wraps a Gemini generateContent call with exponential backoff retry for
  * rate limits (429) and transient errors, so a single flaky request doesn't
  * take down the whole pipeline (and, in turn, the HTTP response) with it.
  */
-async function callGroqWithRetry(
-  params: Parameters<typeof groq.chat.completions.create>[0]
-): Promise<OpenAI.Chat.ChatCompletion> {
+async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   checkCircuitBreaker();
+  const model = genAI.getGenerativeModel({
+    model: TEXT_MODEL,
+    systemInstruction: params.systemInstruction,
+  });
+
   let lastError: any;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      return (await groq.chat.completions.create(params)) as OpenAI.Chat.ChatCompletion;
+      const result = await model.generateContent({
+        contents: params.contents,
+        generationConfig: {
+          temperature: params.temperature,
+          maxOutputTokens: params.maxOutputTokens,
+          responseMimeType: params.jsonMode ? "application/json" : undefined,
+        },
+      });
+      return result.response.text();
     } catch (error: any) {
       lastError = error;
-      log429("callGroqWithRetry", error);
-      const retryAfter = getRetryAfterSeconds(error);
-      if (retryAfter !== undefined && retryAfter > HARD_LIMIT_RETRY_AFTER_THRESHOLD_S) {
-        console.error(`callGroqWithRetry: retry-after=${retryAfter}s exceeds hard-limit threshold, failing fast instead of retrying.`);
-        throw new RateLimitExhaustedError(retryAfter);
+      if (isRateLimitError(error) && attempt === MAX_RETRY_ATTEMPTS) {
+        console.error("callGeminiWithRetry: rate limit survived all retries, failing fast.");
+        throw new RateLimitExhaustedError(RATE_LIMIT_COOLDOWN_SECONDS);
       }
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
-        throw error;
+        break;
       }
       const delay = BASE_RETRY_DELAY_MS * 2 ** attempt + Math.random() * 250;
       console.warn(
-        `Groq call failed (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS + 1}, status ${error?.status ?? "?"}). Retrying in ${Math.round(delay)}ms...`
+        `Gemini call failed (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS + 1}, status ${error?.status ?? "?"}). Retrying in ${Math.round(delay)}ms...`
       );
       await sleep(delay);
     }
   }
-  throw lastError;
+  // Every attempt is exhausted (and it wasn't a confirmed rate limit, which
+  // throws earlier as RateLimitExhaustedError) -- this is a network outage,
+  // an invalid request, or some other unexpected SDK failure. Log the raw
+  // error for debugging, but never leak it to the client: callers and the
+  // app-wide catch-all error handler should only ever see a clear,
+  // user-facing message here, not a raw SDK error shape.
+  console.error("callGeminiWithRetry: request failed after all retries:", lastError);
+  throw new Error("AI generation failed due to a network or service issue. Please try again.");
 }
 
-// Per-chunk retry/fallback used only by the sequential chunk-summarization
-// pipeline (see buildAggregatedContent), where Groq's free-tier limits are
-// tightest. Backoff is fixed at 2s/4s/8s (one delay per retry) instead of
-// callGroqWithRetry's formula, per the requested escalation. After 3 retries
-// on the primary model still fail, we wait the final 16s window and retry
-// once on FALLBACK_TEXT_MODEL — a different model with its own separate
-// rate-limit bucket — before giving up on the chunk entirely.
-const CHUNK_RETRY_DELAYS_MS = [2000, 4000, 8000, 16000];
-const MAX_PRIMARY_CHUNK_RETRIES = 3;
-
-async function callGroqForChunk(
-  params: Parameters<typeof groq.chat.completions.create>[0],
-  chunkLabel: string
-): Promise<{ response: OpenAI.Chat.ChatCompletion; usedFallback: boolean }> {
-  checkCircuitBreaker();
-  const approxTokens = Math.round(JSON.stringify(params.messages).length / 4);
-  let lastError: any;
-
-  for (let attempt = 0; attempt <= MAX_PRIMARY_CHUNK_RETRIES; attempt++) {
-    try {
-      const response = (await groq.chat.completions.create({ ...params, model: TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
-      return { response, usedFallback: false };
-    } catch (error: any) {
-      lastError = error;
-      log429(`${chunkLabel} (primary: ${TEXT_MODEL}, attempt ${attempt + 1}/${MAX_PRIMARY_CHUNK_RETRIES + 1})`, error, approxTokens);
-      const retryAfter = getRetryAfterSeconds(error);
-      if (retryAfter !== undefined && retryAfter > HARD_LIMIT_RETRY_AFTER_THRESHOLD_S) {
-        console.error(`${chunkLabel}: retry-after=${retryAfter}s exceeds hard-limit threshold, aborting instead of retrying/falling back.`);
-        throw new RateLimitExhaustedError(retryAfter);
-      }
-      if (attempt === MAX_PRIMARY_CHUNK_RETRIES || !isRetryableError(error)) break;
-      const delay = CHUNK_RETRY_DELAYS_MS[attempt];
-      console.warn(`${chunkLabel}: retrying on primary model in ${delay}ms (status ${error?.status ?? "?"})...`);
-      await sleep(delay);
-    }
-  }
-
-  if (!isRetryableError(lastError)) {
-    throw lastError;
-  }
-
-  console.warn(`${chunkLabel}: primary model exhausted ${MAX_PRIMARY_CHUNK_RETRIES} retries, falling back to ${FALLBACK_TEXT_MODEL} after a 16s cool-down...`);
-  await sleep(CHUNK_RETRY_DELAYS_MS[CHUNK_RETRY_DELAYS_MS.length - 1]);
-
-  try {
-    const response = (await groq.chat.completions.create({ ...params, model: FALLBACK_TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
-    return { response, usedFallback: true };
-  } catch (error: any) {
-    log429(`${chunkLabel} (fallback: ${FALLBACK_TEXT_MODEL})`, error, approxTokens);
-    console.error(`${chunkLabel}: fallback model ${FALLBACK_TEXT_MODEL} also failed (status ${error?.status ?? "?"}).`);
-    // Both the primary and fallback model failed for this chunk — there is
-    // nothing left to try. Surface the same hard-limit message regardless of
-    // the exact retry-after value, rather than silently patching over a
-    // chunk with a placeholder.
-    throw new RateLimitExhaustedError(getRetryAfterSeconds(error) ?? 1200);
-  }
-}
-
-// Above this length, a single Groq call risks silently dropping the tail of
-// the document (or the model just skims the title and hallucinates) — so we
-// chunk instead of truncating. Below it, material is short enough to pass
+// Above this length, a single Gemini call risks silently dropping the tail
+// of the document (or the model just skims the title and hallucinates) — so
+// we chunk instead of truncating. Below it, material is short enough to pass
 // through whole.
 const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
-// Sized in estimated tokens, not words -- a word-based limit looked safe for
-// English but let Hebrew chunks (which tokenize far less efficiently) blow
-// past Groq's free-tier 6000 TPM cap on a single request. Even after
-// switching to a 2000-token estimate, a real request still hit 6293 tokens,
-// so the budget here is intentionally well under the cap to leave room for
-// the system prompt, instruction template, and the model's own Hebrew
-// completion (also now explicitly capped below via max_tokens).
-const CHUNK_TOKEN_LIMIT = 1100;
-const CHUNK_COMPLETION_MAX_TOKENS = 600;
-// Groq's free tier enforces 6000 *tokens per minute*, not just per request --
-// back-to-back chunk calls within the same 60s window stack on top of each
-// other even if each individual request is small. A flat per-call delay
-// gives the rolling TPM window time to drain between requests instead of
-// just avoiding request-rate (RPM) limits.
-const INTER_CHUNK_DELAY_MS = 4000;
+// Sized in estimated tokens, not words. Gemini 1.5 Flash's 1M-token context
+// window means we no longer need to fight a tight per-minute token cap the
+// way Groq's free tier did -- a generous chunk budget keeps each chunk's
+// summary detailed (better Hebrew comprehension with more surrounding
+// context) while still splitting very large documents into a few manageable
+// pieces instead of one giant request.
+const CHUNK_TOKEN_LIMIT = 22000;
+const CHUNK_COMPLETION_MAX_TOKENS = 2000;
 
 async function summarizeChunk(
   chunk: string,
@@ -301,34 +259,27 @@ async function summarizeChunk(
   isHe: boolean,
   index: number,
   total: number
-): Promise<{ text: string; usedFallback: boolean }> {
+): Promise<string> {
   const prompt = isHe
-    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בקצרה (כ-150-300 מילים) את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
-    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nBriefly summarize (~150-300 words) all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nThoroughly and precisely summarize all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
 
-  const { response, usedFallback } = await callGroqForChunk(
-    {
-      model: TEXT_MODEL,
-      messages: [
-        { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.2,
-      max_tokens: CHUNK_COMPLETION_MAX_TOKENS,
-    },
-    `chunk ${index}/${total}`
-  );
-  return { text: response.choices[0].message.content || "", usedFallback };
+  return callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    temperature: 0.2,
+    maxOutputTokens: CHUNK_COMPLETION_MAX_TOKENS,
+  });
 }
 
 /**
- * For long documents, splits the text into page-sized chunks and summarizes
- * them strictly one at a time (no concurrency, with a mandatory delay
- * between requests to stay under Groq's free-tier rate limits), stitching
- * the per-chunk summaries back together. The result is a much shorter
- * string that still covers the *entire* document, so the downstream
- * generation call (summary/flashcards/questions/exam) never has to silently
- * truncate the tail of a large file. Short documents pass through unchanged.
+ * For long documents, splits the text into large chunks and summarizes them
+ * one at a time, stitching the per-chunk summaries back together. The result
+ * is a much shorter string that still covers the *entire* document, so the
+ * downstream generation call (summary/flashcards/questions/exam) never has
+ * to silently truncate the tail of a large file. Short documents pass
+ * through unchanged. Gemini's free tier (15 requests/minute) doesn't require
+ * the inter-request throttling Groq's tight TPM cap used to force.
  *
  * A chunk that still fails after all retries is replaced with a placeholder
  * note instead of throwing, so one bad chunk doesn't take down the whole
@@ -336,41 +287,37 @@ async function summarizeChunk(
  *
  * When materialId is given, "chunk X of Y" progress is recorded after every
  * chunk so the frontend can poll GET /materials/:id/progress and show the
- * user real status during the (now strictly sequential, multi-minute)
- * processing instead of a bare spinner.
+ * user real status during processing instead of a bare spinner.
  */
 async function buildAggregatedContent(
   materialContent: string,
   materialTitle: string,
   isHe: boolean,
   materialId?: number
-): Promise<{ content: string; usedFallback: boolean }> {
-  // First step, before any chunking or Groq calls: if we already know we're
-  // in a rate-limit cool-down, fail instantly instead of doing wasted work.
+): Promise<{ content: string }> {
+  // First step, before any chunking or Gemini calls: if we already know
+  // we're in a rate-limit cool-down, fail instantly instead of doing wasted
+  // work.
   checkCircuitBreaker();
 
   if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
-    return { content: materialContent, usedFallback: false };
+    return { content: materialContent };
   }
 
   const chunks = splitTextIntoChunks(materialContent, CHUNK_TOKEN_LIMIT);
   if (chunks.length <= 1) {
-    return { content: materialContent, usedFallback: false };
+    return { content: materialContent };
   }
 
   const partials: string[] = [];
-  let anyChunkUsedFallback = false;
   for (let i = 0; i < chunks.length; i++) {
     try {
-      const { text, usedFallback } = await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length);
-      partials.push(text);
-      if (usedFallback) anyChunkUsedFallback = true;
+      partials.push(await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length));
     } catch (error) {
       if (error instanceof RateLimitExhaustedError) {
-        // The rate-limit window is confirmed exhausted (either a long hard
-        // limit, or both the primary and fallback models failed) — don't
-        // keep burning budget on the remaining chunks, abort the whole
-        // request immediately so the user gets the alert right away.
+        // The rate-limit window is confirmed exhausted — don't keep burning
+        // budget on the remaining chunks, abort the whole request
+        // immediately so the user gets the alert right away.
         console.error(`Aborting chunk processing at ${i + 1}/${chunks.length}: rate limit exhausted (retry-after=${error.retryAfterSeconds}s).`);
         throw error;
       }
@@ -381,20 +328,10 @@ async function buildAggregatedContent(
           : "[This part of the material could not be processed due to a temporary error]"
       );
     }
-    // Computed after every chunk regardless of success/failure (the catch
-    // block above only rethrows for RateLimitExhaustedError, which aborts
-    // the whole loop) so the reported percentage always reflects exactly
-    // how much of the document has actually been attempted so far.
     const percentage = Math.round(((i + 1) / chunks.length) * 100);
     console.log(`Processed ${i + 1} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
       setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, percentage, stage: "chunking" });
-    }
-    // Mandatory pause before the next chunk, regardless of success/failure,
-    // to keep our request rate well below Groq's free-tier limit. Skipped
-    // after the last chunk since there's nothing left to wait for.
-    if (i < chunks.length - 1) {
-      await sleep(INTER_CHUNK_DELAY_MS);
     }
   }
 
@@ -402,7 +339,7 @@ async function buildAggregatedContent(
     .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))
     .join("\n\n");
 
-  return { content, usedFallback: anyChunkUsedFallback };
+  return { content };
 }
 
 export async function generateSummary(
@@ -436,7 +373,7 @@ export async function generateSummary(
 `;
 
   try {
-  const { content: aggregatedContent, usedFallback } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -482,24 +419,16 @@ Return ONLY JSON matching this structure:
   "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"]
 }`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [
-      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const text = await callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     temperature: 0.4,
+    jsonMode: true,
   });
 
-  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
-  const fallbackNote = usedFallback
-    ? (isHe
-        ? "\n\n> הערה: חלקים מסוימים מהחומר סוכמו באמצעות מודל חלופי עקב עומס בשרת, אך האיכות נשארת גבוהה."
-        : "\n\n> Note: Some sections were summarized using an alternative model due to server load, but the quality remains high.")
-    : "";
+  const parsed = safeJsonParse(text);
   return {
-    content: (parsed.content || "") + fallbackNote,
+    content: parsed.content || "",
     keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
   };
   } finally {
@@ -572,17 +501,14 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [
-      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const text = await callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     temperature: 0.3,
+    jsonMode: true,
   });
 
-  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  const parsed = safeJsonParse(text);
   return Array.isArray(parsed.cards) ? parsed.cards : [];
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
@@ -663,17 +589,14 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [
-      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const text = await callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     temperature: 0.4,
+    jsonMode: true,
   });
 
-  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  const parsed = safeJsonParse(text);
   return Array.isArray(parsed.questions)
     ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
     : [];
@@ -771,17 +694,14 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [
-      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const text = await callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     temperature: 0.4,
+    jsonMode: true,
   });
 
-  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  const parsed = safeJsonParse(text);
   return Array.isArray(parsed.questions)
     ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
     : [];
@@ -817,19 +737,20 @@ Material title: "${materialTitle}"
 Content:
 ${contentSlice(materialContent, 6000)}`;
 
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
-    { role: "user", content: userMessage },
+  // Gemini's chat turns use "model" for the assistant role, not "assistant".
+  const contents: Content[] = [
+    ...history.slice(-10).map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    })),
+    { role: "user", parts: [{ text: userMessage }] },
   ];
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages,
+  return callGeminiWithRetry({
+    systemInstruction: systemPrompt,
+    contents,
     temperature: 0.6,
   });
-
-  return response.choices[0].message.content || "";
 }
 
 export async function gradeAnswer(
@@ -854,13 +775,12 @@ Student's answer: ${userAnswer}
 Check if the student's answer is conceptually correct (exact wording not required).
 Return JSON matching this structure: {"correct": true/false, "explanation": "Brief explanation of what's right and what's missing"}`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [{ role: "user", content: prompt }],
-    response_format: { type: "json_object" },
+  const text = await callGeminiWithRetry({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
     temperature: 0.2,
+    jsonMode: true,
   });
 
-  const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  const parsed = safeJsonParse(text);
   return { correct: !!parsed.correct, explanation: parsed.explanation || "" };
 }

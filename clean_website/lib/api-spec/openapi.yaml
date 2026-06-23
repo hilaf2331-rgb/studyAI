@@ -945,6 +945,8 @@ components:
           type: string
         explanation:
           type: ["string", "null"]
+        modelAnswer:
+          type: ["string", "null"]
         options:
           type: array
           items:
@@ -1085,6 +1087,8 @@ components:
         correctAnswer:
           type: string
         explanation:
+          type: ["string", "null"]
+        modelAnswer:
           type: ["string", "null"]
 
     # ── Chat ─────────────────────────────────────────────────────────────────

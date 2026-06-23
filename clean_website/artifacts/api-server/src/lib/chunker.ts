@@ -1,16 +1,16 @@
-const DEFAULT_CHUNK_TOKEN_LIMIT = 2000;
+const DEFAULT_CHUNK_TOKEN_LIMIT = 1100;
 
 // Word counts are a useless proxy for token budget once Hebrew (or any
 // non-Latin script) is involved -- Groq's BPE tokenizer breaks Hebrew text
-// into roughly one token per 1-1.5 characters, versus ~4 characters per
-// token for plain ASCII. A 600-word Hebrew chunk that looked safe by word
-// count was actually blowing past Groq's free-tier 6000 TPM limit. Estimate
-// per-character instead, weighted by script, so the limit holds regardless
-// of language.
+// into roughly one token per character or worse, versus ~4 characters per
+// token for plain ASCII. A 2000-estimated-token chunk under the original
+// 1.5-chars/token guess still produced a real 6293-token request, so the
+// non-ASCII ratio here is deliberately pessimistic (1 char/token) rather
+// than tuned to a best guess.
 export function estimateTokenCount(text: string): number {
   const nonAsciiCount = (text.match(/[^\x00-\x7F]/g) ?? []).length;
   const asciiCount = text.length - nonAsciiCount;
-  return Math.ceil(nonAsciiCount / 1.5 + asciiCount / 4);
+  return Math.ceil(nonAsciiCount / 1 + asciiCount / 4);
 }
 
 /**

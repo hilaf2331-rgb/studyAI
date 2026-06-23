@@ -281,18 +281,19 @@ async function callGroqForChunk(
 const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
 // Sized in estimated tokens, not words -- a word-based limit looked safe for
 // English but let Hebrew chunks (which tokenize far less efficiently) blow
-// past Groq's free-tier 6000 TPM cap on a single request (one chunk hit
-// 6450 tokens at the old 600-word limit). 2000 tokens of chunk content still
-// leaves headroom under 6000 once the system prompt, instruction template,
-// and the model's own Hebrew completion tokens are added in.
-const CHUNK_TOKEN_LIMIT = 2000;
-// Groq's free tier rate limits are tight enough that even 2 concurrent
-// chunk calls on a large document reliably triggers 429s, so chunks are
-// processed strictly one at a time (see the for...of loop below) with a
-// mandatory pause between calls (whether the previous one succeeded or
-// failed) to stay well under Groq's requests-per-minute ceiling. We
-// deliberately trade speed for not getting rate-limited on big documents.
-const INTER_CHUNK_DELAY_MS = 2500;
+// past Groq's free-tier 6000 TPM cap on a single request. Even after
+// switching to a 2000-token estimate, a real request still hit 6293 tokens,
+// so the budget here is intentionally well under the cap to leave room for
+// the system prompt, instruction template, and the model's own Hebrew
+// completion (also now explicitly capped below via max_tokens).
+const CHUNK_TOKEN_LIMIT = 1100;
+const CHUNK_COMPLETION_MAX_TOKENS = 600;
+// Groq's free tier enforces 6000 *tokens per minute*, not just per request --
+// back-to-back chunk calls within the same 60s window stack on top of each
+// other even if each individual request is small. A flat per-call delay
+// gives the rolling TPM window time to drain between requests instead of
+// just avoiding request-rate (RPM) limits.
+const INTER_CHUNK_DELAY_MS = 4000;
 
 async function summarizeChunk(
   chunk: string,
@@ -313,6 +314,7 @@ async function summarizeChunk(
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
+      max_tokens: CHUNK_COMPLETION_MAX_TOKENS,
     },
     `chunk ${index}/${total}`
   );

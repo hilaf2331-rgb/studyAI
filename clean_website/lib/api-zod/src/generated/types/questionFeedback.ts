@@ -13,4 +13,6 @@ export interface QuestionFeedback {
   correctAnswer: string;
   /** @nullable */
   explanation?: string | null;
+  /** @nullable */
+  modelAnswer?: string | null;
 }

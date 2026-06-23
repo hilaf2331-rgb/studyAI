@@ -96,6 +96,8 @@ export interface Material {
   flashcardCount?: number;
   questionCount?: number;
   examCount?: number;
+  wordCount?: number;
+  tooShortForGeneration?: boolean;
   createdAt: string;
 }
 
@@ -568,5 +570,4 @@ export interface StudyStreak {
 export type ListMaterialsParams = {
 courseId?: number;
 };
-
 

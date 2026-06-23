@@ -6,6 +6,7 @@ import {
   GetExamParams, DeleteExamParams, SubmitExamParams, SubmitExamBody, GetExamResultParams
 } from "@workspace/api-zod";
 import { generateExamAI, gradeAnswer } from "../lib/ai";
+import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 
 const router = Router();
 
@@ -40,11 +41,16 @@ router.post("/materials/:id/exams", async (req, res) => {
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
   if (!material) return res.status(404).json({ error: "Not found" });
 
+  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
+  const contentLength = (material.extractedText || material.title).trim().length;
+  const questionCount = clampToContentLength(body.questionCount || 10, contentLength, "questions");
+
   const generated = await generateExamAI({
     language: body.language as "he" | "en",
     materialContent: material.extractedText || material.title,
     materialTitle: material.title,
-    questionCount: body.questionCount || 10,
+    questionCount,
     examType: body.examType,
     difficulty: body.difficulty || "mixed",
     topics: body.topics,

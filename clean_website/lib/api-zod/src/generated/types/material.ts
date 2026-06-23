@@ -29,5 +29,7 @@ export interface Material {
   flashcardCount?: number;
   questionCount?: number;
   examCount?: number;
+  wordCount?: number;
+  tooShortForGeneration?: boolean;
   createdAt: Date;
 }

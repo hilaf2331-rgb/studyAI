@@ -766,6 +766,10 @@ components:
           type: integer
         examCount:
           type: integer
+        wordCount:
+          type: integer
+        tooShortForGeneration:
+          type: boolean
         createdAt:
           type: string
           format: date-time

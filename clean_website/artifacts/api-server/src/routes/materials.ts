@@ -4,6 +4,7 @@ import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTabl
 import { eq, count, and } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl } from "../lib/extractor";
+import { isContentTooShort, getWordCount } from "../lib/validation";
 
 const router = Router();
 
@@ -38,6 +39,8 @@ async function getMaterialWithCounts(id: number, userId: number) {
     examCount: Number(examCount.value),
     deckCount: Number(deckCount.value),
     qSetCount: Number(qSetCount.value),
+    wordCount: getWordCount(material.extractedText),
+    tooShortForGeneration: isContentTooShort(material.extractedText),
   };
 }
 

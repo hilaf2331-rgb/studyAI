@@ -172,6 +172,18 @@ export class SystemBlockedError extends Error {
   }
 }
 
+// Thrown after every retry attempt is exhausted for a non-rate-limit reason
+// (network outage, invalid request, unexpected SDK failure). Lets app.ts's
+// catch-all map this to a 503 (retryable upstream issue) instead of the
+// generic 500 a plain Error would fall into, without every calling route
+// needing its own try/catch.
+export class AIServiceError extends Error {
+  constructor() {
+    super("AI generation failed due to a network or service issue. Please try again.");
+    this.name = "AIServiceError";
+  }
+}
+
 // Must be called as the first step before any Gemini call (and explicitly
 // before any aggregation/chunking work begins) so an already-confirmed hard
 // limit fails instantly without burning more budget or wasted chunking work.
@@ -252,7 +264,7 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   // app-wide catch-all error handler should only ever see a clear,
   // user-facing message here, not a raw SDK error shape.
   console.error("callGeminiWithRetry: request failed after all retries:", lastError);
-  throw new Error("AI generation failed due to a network or service issue. Please try again.");
+  throw new AIServiceError();
 }
 
 // Above this length, a single Gemini call risks silently dropping the tail

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError } from "../lib/ai";
+import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -90,7 +90,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       logger.error({ err: summarySettled.reason, materialId }, "generate-all: summary generation failed");
       const reason = summarySettled.reason;
       const message =
-        reason instanceof RateLimitExhaustedError || reason instanceof SystemBlockedError
+        reason instanceof RateLimitExhaustedError || reason instanceof SystemBlockedError || reason instanceof AIServiceError
           ? reason.message
           : "Failed to generate summary. Please try again.";
       setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });

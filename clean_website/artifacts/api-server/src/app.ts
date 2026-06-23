@@ -5,7 +5,7 @@ import router from "./routes";
 import authRouter from "./routes/auth";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
-import { RateLimitExhaustedError, SystemBlockedError } from "./lib/ai";
+import { RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "./lib/ai";
 import { InsufficientTokensError } from "./lib/tokens";
 import { globalRateLimiter } from "./lib/rate-limit";
 
@@ -82,6 +82,10 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
   if (err instanceof InsufficientTokensError) {
     res.status(402).json({ error: err.message });
+    return;
+  }
+  if (err instanceof AIServiceError) {
+    res.status(503).json({ error: err.message });
     return;
   }
   res.status(500).json({ error: "Internal server error. Please try again." });

@@ -12,7 +12,12 @@ export const groq = new OpenAI({
 });
 
 // עדכון למודלים החדשים והיציבים ביותר של Groq
-const TEXT_MODEL = "llama-3.3-70b-versatile"; 
+const TEXT_MODEL = "llama-3.3-70b-versatile";
+// Used only as a last resort for a single chunk after the primary model has
+// exhausted its retries — a smaller model on a separate Groq rate-limit
+// bucket, so a chunk can often still succeed even while llama-3.3-70b is
+// being throttled.
+const FALLBACK_TEXT_MODEL = "llama-3.1-8b-instant";
 export const AUDIO_MODEL = "whisper-large-v3";
 
 export interface AIGenerationOptions {
@@ -89,6 +94,23 @@ function isRetryableError(error: any): boolean {
   return error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND";
 }
 
+// Logs every 429 with the data needed to tell a per-request burst apart from
+// a per-token-volume throttle: the rate-limit headers Groq sends back (when
+// present) report remaining requests/tokens for the window, and approxTokens
+// (a rough chars/4 estimate) shows how big the offending request actually was.
+function log429(context: string, error: any, approxTokens?: number) {
+  const status = error?.status ?? error?.response?.status;
+  if (status !== 429) return;
+  const headers = error?.headers ?? error?.response?.headers;
+  const get = (name: string) => (typeof headers?.get === "function" ? headers.get(name) : headers?.[name]);
+  console.warn(
+    `[429] ${context} | remaining-requests=${get("x-ratelimit-remaining-requests") ?? "?"} ` +
+    `remaining-tokens=${get("x-ratelimit-remaining-tokens") ?? "?"} ` +
+    `retry-after=${get("retry-after") ?? "?"}s ` +
+    `approxTokens=${approxTokens ?? "?"}`
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -107,6 +129,7 @@ async function callGroqWithRetry(
       return (await groq.chat.completions.create(params)) as OpenAI.Chat.ChatCompletion;
     } catch (error: any) {
       lastError = error;
+      log429("callGroqWithRetry", error);
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
         throw error;
       }
@@ -120,13 +143,63 @@ async function callGroqWithRetry(
   throw lastError;
 }
 
+// Per-chunk retry/fallback used only by the sequential chunk-summarization
+// pipeline (see buildAggregatedContent), where Groq's free-tier limits are
+// tightest. Backoff is fixed at 2s/4s/8s (one delay per retry) instead of
+// callGroqWithRetry's formula, per the requested escalation. After 3 retries
+// on the primary model still fail, we wait the final 16s window and retry
+// once on FALLBACK_TEXT_MODEL — a different model with its own separate
+// rate-limit bucket — before giving up on the chunk entirely.
+const CHUNK_RETRY_DELAYS_MS = [2000, 4000, 8000, 16000];
+const MAX_PRIMARY_CHUNK_RETRIES = 3;
+
+async function callGroqForChunk(
+  params: Parameters<typeof groq.chat.completions.create>[0],
+  chunkLabel: string
+): Promise<OpenAI.Chat.ChatCompletion> {
+  const approxTokens = Math.round(JSON.stringify(params.messages).length / 4);
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= MAX_PRIMARY_CHUNK_RETRIES; attempt++) {
+    try {
+      return (await groq.chat.completions.create({ ...params, model: TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+    } catch (error: any) {
+      lastError = error;
+      log429(`${chunkLabel} (primary: ${TEXT_MODEL}, attempt ${attempt + 1}/${MAX_PRIMARY_CHUNK_RETRIES + 1})`, error, approxTokens);
+      if (attempt === MAX_PRIMARY_CHUNK_RETRIES || !isRetryableError(error)) break;
+      const delay = CHUNK_RETRY_DELAYS_MS[attempt];
+      console.warn(`${chunkLabel}: retrying on primary model in ${delay}ms (status ${error?.status ?? "?"})...`);
+      await sleep(delay);
+    }
+  }
+
+  if (!isRetryableError(lastError)) {
+    throw lastError;
+  }
+
+  console.warn(`${chunkLabel}: primary model exhausted ${MAX_PRIMARY_CHUNK_RETRIES} retries, falling back to ${FALLBACK_TEXT_MODEL} after a 16s cool-down...`);
+  await sleep(CHUNK_RETRY_DELAYS_MS[CHUNK_RETRY_DELAYS_MS.length - 1]);
+
+  try {
+    return (await groq.chat.completions.create({ ...params, model: FALLBACK_TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+  } catch (error: any) {
+    log429(`${chunkLabel} (fallback: ${FALLBACK_TEXT_MODEL})`, error, approxTokens);
+    console.error(`${chunkLabel}: fallback model ${FALLBACK_TEXT_MODEL} also failed (status ${error?.status ?? "?"}).`);
+    throw error;
+  }
+}
+
 // Above this length, a single Groq call risks silently dropping the tail of
 // the document (or the model just skims the title and hallucinates) — so we
 // chunk instead of truncating. Below it, material is short enough to pass
 // through whole.
 const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
-// ~2-3 pages per chunk, per the task spec.
-const CHUNK_WORD_LIMIT = 1200;
+// ~1-1.5 pages per chunk. Lowered from 1200 words because even single
+// sequential requests at that size were still tripping Groq's free-tier
+// token-per-minute limit on large (80+ page) documents — smaller requests
+// mean fewer tokens burned per call, which matters if the limit is
+// volume-based rather than purely per-request.
+const CHUNK_WORD_LIMIT = 600;
 // Groq's free tier rate limits are tight enough that even 2 concurrent
 // chunk calls on a large document reliably triggers 429s, so chunks are
 // processed strictly one at a time (see the for...of loop below) with a
@@ -146,14 +219,17 @@ async function summarizeChunk(
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בקצרה (כ-150-300 מילים) את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
     : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nBriefly summarize (~150-300 words) all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
 
-  const response = await callGroqWithRetry({
-    model: TEXT_MODEL,
-    messages: [
-      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0.2,
-  });
+  const response = await callGroqForChunk(
+    {
+      model: TEXT_MODEL,
+      messages: [
+        { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+    },
+    `chunk ${index}/${total}`
+  );
   return response.choices[0].message.content || "";
 }
 

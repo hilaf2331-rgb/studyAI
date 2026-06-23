@@ -11,12 +11,15 @@ export const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
 });
 
-// עדכון למודלים החדשים והיציבים ביותר של Groq
+// Highest-quality model is always the first choice for every chunk/call —
+// summary quality matters more than speed. Only an individual chunk that
+// hits a 429 and exhausts its retries drops down to FALLBACK_TEXT_MODEL.
 const TEXT_MODEL = "llama-3.3-70b-versatile";
 // Used only as a last resort for a single chunk after the primary model has
 // exhausted its retries — a smaller model on a separate Groq rate-limit
 // bucket, so a chunk can often still succeed even while llama-3.3-70b is
-// being throttled.
+// being throttled. Slightly lower quality, but only ever used for the
+// specific chunk(s) that were rate-limited, not the whole document.
 const FALLBACK_TEXT_MODEL = "llama-3.1-8b-instant";
 export const AUDIO_MODEL = "whisper-large-v3";
 
@@ -94,6 +97,28 @@ function isRetryableError(error: any): boolean {
   return error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND";
 }
 
+// Thrown instead of retrying when Groq reports a retry-after long enough
+// that waiting it out within the request would be pointless (and would just
+// keep hammering an already-exhausted rate-limit window). Carries a
+// user-facing message so app.ts's catch-all handler can surface it as-is.
+export class RateLimitExhaustedError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super("System is currently at maximum capacity. Please try again in 20 minutes.");
+    this.name = "RateLimitExhaustedError";
+  }
+}
+
+const HARD_LIMIT_RETRY_AFTER_THRESHOLD_S = 60;
+
+function getRetryAfterSeconds(error: any): number | undefined {
+  const status = error?.status ?? error?.response?.status;
+  if (status !== 429) return undefined;
+  const headers = error?.headers ?? error?.response?.headers;
+  const raw = typeof headers?.get === "function" ? headers.get("retry-after") : headers?.["retry-after"];
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) ? seconds : undefined;
+}
+
 // Logs every 429 with the data needed to tell a per-request burst apart from
 // a per-token-volume throttle: the rate-limit headers Groq sends back (when
 // present) report remaining requests/tokens for the window, and approxTokens
@@ -130,6 +155,11 @@ async function callGroqWithRetry(
     } catch (error: any) {
       lastError = error;
       log429("callGroqWithRetry", error);
+      const retryAfter = getRetryAfterSeconds(error);
+      if (retryAfter !== undefined && retryAfter > HARD_LIMIT_RETRY_AFTER_THRESHOLD_S) {
+        console.error(`callGroqWithRetry: retry-after=${retryAfter}s exceeds hard-limit threshold, failing fast instead of retrying.`);
+        throw new RateLimitExhaustedError(retryAfter);
+      }
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
         throw error;
       }
@@ -156,16 +186,22 @@ const MAX_PRIMARY_CHUNK_RETRIES = 3;
 async function callGroqForChunk(
   params: Parameters<typeof groq.chat.completions.create>[0],
   chunkLabel: string
-): Promise<OpenAI.Chat.ChatCompletion> {
+): Promise<{ response: OpenAI.Chat.ChatCompletion; usedFallback: boolean }> {
   const approxTokens = Math.round(JSON.stringify(params.messages).length / 4);
   let lastError: any;
 
   for (let attempt = 0; attempt <= MAX_PRIMARY_CHUNK_RETRIES; attempt++) {
     try {
-      return (await groq.chat.completions.create({ ...params, model: TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+      const response = (await groq.chat.completions.create({ ...params, model: TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+      return { response, usedFallback: false };
     } catch (error: any) {
       lastError = error;
       log429(`${chunkLabel} (primary: ${TEXT_MODEL}, attempt ${attempt + 1}/${MAX_PRIMARY_CHUNK_RETRIES + 1})`, error, approxTokens);
+      const retryAfter = getRetryAfterSeconds(error);
+      if (retryAfter !== undefined && retryAfter > HARD_LIMIT_RETRY_AFTER_THRESHOLD_S) {
+        console.error(`${chunkLabel}: retry-after=${retryAfter}s exceeds hard-limit threshold, aborting instead of retrying/falling back.`);
+        throw new RateLimitExhaustedError(retryAfter);
+      }
       if (attempt === MAX_PRIMARY_CHUNK_RETRIES || !isRetryableError(error)) break;
       const delay = CHUNK_RETRY_DELAYS_MS[attempt];
       console.warn(`${chunkLabel}: retrying on primary model in ${delay}ms (status ${error?.status ?? "?"})...`);
@@ -181,11 +217,16 @@ async function callGroqForChunk(
   await sleep(CHUNK_RETRY_DELAYS_MS[CHUNK_RETRY_DELAYS_MS.length - 1]);
 
   try {
-    return (await groq.chat.completions.create({ ...params, model: FALLBACK_TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+    const response = (await groq.chat.completions.create({ ...params, model: FALLBACK_TEXT_MODEL })) as OpenAI.Chat.ChatCompletion;
+    return { response, usedFallback: true };
   } catch (error: any) {
     log429(`${chunkLabel} (fallback: ${FALLBACK_TEXT_MODEL})`, error, approxTokens);
     console.error(`${chunkLabel}: fallback model ${FALLBACK_TEXT_MODEL} also failed (status ${error?.status ?? "?"}).`);
-    throw error;
+    // Both the primary and fallback model failed for this chunk — there is
+    // nothing left to try. Surface the same hard-limit message regardless of
+    // the exact retry-after value, rather than silently patching over a
+    // chunk with a placeholder.
+    throw new RateLimitExhaustedError(getRetryAfterSeconds(error) ?? 1200);
   }
 }
 
@@ -214,12 +255,12 @@ async function summarizeChunk(
   isHe: boolean,
   index: number,
   total: number
-): Promise<string> {
+): Promise<{ text: string; usedFallback: boolean }> {
   const prompt = isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בקצרה (כ-150-300 מילים) את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
     : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nBriefly summarize (~150-300 words) all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
 
-  const response = await callGroqForChunk(
+  const { response, usedFallback } = await callGroqForChunk(
     {
       model: TEXT_MODEL,
       messages: [
@@ -230,7 +271,7 @@ async function summarizeChunk(
     },
     `chunk ${index}/${total}`
   );
-  return response.choices[0].message.content || "";
+  return { text: response.choices[0].message.content || "", usedFallback };
 }
 
 /**
@@ -256,21 +297,32 @@ async function buildAggregatedContent(
   materialTitle: string,
   isHe: boolean,
   materialId?: number
-): Promise<string> {
+): Promise<{ content: string; usedFallback: boolean }> {
   if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
-    return materialContent;
+    return { content: materialContent, usedFallback: false };
   }
 
   const chunks = splitTextIntoChunks(materialContent, CHUNK_WORD_LIMIT);
   if (chunks.length <= 1) {
-    return materialContent;
+    return { content: materialContent, usedFallback: false };
   }
 
   const partials: string[] = [];
+  let anyChunkUsedFallback = false;
   for (let i = 0; i < chunks.length; i++) {
     try {
-      partials.push(await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length));
+      const { text, usedFallback } = await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length);
+      partials.push(text);
+      if (usedFallback) anyChunkUsedFallback = true;
     } catch (error) {
+      if (error instanceof RateLimitExhaustedError) {
+        // The rate-limit window is confirmed exhausted (either a long hard
+        // limit, or both the primary and fallback models failed) — don't
+        // keep burning budget on the remaining chunks, abort the whole
+        // request immediately so the user gets the alert right away.
+        console.error(`Aborting chunk processing at ${i + 1}/${chunks.length}: rate limit exhausted (retry-after=${error.retryAfterSeconds}s).`);
+        throw error;
+      }
       console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, error);
       partials.push(
         isHe
@@ -289,9 +341,11 @@ async function buildAggregatedContent(
     }
   }
 
-  return partials
+  const content = partials
     .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))
     .join("\n\n");
+
+  return { content, usedFallback: anyChunkUsedFallback };
 }
 
 export async function generateSummary(
@@ -325,7 +379,7 @@ export async function generateSummary(
 `;
 
   try {
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { content: aggregatedContent, usedFallback } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -382,8 +436,13 @@ Return ONLY JSON matching this structure:
   });
 
   const parsed = safeJsonParse(response.choices[0].message.content || "{}");
+  const fallbackNote = usedFallback
+    ? (isHe
+        ? "\n\n> הערה: חלקים מסוימים מהחומר סוכמו באמצעות מודל חלופי עקב עומס בשרת, אך האיכות נשארת גבוהה."
+        : "\n\n> Note: Some sections were summarized using an alternative model due to server load, but the quality remains high.")
+    : "";
   return {
-    content: parsed.content || "",
+    content: (parsed.content || "") + fallbackNote,
     keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
   };
   } finally {
@@ -397,7 +456,7 @@ export async function generateFlashcardsAI(
   const { language, materialContent, materialTitle, cardCount, cardTypes, materialId } = opts;
   const isHe = language === "he";
   try {
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const typeGuide = isHe
     ? `סוגי כרטיסיות אפשריים:
@@ -479,7 +538,7 @@ export async function generateQuestionsAI(
   const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId } = opts;
   const isHe = language === "he";
   try {
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -572,7 +631,7 @@ export async function generateExamAI(
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId } = opts;
   const isHe = language === "he";
   try {
-  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)

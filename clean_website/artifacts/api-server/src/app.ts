@@ -5,6 +5,7 @@ import router from "./routes";
 import authRouter from "./routes/auth";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
+import { RateLimitExhaustedError } from "./lib/ai";
 
 const app: Express = express();
 
@@ -65,9 +66,12 @@ app.use("/api", requireAuth, router);
 // Catch-all error handler.
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error({ err }, "Unhandled error");
-  if (!res.headersSent) {
-    res.status(500).json({ error: "Internal server error. Please try again." });
+  if (res.headersSent) return;
+  if (err instanceof RateLimitExhaustedError) {
+    res.status(429).json({ error: err.message });
+    return;
   }
+  res.status(500).json({ error: "Internal server error. Please try again." });
 });
 
 export default app;

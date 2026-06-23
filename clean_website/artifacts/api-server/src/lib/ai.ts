@@ -105,7 +105,47 @@ export class RateLimitExhaustedError extends Error {
   constructor(public readonly retryAfterSeconds: number) {
     super("System is currently at maximum capacity. Please try again in 20 minutes.");
     this.name = "RateLimitExhaustedError";
+    tripCircuitBreaker(retryAfterSeconds);
   }
+}
+
+// Circuit breaker: once a hard rate limit is confirmed (see
+// RateLimitExhaustedError above), every subsequent Groq call across the
+// whole process is blocked until the cool-down passes — instead of letting
+// a stray click or a new request slip through and extend the penalty.
+// Module-level state is sufficient here: this is a single-process API
+// server, and the goal is just to stop hammering Groq, not to coordinate
+// across instances.
+const CIRCUIT_BREAKER_MAX_COOLDOWN_MS = 60 * 60 * 1000;
+let circuitBreakerBlockedUntil: number | null = null;
+
+function tripCircuitBreaker(retryAfterSeconds: number): void {
+  const cooldownMs = Math.min(Math.max(retryAfterSeconds, 1) * 1000, CIRCUIT_BREAKER_MAX_COOLDOWN_MS);
+  const until = Date.now() + cooldownMs;
+  if (!circuitBreakerBlockedUntil || until > circuitBreakerBlockedUntil) {
+    circuitBreakerBlockedUntil = until;
+  }
+  console.error(`Circuit breaker tripped: blocking all Groq calls until ${new Date(circuitBreakerBlockedUntil).toISOString()}.`);
+}
+
+export class SystemBlockedError extends Error {
+  constructor(public readonly retryAfterMinutes: number) {
+    super(`We are currently in a cool-down period due to rate limits. Please try again in ${retryAfterMinutes} minutes.`);
+    this.name = "SystemBlockedError";
+  }
+}
+
+// Must be called as the first step before any Groq call (and explicitly
+// before any aggregation/chunking work begins) so an already-confirmed hard
+// limit fails instantly without burning more budget or wasted chunking work.
+function checkCircuitBreaker(): void {
+  if (circuitBreakerBlockedUntil === null) return;
+  const remainingMs = circuitBreakerBlockedUntil - Date.now();
+  if (remainingMs <= 0) {
+    circuitBreakerBlockedUntil = null;
+    return;
+  }
+  throw new SystemBlockedError(Math.ceil(remainingMs / 60000));
 }
 
 const HARD_LIMIT_RETRY_AFTER_THRESHOLD_S = 60;
@@ -148,6 +188,7 @@ function sleep(ms: number): Promise<void> {
 async function callGroqWithRetry(
   params: Parameters<typeof groq.chat.completions.create>[0]
 ): Promise<OpenAI.Chat.ChatCompletion> {
+  checkCircuitBreaker();
   let lastError: any;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
@@ -187,6 +228,7 @@ async function callGroqForChunk(
   params: Parameters<typeof groq.chat.completions.create>[0],
   chunkLabel: string
 ): Promise<{ response: OpenAI.Chat.ChatCompletion; usedFallback: boolean }> {
+  checkCircuitBreaker();
   const approxTokens = Math.round(JSON.stringify(params.messages).length / 4);
   let lastError: any;
 
@@ -298,6 +340,10 @@ async function buildAggregatedContent(
   isHe: boolean,
   materialId?: number
 ): Promise<{ content: string; usedFallback: boolean }> {
+  // First step, before any chunking or Groq calls: if we already know we're
+  // in a rate-limit cool-down, fail instantly instead of doing wasted work.
+  checkCircuitBreaker();
+
   if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
     return { content: materialContent, usedFallback: false };
   }

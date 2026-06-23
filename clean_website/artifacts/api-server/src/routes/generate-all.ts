@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError } from "../lib/ai";
+import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError } from "../lib/ai";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 
@@ -125,7 +125,7 @@ router.post("/materials/:id/generate-all", async (req, res) => {
   // out with a clear JSON error instead of a half-built result.
   if (summarySettled.status === "rejected") {
     logger.error({ err: summarySettled.reason, materialId }, "generate-all: summary generation failed");
-    if (summarySettled.reason instanceof RateLimitExhaustedError) {
+    if (summarySettled.reason instanceof RateLimitExhaustedError || summarySettled.reason instanceof SystemBlockedError) {
       return res.status(429).json({ error: summarySettled.reason.message });
     }
     return res.status(502).json({

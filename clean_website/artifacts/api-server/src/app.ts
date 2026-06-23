@@ -5,7 +5,7 @@ import router from "./routes";
 import authRouter from "./routes/auth";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
-import { RateLimitExhaustedError } from "./lib/ai";
+import { RateLimitExhaustedError, SystemBlockedError } from "./lib/ai";
 
 const app: Express = express();
 
@@ -67,7 +67,7 @@ app.use("/api", requireAuth, router);
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error({ err }, "Unhandled error");
   if (res.headersSent) return;
-  if (err instanceof RateLimitExhaustedError) {
+  if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError) {
     res.status(429).json({ error: err.message });
     return;
   }

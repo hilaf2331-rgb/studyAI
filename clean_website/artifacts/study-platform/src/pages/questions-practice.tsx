@@ -19,7 +19,7 @@ export const QuestionsPracticePage: React.FC = () => {
   const { data: qSet, isLoading } = useGetQuestionSet(id, { query: { enabled: !!id } });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
-  if (!qSet || !qSet.questions?.length) return <p className="text-muted-foreground">No questions</p>;
+  if (!qSet || !qSet.questions?.length) return <p className="text-muted-foreground">אין שאלות</p>;
 
   const questions = qSet.questions;
   const isHebrew = qSet.language === "he";

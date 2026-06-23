@@ -4,11 +4,11 @@ import { useLanguage } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
-import { BookOpen, BookText, Home, Moon, Sun, Languages, ChevronLeft, ChevronRight, LogOut, Mic } from "lucide-react";
+import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [location] = useLocation();
-  const { language, setLanguage, t, isRTL } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
@@ -23,12 +23,10 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
     { href: "/", label: "dashboard", icon: Home },
     { href: "/courses", label: "courses", icon: BookOpen },
     { href: "/materials", label: "materials", icon: BookText },
-    { href: "/recorder", labelHe: "הקלטות", labelEn: "Recorder", icon: Mic },
+    { href: "/recorder", label: "הקלטות", icon: Mic },
   ];
 
-  const CollapseIcon = open
-    ? (isRTL ? ChevronRight : ChevronLeft)
-    : (isRTL ? ChevronLeft : ChevronRight);
+  const CollapseIcon = open ? ChevronRight : ChevronLeft;
 
   return (
     <div className={`flex min-h-[100dvh] w-full bg-background ${isRTL ? "flex-row-reverse" : "flex-row"}`}>
@@ -55,7 +53,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
             flex items-center justify-center shadow-sm hover:bg-muted transition-colors
             ${isRTL ? "-left-3" : "-right-3"}
           `}
-          aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+          aria-label={open ? "כווץ תפריט צד" : "הרחב תפריט צד"}
         >
           <CollapseIcon className="w-3.5 h-3.5" />
         </button>
@@ -66,9 +64,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
             const isActive = item.href === "/"
               ? location === "/"
               : location.startsWith(item.href);
-            const label = "labelHe" in item
-              ? (isRTL ? item.labelHe : item.labelEn)
-              : t(item.label as string);
+            const label = t(item.label);
             return (
               <Link
                 key={item.href}
@@ -99,16 +95,8 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           )}
           <button
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-            onClick={() => setLanguage(language === "en" ? "he" : "en")}
-            title={!open ? (language === "en" ? "עברית" : "English") : undefined}
-          >
-            <Languages className="w-5 h-5 shrink-0" />
-            {open && <span className="text-sm">{language === "en" ? "עברית" : "English"}</span>}
-          </button>
-          <button
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title={!open ? (theme === "dark" ? "Light" : "Dark") : undefined}
+            title={!open ? (theme === "dark" ? t("light_mode") : t("dark_mode")) : undefined}
           >
             {theme === "dark" ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
             {open && <span className="text-sm">{theme === "dark" ? t("light_mode") : t("dark_mode")}</span>}
@@ -116,10 +104,10 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           <button
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
             onClick={handleLogout}
-            title={!open ? (isRTL ? "התנתק" : "Sign out") : undefined}
+            title={!open ? "התנתק" : undefined}
           >
             <LogOut className="w-5 h-5 shrink-0" />
-            {open && <span className="text-sm">{isRTL ? "התנתק" : "Sign out"}</span>}
+            {open && <span className="text-sm">התנתק</span>}
           </button>
         </div>
       </div>

@@ -20,7 +20,7 @@ export const SummaryViewPage: React.FC = () => {
       {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16" />)}
     </div>
   );
-  if (!summary) return <p className="text-muted-foreground">Not found</p>;
+  if (!summary) return <p className="text-muted-foreground">לא נמצא</p>;
 
   const isHebrew = summary.language === "he";
   const dir = isHebrew ? "rtl" : "ltr";

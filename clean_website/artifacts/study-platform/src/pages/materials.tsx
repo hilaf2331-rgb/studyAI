@@ -109,7 +109,7 @@ export const MaterialsPage: React.FC = () => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold truncate">{m.title}</span>
                         <StatusBadge status={m.status} isRTL={isRTL} />
-                        <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "Mixed" : "English"}</Badge>
+                        <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
                         <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
                       </div>
                       <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">

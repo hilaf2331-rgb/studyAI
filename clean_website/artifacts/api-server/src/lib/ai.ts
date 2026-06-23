@@ -11,16 +11,18 @@ export const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
 });
 
-// Highest-quality model is always the first choice for every chunk/call —
-// summary quality matters more than speed. Only an individual chunk that
-// hits a 429 and exhausts its retries drops down to FALLBACK_TEXT_MODEL.
-const TEXT_MODEL = "llama-3.3-70b-versatile";
+// Primary model for every chunk/call. Using the 8b model instead of the 70b
+// one keeps us on Groq's much larger free-tier daily token allowance
+// (500k/day vs 100k/day), which matters for large multi-chunk PDFs. Only an
+// individual chunk that hits a 429 and exhausts its retries drops down to
+// FALLBACK_TEXT_MODEL.
+const TEXT_MODEL = "llama-3.1-8b-instant";
 // Used only as a last resort for a single chunk after the primary model has
-// exhausted its retries — a smaller model on a separate Groq rate-limit
-// bucket, so a chunk can often still succeed even while llama-3.3-70b is
-// being throttled. Slightly lower quality, but only ever used for the
-// specific chunk(s) that were rate-limited, not the whole document.
-const FALLBACK_TEXT_MODEL = "llama-3.1-8b-instant";
+// exhausted its retries — a different lightweight model on a separate Groq
+// rate-limit bucket, so a chunk can often still succeed even while
+// llama-3.1-8b is being throttled. Only ever used for the specific chunk(s)
+// that were rate-limited, not the whole document.
+const FALLBACK_TEXT_MODEL = "gemma2-9b-it";
 export const AUDIO_MODEL = "whisper-large-v3";
 
 export interface AIGenerationOptions {
@@ -376,8 +378,14 @@ async function buildAggregatedContent(
           : "[This part of the material could not be processed due to a temporary error]"
       );
     }
+    // Computed after every chunk regardless of success/failure (the catch
+    // block above only rethrows for RateLimitExhaustedError, which aborts
+    // the whole loop) so the reported percentage always reflects exactly
+    // how much of the document has actually been attempted so far.
+    const percentage = Math.round(((i + 1) / chunks.length) * 100);
+    console.log(`Processed ${i + 1} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
-      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, stage: "chunking" });
+      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, percentage, stage: "chunking" });
     }
     // Mandatory pause before the next chunk, regardless of success/failure,
     // to keep our request rate well below Groq's free-tier limit. Skipped

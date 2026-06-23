@@ -16,4 +16,6 @@ export interface MaterialInput {
   language?: MaterialInputLanguage;
   text?: string;
   sourceUrl?: string;
+  /** Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight. */
+  uploadId?: string;
 }

@@ -7,6 +7,7 @@ import {
 } from "@workspace/api-zod";
 import { generateExamAI, gradeAnswer } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { generationRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get("/materials/:id/exams", async (req, res) => {
   res.json(withQ.filter(Boolean));
 });
 
-router.post("/materials/:id/exams", async (req, res) => {
+router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = GenerateExamParams.parse({ id: Number(req.params.id) });
   const body = GenerateExamBody.parse(req.body);
@@ -111,7 +112,7 @@ router.delete("/exams/:id", async (req, res) => {
   res.status(204).end();
 });
 
-router.post("/exams/:id/submit", async (req, res) => {
+router.post("/exams/:id/submit", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = SubmitExamParams.parse({ id: Number(req.params.id) });
   const body = SubmitExamBody.parse(req.body);

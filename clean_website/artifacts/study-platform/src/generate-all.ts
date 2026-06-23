@@ -1,8 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// Node serverless runtime — no import.meta.env here (that's Vite-only), so
+// the backend URL comes from a plain process env var instead, mirroring how
+// lib/api-base.ts resolves it for the browser bundle.
+const API_BASE_URL = process.env.API_URL ?? "https://studyai-zhyy.onrender.com";
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
-  const targetUrl = `https://studyai-zhyy.onrender.com/api/materials/${id}/generate-all`;
+  const targetUrl = `${API_BASE_URL}/api/materials/${id}/generate-all`;
   
   try {
     const response = await fetch(targetUrl, {

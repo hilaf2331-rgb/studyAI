@@ -115,7 +115,7 @@ export const ListMaterialsResponseItem = zod.object({
   "id": zod.number(),
   "courseId": zod.number().nullish(),
   "title": zod.string(),
-  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'image', 'audio', 'video']),
+  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'xlsx', 'image', 'audio', 'video']),
   "status": zod.enum(['pending', 'processing', 'ready', 'error']),
   "language": zod.enum(['he', 'en', 'mixed']).optional(),
   "extractedText": zod.string().nullish(),
@@ -142,10 +142,11 @@ export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
 export const CreateMaterialBody = zod.object({
   "title": zod.string().min(1),
   "courseId": zod.number().optional(),
-  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'image', 'audio', 'video']),
+  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'xlsx', 'image', 'audio', 'video']),
   "language": zod.enum(['he', 'en', 'mixed']).optional(),
   "text": zod.string().optional(),
-  "sourceUrl": zod.string().optional()
+  "sourceUrl": zod.string().optional(),
+  "uploadId": zod.string().optional().describe('Client-generated identifier used to poll extraction progress via \/materials\/upload-progress\/{uploadId} while this request is in flight.')
 })
 
 
@@ -160,7 +161,7 @@ export const GetMaterialResponse = zod.object({
   "id": zod.number(),
   "courseId": zod.number().nullish(),
   "title": zod.string(),
-  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'image', 'audio', 'video']),
+  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'xlsx', 'image', 'audio', 'video']),
   "status": zod.enum(['pending', 'processing', 'ready', 'error']),
   "language": zod.enum(['he', 'en', 'mixed']).optional(),
   "extractedText": zod.string().nullish(),
@@ -195,7 +196,23 @@ export const GetMaterialProgressParams = zod.object({
 export const GetMaterialProgressResponse = zod.object({
   "currentChunk": zod.number(),
   "totalChunks": zod.number(),
-  "stage": zod.enum(['chunking', 'done', 'idle'])
+  "percentage": zod.number(),
+  "stage": zod.enum(['chunking', 'extracting', 'done', 'idle', 'error'])
+})
+
+
+/**
+ * @summary Poll extraction progress for an in-flight material upload, before the material row exists
+ */
+export const GetUploadProgressParams = zod.object({
+  "uploadId": zod.coerce.string()
+})
+
+export const GetUploadProgressResponse = zod.object({
+  "currentChunk": zod.number(),
+  "totalChunks": zod.number(),
+  "percentage": zod.number(),
+  "stage": zod.enum(['chunking', 'extracting', 'done', 'idle', 'error'])
 })
 
 

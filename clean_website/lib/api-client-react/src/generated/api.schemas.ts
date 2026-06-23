@@ -52,6 +52,7 @@ export const MaterialContentType = {
   pdf: 'pdf',
   docx: 'docx',
   pptx: 'pptx',
+  xlsx: 'xlsx',
   image: 'image',
   audio: 'audio',
   video: 'video',
@@ -106,13 +107,16 @@ export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeo
 
 export const GenerationProgressStage = {
   chunking: 'chunking',
+  extracting: 'extracting',
   done: 'done',
   idle: 'idle',
+  error: 'error',
 } as const;
 
 export interface GenerationProgress {
   currentChunk: number;
   totalChunks: number;
+  percentage: number;
   stage: GenerationProgressStage;
 }
 
@@ -126,6 +130,7 @@ export const MaterialInputContentType = {
   pdf: 'pdf',
   docx: 'docx',
   pptx: 'pptx',
+  xlsx: 'xlsx',
   image: 'image',
   audio: 'audio',
   video: 'video',
@@ -148,6 +153,8 @@ export interface MaterialInput {
   language?: MaterialInputLanguage;
   text?: string;
   sourceUrl?: string;
+  /** Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight. */
+  uploadId?: string;
 }
 
 export type SummarySummaryType = typeof SummarySummaryType[keyof typeof SummarySummaryType];

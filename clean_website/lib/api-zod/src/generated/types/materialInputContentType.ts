@@ -16,6 +16,7 @@ export const MaterialInputContentType = {
   pdf: 'pdf',
   docx: 'docx',
   pptx: 'pptx',
+  xlsx: 'xlsx',
   image: 'image',
   audio: 'audio',
   video: 'video',

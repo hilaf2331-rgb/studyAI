@@ -10,6 +10,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { getStoredToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,13 +30,13 @@ function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
 }: {
   open: boolean; onClose: () => void; title: string; onGenerate: () => void; isGenerating: boolean; isRTL: boolean; children: React.ReactNode;
-  progress?: { currentChunk: number; totalChunks: number; stage: string };
+  progress?: { currentChunk: number; totalChunks: number; percentage: number; stage: string };
 }) {
   // Only the chunked path (large documents, multiple sequential Groq calls)
   // ever reports totalChunks > 0 — short materials finish in one call before
   // a poll can even land, so they just show the plain spinner below.
   const showChunkProgress = isGenerating && !!progress && progress.totalChunks > 0;
-  const percent = showChunkProgress ? Math.round((progress!.currentChunk / progress!.totalChunks) * 100) : 0;
+  const percent = showChunkProgress ? progress!.percentage : 0;
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -201,7 +202,7 @@ export const MaterialDetailPage: React.FC = () => {
 
     try {
       const token = getStoredToken();
-      const targetUrl = "https://studyai-zhyy.onrender.com/api/materials/" + id + "/generate-all";
+      const targetUrl = apiUrl(`/api/materials/${id}/generate-all`);
 
       const response = await fetch(targetUrl, {
         method: "POST",
@@ -309,8 +310,16 @@ export const MaterialDetailPage: React.FC = () => {
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
   if (!material) return <p className="text-muted-foreground">לא נמצא</p>;
 
-  const hasContent = (material.extractedText?.length ?? 0) > 20;
+  const extractionFailed = material.status === "error";
+  const hasContent = !extractionFailed && (material.extractedText?.length ?? 0) > 20;
   const canGenerateKit = hasContent && !material.tooShortForGeneration;
+  // On failure the extractor stores a "[Extraction failed: ...]" placeholder
+  // as extractedText (there's no separate persisted error-message column) —
+  // strip the brackets/prefix back off so the banner reads like a message
+  // instead of raw internal formatting.
+  const extractionErrorDetail = extractionFailed
+    ? (material.extractedText || "").replace(/^\[Extraction failed:\s*/, "").replace(/\]$/, "")
+    : "";
   const progressSteps = isRTL ? PROGRESS_STEPS_HE : PROGRESS_STEPS_EN;
 
   const generationError = (mutation: { error: unknown }) => {
@@ -385,7 +394,17 @@ export const MaterialDetailPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {!hasContent && (
+      {extractionFailed ? (
+        <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-4 py-3 rounded-lg">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">{isRTL ? "חילוץ התוכן נכשל" : "Content extraction failed"}</p>
+            <p className="text-muted-foreground">
+              {extractionErrorDetail || (isRTL ? "אירעה שגיאה בלתי צפויה. נסו להעלות את החומר מחדש." : "An unexpected error occurred. Try re-uploading this material.")}
+            </p>
+          </div>
+        </div>
+      ) : !hasContent && (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           {isRTL ? "חומר הלימוד קצר מדי כדי לייצר ממנו תוכן. הוסיפו עוד טקסט." : "This material is too short to generate content from. Please add more text."}

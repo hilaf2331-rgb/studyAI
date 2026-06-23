@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
-import { useListCourses, getListMaterialsQueryKey } from "@workspace/api-client-react";
+import { useListCourses, getListMaterialsQueryKey, useGetUploadProgress, getGetUploadProgressQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -15,9 +15,24 @@ import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, Ch
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
 
-type ContentType = "text" | "youtube" | "url" | "pdf" | "audio" | "video";
+type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "audio" | "video";
 
-const TYPE_CONFIG: Record<ContentType, {
+// "document" is a UI-only grouping over pdf/docx/pptx/xlsx -- the picker
+// shows one "Upload Academic File" tile, and the real contentType is
+// resolved from the selected file's extension in handleFileChange.
+type PickerCategory = "text" | "youtube" | "url" | "document" | "audio" | "video";
+
+const DOCUMENT_EXT_TO_CONTENT_TYPE: Record<string, ContentType> = {
+  pdf: "pdf",
+  docx: "docx",
+  doc: "docx",
+  pptx: "pptx",
+  ppt: "pptx",
+  xlsx: "xlsx",
+  xls: "xlsx",
+};
+
+const PICKER_CONFIG: Record<PickerCategory, {
   icon: React.ElementType;
   labelHe: string;
   labelEn: string;
@@ -25,12 +40,13 @@ const TYPE_CONFIG: Record<ContentType, {
   acceptsFile: boolean;
   acceptAttr?: string;
 }> = {
-  text:    { icon: FileText,  labelHe: "טקסט",        labelEn: "Text",          color: "bg-blue-500/10 text-blue-600",   acceptsFile: false },
-  youtube: { icon: Youtube,   labelHe: "YouTube",      labelEn: "YouTube",       color: "bg-red-500/10 text-red-600",     acceptsFile: false },
-  url:     { icon: Link,      labelHe: "קישור",        labelEn: "Web URL",       color: "bg-green-500/10 text-green-600", acceptsFile: false },
-  pdf:     { icon: FileText,  labelHe: "PDF",          labelEn: "PDF",           color: "bg-amber-500/10 text-amber-600", acceptsFile: true,  acceptAttr: ".pdf,application/pdf" },
-  audio:   { icon: Mic,       labelHe: "הקלטה קולית", labelEn: "Voice / Audio", color: "bg-purple-500/10 text-purple-600", acceptsFile: true, acceptAttr: "audio/*,.mp3,.m4a,.wav,.ogg,.webm" },
-  video:   { icon: FileVideo, labelHe: "וידאו",        labelEn: "Video File",    color: "bg-indigo-500/10 text-indigo-600", acceptsFile: true, acceptAttr: "video/*,.mp4,.webm,.mov" },
+  text:     { icon: FileText,  labelHe: "טקסט",          labelEn: "Text",          color: "bg-blue-500/10 text-blue-600",   acceptsFile: false },
+  youtube:  { icon: Youtube,   labelHe: "YouTube",        labelEn: "YouTube",       color: "bg-red-500/10 text-red-600",     acceptsFile: false },
+  url:      { icon: Link,      labelHe: "קישור",          labelEn: "Web URL",       color: "bg-green-500/10 text-green-600", acceptsFile: false },
+  document: { icon: FileText,  labelHe: "מסמך אקדמי",     labelEn: "Academic File", color: "bg-amber-500/10 text-amber-600", acceptsFile: true,
+    acceptAttr: ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  audio:    { icon: Mic,       labelHe: "הקלטה קולית",   labelEn: "Voice / Audio", color: "bg-purple-500/10 text-purple-600", acceptsFile: true, acceptAttr: "audio/*,.mp3,.m4a,.wav,.ogg,.webm" },
+  video:    { icon: FileVideo, labelHe: "וידאו",          labelEn: "Video File",    color: "bg-indigo-500/10 text-indigo-600", acceptsFile: true, acceptAttr: "video/*,.mp4,.webm,.mov" },
 };
 
 export const MaterialNewPage: React.FC = () => {
@@ -44,6 +60,7 @@ export const MaterialNewPage: React.FC = () => {
   const preselectedCourseId = new URLSearchParams(search).get("courseId") || "";
 
   const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<PickerCategory>("text");
   const [contentType, setContentType] = useState<ContentType>("text");
   const [language, setLanguage] = useState("he");
   const [courseId, setCourseId] = useState<string>(preselectedCourseId);
@@ -53,14 +70,44 @@ export const MaterialNewPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [uploadId, setUploadId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const cfg = TYPE_CONFIG[contentType];
+  const cfg = PICKER_CONFIG[category];
+
+  const { data: uploadProgress } = useGetUploadProgress(uploadId ?? "", {
+    query: {
+      enabled: !!uploadId && isSubmitting,
+      refetchInterval: uploadId && isSubmitting ? 800 : false,
+      queryKey: getGetUploadProgressQueryKey(uploadId ?? ""),
+    },
+  });
+  const percent = uploadProgress?.stage === "extracting" || uploadProgress?.stage === "error"
+    ? uploadProgress.percentage
+    : (isSubmitting ? 0 : null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     setFile(f);
     if (f && !title) setTitle(f.name.replace(/\.[^/.]+$/, ""));
+
+    if (f && category === "document") {
+      const ext = f.name.split(".").pop()?.toLowerCase() || "";
+      const resolvedType = DOCUMENT_EXT_TO_CONTENT_TYPE[ext];
+      if (!resolvedType) {
+        setError(isRTL
+          ? "פורמט קובץ לא נתמך. נא להעלות PDF, Word, PowerPoint או Excel"
+          : "Unsupported file format. Please upload a PDF, Word, PowerPoint, or Excel file");
+        setFile(null);
+        return;
+      }
+      setError("");
+      setContentType(resolvedType);
+    } else if (f && category === "audio") {
+      setContentType("audio");
+    } else if (f && category === "video") {
+      setContentType("video");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,6 +121,8 @@ export const MaterialNewPage: React.FC = () => {
       setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
     }
 
+    const newUploadId = crypto.randomUUID();
+    setUploadId(newUploadId);
     setIsSubmitting(true);
     try {
       const token = getStoredToken();
@@ -85,6 +134,7 @@ export const MaterialNewPage: React.FC = () => {
         fd.append("contentType", contentType);
         fd.append("language", language);
         if (courseId) fd.append("courseId", courseId);
+        fd.append("uploadId", newUploadId);
         fd.append("file", file);
 
         response = await fetch(apiUrl("/api/materials"), {
@@ -106,6 +156,7 @@ export const MaterialNewPage: React.FC = () => {
             courseId: courseId ? Number(courseId) : undefined,
             text: contentType === "text" ? text : undefined,
             sourceUrl: (contentType === "youtube" || contentType === "url") ? sourceUrl : undefined,
+            uploadId: newUploadId,
           }),
         });
       }
@@ -122,6 +173,7 @@ export const MaterialNewPage: React.FC = () => {
       setError(err.message || "Something went wrong");
     } finally {
       setIsSubmitting(false);
+      setUploadId(null);
     }
   };
 
@@ -137,8 +189,8 @@ export const MaterialNewPage: React.FC = () => {
           <CardTitle>{isRTL ? "הוסף חומר לימוד חדש" : "Add New Study Material"}</CardTitle>
           <p className="text-sm text-muted-foreground">
             {isRTL
-              ? "הוסף חומר לימוד — טקסט, קישור YouTube, PDF, הקלטה קולית ועוד"
-              : "Add study material — text, YouTube link, PDF, voice recording and more"}
+              ? "הוסף חומר לימוד — טקסט, קישור YouTube, מסמך (PDF, Word, PowerPoint, Excel), הקלטה קולית ועוד"
+              : "Add study material — text, YouTube link, document (PDF, Word, PowerPoint, Excel), voice recording and more"}
           </p>
         </CardHeader>
         <CardContent>
@@ -147,15 +199,25 @@ export const MaterialNewPage: React.FC = () => {
             <div>
               <Label className="mb-2 block">{isRTL ? "סוג חומר" : "Content Type"}</Label>
               <div className="grid grid-cols-3 gap-2">
-                {(Object.keys(TYPE_CONFIG) as ContentType[]).map(ct => {
-                  const c = TYPE_CONFIG[ct];
+                {(Object.keys(PICKER_CONFIG) as PickerCategory[]).map(cat => {
+                  const c = PICKER_CONFIG[cat];
                   const Icon = c.icon;
-                  const active = contentType === ct;
+                  const active = category === cat;
                   return (
                     <button
-                      key={ct}
+                      key={cat}
                       type="button"
-                      onClick={() => { setContentType(ct); setFile(null); setSourceUrl(""); }}
+                      onClick={() => {
+                        setCategory(cat);
+                        setFile(null);
+                        setSourceUrl("");
+                        if (cat === "text") setContentType("text");
+                        else if (cat === "youtube") setContentType("youtube");
+                        else if (cat === "url") setContentType("url");
+                        else if (cat === "audio") setContentType("audio");
+                        else if (cat === "video") setContentType("video");
+                        else if (cat === "document") setContentType("pdf");
+                      }}
                       className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-sm font-medium
                         ${active ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
                     >
@@ -251,9 +313,11 @@ export const MaterialNewPage: React.FC = () => {
             {/* File upload */}
             {cfg.acceptsFile && (
               <div className="space-y-1.5">
-                <Label>{isRTL
-                  ? `העלאת קובץ ${cfg.labelHe}`
-                  : `Upload ${cfg.labelEn} file`}
+                <Label>{
+                  category === "document"
+                    ? (isRTL ? "העלאת מסמך (PDF, Word, PowerPoint, Excel)" : "Upload Document (PDF, Word, PowerPoint, Excel)")
+                    : (isRTL ? `העלאת קובץ ${cfg.labelHe}` : `Upload ${cfg.labelEn} file`)
+                }
                 </Label>
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -282,9 +346,9 @@ export const MaterialNewPage: React.FC = () => {
                         {isRTL ? "לחץ להעלאת קובץ" : "Click to upload file"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {contentType === "pdf" && (isRTL ? "PDF עד 25MB" : "PDF up to 25MB")}
-                        {contentType === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 25MB" : "MP3, M4A, WAV, OGG up to 25MB")}
-                        {contentType === "video" && (isRTL ? "MP4, WebM, MOV עד 25MB" : "MP4, WebM, MOV up to 25MB")}
+                        {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 25MB" : "PDF, Word, PowerPoint, Excel up to 25MB")}
+                        {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 25MB" : "MP3, M4A, WAV, OGG up to 25MB")}
+                        {category === "video" && (isRTL ? "MP4, WebM, MOV עד 25MB" : "MP4, WebM, MOV up to 25MB")}
                       </p>
                     </div>
                   )}
@@ -312,12 +376,28 @@ export const MaterialNewPage: React.FC = () => {
                 : <><Upload className="w-4 h-4 me-2" />{isRTL ? "הוסף חומר" : "Add Material"}</>}
             </Button>
 
-            {isSubmitting && (contentType === "youtube" || cfg.acceptsFile) && (
-              <p className="text-center text-xs text-muted-foreground animate-pulse">
-                {isRTL
-                  ? "מחלץ תוכן וממיר... זה עשוי לקחת מספר שניות"
-                  : "Extracting and processing content... this may take a few seconds"}
-              </p>
+            {isSubmitting && (contentType === "youtube" || contentType === "url" || cfg.acceptsFile) && (
+              <div className="space-y-1.5">
+                {percent !== null ? (
+                  <>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{ width: `${Math.max(percent, 4)}%` }}
+                      />
+                    </div>
+                    <p className="text-center text-xs text-muted-foreground">
+                      {isRTL ? `מחלץ תוכן... ${percent}%` : `Extracting content... ${percent}%`}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-center text-xs text-muted-foreground animate-pulse">
+                    {isRTL
+                      ? "מחלץ תוכן וממיר... זה עשוי לקחת מספר שניות"
+                      : "Extracting and processing content... this may take a few seconds"}
+                  </p>
+                )}
+              </div>
             )}
           </form>
         </CardContent>

@@ -7,6 +7,7 @@ import {
 } from "@workspace/api-zod";
 import { generateFlashcardsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { generationRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get("/materials/:id/flashcard-decks", async (req, res) => {
   res.json(withCards.filter(Boolean));
 });
 
-router.post("/materials/:id/flashcard-decks", async (req, res) => {
+router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = GenerateFlashcardsParams.parse({ id: Number(req.params.id) });
   const body = GenerateFlashcardsBody.parse(req.body);

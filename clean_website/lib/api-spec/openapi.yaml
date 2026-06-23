@@ -222,6 +222,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenerationProgress"
 
+  /materials/upload-progress/{uploadId}:
+    get:
+      operationId: getUploadProgress
+      tags: [materials]
+      summary: Poll extraction progress for an in-flight material upload, before the material row exists
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Extraction progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationProgress"
+
   # ── Summaries ─────────────────────────────────────────────────────────────
   /materials/{id}/summaries:
     get:
@@ -762,7 +781,7 @@ components:
           type: string
         contentType:
           type: string
-          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+          enum: [text, url, youtube, pdf, docx, pptx, xlsx, image, audio, video]
         status:
           type: string
           enum: [pending, processing, ready, error]
@@ -795,15 +814,17 @@ components:
 
     GenerationProgress:
       type: object
-      required: [currentChunk, totalChunks, stage]
+      required: [currentChunk, totalChunks, percentage, stage]
       properties:
         currentChunk:
           type: integer
         totalChunks:
           type: integer
+        percentage:
+          type: integer
         stage:
           type: string
-          enum: [chunking, done, idle]
+          enum: [chunking, extracting, done, idle, error]
 
     MaterialInput:
       type: object
@@ -816,7 +837,7 @@ components:
           type: integer
         contentType:
           type: string
-          enum: [text, url, youtube, pdf, docx, pptx, image, audio, video]
+          enum: [text, url, youtube, pdf, docx, pptx, xlsx, image, audio, video]
         language:
           type: string
           enum: [he, en, mixed]
@@ -824,6 +845,9 @@ components:
           type: string
         sourceUrl:
           type: string
+        uploadId:
+          type: string
+          description: Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight.
 
     # ── Summary ──────────────────────────────────────────────────────────────
     Summary:

@@ -6,8 +6,14 @@ import authRouter from "./routes/auth";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { RateLimitExhaustedError, SystemBlockedError } from "./lib/ai";
+import { globalRateLimiter } from "./lib/rate-limit";
 
 const app: Express = express();
+
+// Render sits behind a reverse proxy, so without this every request's
+// req.ip resolves to the proxy's address instead of the real client —
+// collapsing the rate limiter into a single shared bucket for all users.
+app.set("trust proxy", 1);
 
 // TEMPORARY DIAGNOSTIC — remove once the 405 is resolved.
 app.use((req, res, next) => {
@@ -59,6 +65,8 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use("/api", globalRateLimiter);
 
 app.use("/api", authRouter);
 app.use("/api", requireAuth, router);

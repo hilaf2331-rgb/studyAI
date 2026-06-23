@@ -10,5 +10,6 @@ import type { GenerationProgressStage } from './generationProgressStage';
 export interface GenerationProgress {
   currentChunk: number;
   totalChunks: number;
+  percentage: number;
   stage: GenerationProgressStage;
 }

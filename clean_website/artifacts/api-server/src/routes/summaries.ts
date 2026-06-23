@@ -3,6 +3,7 @@ import { db, summariesTable, materialsTable, activityTable } from "@workspace/db
 import { eq, and } from "drizzle-orm";
 import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
+import { generationRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -22,7 +23,7 @@ router.get("/materials/:id/summaries", async (req, res) => {
   res.json(summaries);
 });
 
-router.post("/materials/:id/summaries", async (req, res) => {
+router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = GenerateSummaryParams.parse({ id: Number(req.params.id) });
   const body = GenerateSummaryBody.parse(req.body);

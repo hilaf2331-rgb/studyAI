@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError } from "../lib/ai";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
+import { generationRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -30,7 +31,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-router.post("/materials/:id/generate-all", async (req, res) => {
+router.post("/materials/:id/generate-all", generationRateLimiter, async (req, res) => {
   // EVERYTHING below is wrapped in one try/catch. This is the actual fix for
   // "Unexpected end of JSON input": previously, an unhandled throw/rejection
   // anywhere above the inner try block (auth, DB lookup, param parsing) would

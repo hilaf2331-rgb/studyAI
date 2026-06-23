@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useListCourses, getListMaterialsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -36,13 +36,17 @@ const TYPE_CONFIG: Record<ContentType, {
 export const MaterialNewPage: React.FC = () => {
   const { isRTL } = useLanguage();
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const qc = useQueryClient();
   const { data: courses } = useListCourses();
+
+  // Preselect the course when arriving from a specific course page, e.g. /materials/new?courseId=5
+  const preselectedCourseId = new URLSearchParams(search).get("courseId") || "";
 
   const [title, setTitle] = useState("");
   const [contentType, setContentType] = useState<ContentType>("text");
   const [language, setLanguage] = useState("he");
-  const [courseId, setCourseId] = useState<string>("");
+  const [courseId, setCourseId] = useState<string>(preselectedCourseId);
   const [text, setText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);

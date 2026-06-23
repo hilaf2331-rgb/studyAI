@@ -9,11 +9,13 @@ import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError
 
 const router = Router();
 
-// Per-task timeout. Each Groq call gets its own clock instead of sharing
+// Per-task timeout. Each Gemini call gets its own clock instead of sharing
 // one budget, so a single slow call can't silently swallow the others'
-// remaining time. Pick a value comfortably above your slowest observed
-// generation (large materials can legitimately take 30-60s per call).
-const AI_TASK_TIMEOUT_MS = 90_000;
+// remaining time. Must stay comfortably above ai.ts's own internal retry
+// budget (~78s worst case: 3 attempts x 25s timeout + backoff) so a real
+// retry exhaustion produces our clear "network or service issue" message
+// instead of this generic timeout firing first.
+const AI_TASK_TIMEOUT_MS = 100_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

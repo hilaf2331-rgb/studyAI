@@ -108,13 +108,26 @@ function contentSlice(text: string, maxChars = 20000): string {
 // Retries on rate limits (429) and transient server/network errors. Other
 // errors (bad request, auth, etc.) are not retryable and fail immediately.
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
-const MAX_RETRY_ATTEMPTS = 4;
+const MAX_RETRY_ATTEMPTS = 2;
 const BASE_RETRY_DELAY_MS = 1000;
+
+// Per-attempt request timeout passed to the Gemini SDK. Render's free tier
+// runs on a heavily throttled CPU, so a single call can occasionally hang far
+// longer than a normal deploy would -- without a bound here, a stalled
+// request keeps the connection open until something upstream (Render's own
+// proxy or, for /generate-all, our own AI_TASK_TIMEOUT_MS) gives up first and
+// returns a bare 502/timeout with no useful detail. 3 attempts x 25s + ~3s of
+// backoff is a ~78s worst case, which leaves headroom under generate-all's
+// 100s outer task timeout while still giving each attempt a genuinely
+// generous window to finish on slow hardware.
+const ATTEMPT_TIMEOUT_MS = 25_000;
 
 function isRetryableError(error: any): boolean {
   const status = error?.status ?? error?.response?.status;
   if (typeof status === "number") return RETRYABLE_STATUS_CODES.has(status);
-  // Network-level failures (no HTTP status) are typically transient.
+  // Timeouts (AbortController firing from ATTEMPT_TIMEOUT_MS) and raw
+  // network-level failures (no HTTP status) are typically transient.
+  if (error?.name === "AbortError") return true;
   return error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND";
 }
 
@@ -196,10 +209,13 @@ interface GeminiCallParams {
  */
 async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   checkCircuitBreaker();
-  const model = genAI.getGenerativeModel({
-    model: TEXT_MODEL,
-    systemInstruction: params.systemInstruction,
-  });
+  const model = genAI.getGenerativeModel(
+    {
+      model: TEXT_MODEL,
+      systemInstruction: params.systemInstruction,
+    },
+    { timeout: ATTEMPT_TIMEOUT_MS },
+  );
 
   let lastError: any;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {

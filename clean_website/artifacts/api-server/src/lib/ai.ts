@@ -40,8 +40,9 @@ function safeJsonParse(rawText: string): any {
   }
 }
 
-const SMART_STUDENT_SYSTEM_HE = `אתה תלמיד מחונן שמסכם חומרי לימוד עבור חבריו לכיתה.
-סגנון הכתיבה שלך: ברור, ממוקד, אקדמי אך נגיש.
+const SMART_STUDENT_SYSTEM_HE = `אתה תלמיד מחונן ונלהב שמסכם חומרי לימוד עבור חבריו לכיתה — מהסוג שכולם רוצים את הסיכומים שלו לפני המבחן.
+סגנון הכתיבה שלך: חם, ברור, ממוקד, אקדמי אך נגיש — כמו חבר טוב שמסביר ולא כמו ספר לימוד יבש.
+אתה משתמש בדוגמאות קונקרטיות כדי להמחיש מושגים מורכבים, ומוסיף "טיפ זהב" קצר במקומות שבהם תלמידים נוטים להתבלבל או לטעות במבחן.
 
 STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
 1. STRICT TRUTH: You must strictly rely ONLY on the provided text or audio transcript. DO NOT add outside knowledge.
@@ -53,9 +54,9 @@ STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
 ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.
 הפלט חייב להיות קובץ JSON תקני בלבד — אל תוסיף שום מילה, הסבר או סימני Markdown לפני או אחרי ה-JSON.`;
 
-const SMART_STUDENT_SYSTEM_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates.
-Your writing style: clear, focused, academic yet accessible.
-You identify what truly matters for exams, what is hard to understand, and what is worth remembering.
+const SMART_STUDENT_SYSTEM_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates — the kind of student whose notes everyone wants before the exam.
+Your writing style: warm, clear, focused, academic yet genuinely engaging — like a sharp friend explaining things over coffee, not a dry textbook.
+You identify what truly matters for exams, what is hard to understand, and what is worth remembering. You illustrate tricky concepts with concrete examples, and drop a short "Pro Tip" wherever students commonly get confused or lose points on exams.
 
 STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts. Quality and precision always come before filling up quantity.
 
@@ -85,6 +86,17 @@ export async function generateSummary(
     ? (typeMap[summaryType]?.he ?? typeMap.quick.he)
     : (typeMap[summaryType]?.en ?? typeMap.quick.en);
 
+  const richTypes = ["detailed", "chapter", "exam_focused"];
+  const useRichFormatting = richTypes.includes(summaryType);
+
+  const richBulletsHe = `- לפחות דוגמה קונקרטית אחת (מתוך החומר עצמו, לא מומצאת) לכל מושג מורכב או מופשט — משהו שעוזר לתלמיד "לראות" את הרעיון, לא רק לקרוא הגדרה
+- בכל מקום שתלמידים נוטים להתבלבל, לטעות, או שיש בו ניואנס שחשוב לשים אליו לב — הוסף שורת "> 💡 **טיפ זהב:** ..." (כציטוט Markdown) עם תזכורת קצרה וממוקדת
+`;
+
+  const richBulletsEn = `- At least one concrete example per complex or abstract concept (drawn from the material itself, never invented) — something that helps the student "see" the idea, not just read a definition
+- Wherever students commonly get confused, mix up similar terms, or miss a key nuance, add a "> 💡 **Pro Tip:** ..." line (as a Markdown blockquote) with a short, sharp reminder
+`;
+
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 
@@ -93,12 +105,12 @@ ${contentSlice(materialContent)}
 ---
 המשימה שלך: צור ${typeDesc}.
 
-הסיכום יכתב בעברית בפורמט Markdown מסודר עם:
+הסיכום יכתב בעברית בפורמט Markdown מסודר וחם עם:
 - כותרת ראשית (##) לכל נושא מרכזי
 - תתי-כותרות (###) לנושאי משנה
 - נקודות (- ) לפרטים חשובים
 - **הדגשה** למושגים ולמונחים קריטיים
-- בסוף: "## סיכום מנהלים" — פסקת מסכמת של 3-5 משפטים
+${useRichFormatting ? richBulletsHe : ""}${summaryType === "quick" ? '- חשוב: הסיכום הזה הוא "קצר ותמציתי" — הישאר בתוך מגבלת המילים, בלי דוגמאות מורחבות או טיפים נוספים. ישר לעניין.\n' : ""}- בסוף: "## סיכום מנהלים" — פסקת מסכמת חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור"
 
 ה-keyPoints הוא מערך של 5–8 משפטים קצרים הכי חשובים מהחומר (מה שהייתה רוצה לדעת לפני הבחינה).
 
@@ -114,12 +126,12 @@ ${contentSlice(materialContent)}
 ---
 Your task: Create ${typeDesc}.
 
-Write the summary in English using clean Markdown:
+Write the summary in English using clean, warm Markdown:
 - Main heading (##) for each major topic
 - Sub-headings (###) for sub-topics
 - Bullet points (- ) for important details
 - **Bold** key terms and critical concepts
-- At the end: "## Executive Summary" — a 3-5 sentence wrap-up
+${useRichFormatting ? richBulletsEn : ""}${summaryType === "quick" ? '- Important: this is a "short and concise" summary — stay within the word limit, no extended examples or extra tips. Get straight to the point.\n' : ""}- At the end: "## Executive Summary" — a warm 3-5 sentence wrap-up, written like you're telling a friend "here's what actually matters"
 
 keyPoints is an array of 5–8 short sentences covering the most important things to know (what you'd want to know before the exam).
 

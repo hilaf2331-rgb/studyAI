@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
   Sparkles, Zap, CheckCircle2, AlertCircle, Eye, Plus
@@ -45,7 +46,7 @@ function GenerateDialog({
 // that links straight to that item's dedicated page, plus a "+ Generate"
 // button to create another one of the same type.
 function ContentSection({
-  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint,
+  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint, disabled, disabledReason,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -54,7 +55,16 @@ function ContentSection({
   onAddNew: () => void;
   isRTL: boolean;
   emptyHint: string;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
+  const addButton = (
+    <Button size="sm" variant="outline" className="gap-1" onClick={onAddNew} disabled={disabled}>
+      <Plus className="w-4 h-4" />
+      {isRTL ? "צור חדש" : "Generate New"}
+    </Button>
+  );
+
   return (
     <Card>
       <CardContent className="p-5 space-y-3">
@@ -64,10 +74,14 @@ function ContentSection({
             <span>{label}</span>
             {items.length > 0 && <Badge variant="secondary">{items.length}</Badge>}
           </div>
-          <Button size="sm" variant="outline" className="gap-1" onClick={onAddNew}>
-            <Plus className="w-4 h-4" />
-            {isRTL ? "צור חדש" : "Generate New"}
-          </Button>
+          {disabled && disabledReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild><span>{addButton}</span></TooltipTrigger>
+              <TooltipContent>{disabledReason}</TooltipContent>
+            </Tooltip>
+          ) : (
+            addButton
+          )}
         </div>
 
         {items.length === 0 ? (
@@ -268,6 +282,7 @@ export const MaterialDetailPage: React.FC = () => {
   if (!material) return <p className="text-muted-foreground">לא נמצא</p>;
 
   const hasContent = (material.extractedText?.length ?? 0) > 20;
+  const canGenerateKit = hasContent && !material.tooShortForGeneration;
   const progressSteps = isRTL ? PROGRESS_STEPS_HE : PROGRESS_STEPS_EN;
 
   const generationError = (mutation: { error: unknown }) => {
@@ -298,7 +313,18 @@ export const MaterialDetailPage: React.FC = () => {
                 <h2 className="font-bold text-lg flex items-center gap-2"><Zap className="w-5 h-5 text-primary" />{isRTL ? "צור ערכת לימוד מלאה" : "Generate Full Study Kit"}</h2>
                 <p className="text-sm text-muted-foreground">{isRTL ? "סיכום, כרטיסיות ושאלות בלחיצה אחת" : "Summary, flashcards & quiz in one click"}</p>
               </div>
-              <Button size="lg" onClick={handleGenerateAll} disabled={!hasContent}><Zap className="w-5 h-5" />{isRTL ? "צור ערכת לימוד ⚡" : "Generate Study Kit ⚡"}</Button>
+              {!canGenerateKit && hasContent ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button size="lg" onClick={handleGenerateAll} disabled><Zap className="w-5 h-5" />{isRTL ? "צור ערכת לימוד ⚡" : "Generate Study Kit ⚡"}</Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Button size="lg" onClick={handleGenerateAll} disabled={!canGenerateKit}><Zap className="w-5 h-5" />{isRTL ? "צור ערכת לימוד ⚡" : "Generate Study Kit ⚡"}</Button>
+              )}
             </div>
           )}
           {kitLoading && (
@@ -356,6 +382,8 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setFlashOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצרה ערכת כרטיסיות לחומר זה" : "No flashcard deck generated for this material yet"}
+          disabled={material.tooShortForGeneration}
+          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
         />
         <ContentSection
           icon={<HelpCircle className="w-5 h-5 text-primary" />}
@@ -365,6 +393,8 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setQAOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר חידון לחומר זה" : "No quiz generated for this material yet"}
+          disabled={material.tooShortForGeneration}
+          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
         />
         <ContentSection
           icon={<FileQuestion className="w-5 h-5 text-primary" />}
@@ -374,6 +404,8 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setExamOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר מבחן לחומר זה" : "No exam generated for this material yet"}
+          disabled={material.tooShortForGeneration}
+          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
         />
       </div>
 

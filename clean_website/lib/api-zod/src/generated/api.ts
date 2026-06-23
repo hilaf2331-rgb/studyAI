@@ -126,6 +126,8 @@ export const ListMaterialsResponseItem = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "wordCount": zod.number().optional(),
+  "tooShortForGeneration": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
@@ -169,6 +171,8 @@ export const GetMaterialResponse = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "wordCount": zod.number().optional(),
+  "tooShortForGeneration": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -365,6 +369,7 @@ export const ListQuestionSetsResponseItem = zod.object({
   "question": zod.string(),
   "answer": zod.string(),
   "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "createdAt": zod.coerce.date()
@@ -409,6 +414,7 @@ export const GetQuestionSetResponse = zod.object({
   "question": zod.string(),
   "answer": zod.string(),
   "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "createdAt": zod.coerce.date()
@@ -448,6 +454,7 @@ export const ListExamsResponseItem = zod.object({
   "question": zod.string(),
   "answer": zod.string(),
   "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "createdAt": zod.coerce.date()
@@ -497,6 +504,7 @@ export const GetExamResponse = zod.object({
   "question": zod.string(),
   "answer": zod.string(),
   "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "createdAt": zod.coerce.date()
@@ -540,7 +548,8 @@ export const SubmitExamResponse = zod.object({
   "correct": zod.boolean(),
   "userAnswer": zod.string(),
   "correctAnswer": zod.string(),
-  "explanation": zod.string().nullish()
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish()
 })).optional(),
   "createdAt": zod.coerce.date()
 })
@@ -565,7 +574,8 @@ export const GetExamResultResponse = zod.object({
   "correct": zod.boolean(),
   "userAnswer": zod.string(),
   "correctAnswer": zod.string(),
-  "explanation": zod.string().nullish()
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish()
 })).optional(),
   "createdAt": zod.coerce.date()
 })

@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { splitTextIntoChunks } from "./chunker";
 
 if (!process.env.GROQ_API_KEY) {
   throw new Error("GROQ_API_KEY environment variable is required but was not provided.");
@@ -63,8 +64,89 @@ STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating i
 Always respond in clear English only.
 Output must be a valid JSON object only — do not include any markdown formatting or commentary outside the JSON.`;
 
-function contentSlice(text: string, maxChars = 10000): string {
+function contentSlice(text: string, maxChars = 20000): string {
   return text.length > maxChars ? text.slice(0, maxChars) + "\n\n[...תוכן קוצר בגלל אורך...]" : text;
+}
+
+// Above this length, a single Groq call risks silently dropping the tail of
+// the document (or the model just skims the title and hallucinates) — so we
+// chunk instead of truncating. Below it, material is short enough to pass
+// through whole.
+const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
+// ~2-3 pages per chunk, per the task spec.
+const CHUNK_WORD_LIMIT = 1200;
+// Caps how many chunk summaries run at once so we don't blow past Groq's
+// rate limits on very large (80+ page) documents.
+const MAX_CONCURRENT_CHUNK_CALLS = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+async function summarizeChunk(
+  chunk: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number
+): Promise<string> {
+  const prompt = isHe
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בקצרה (כ-150-300 מילים) את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nBriefly summarize (~150-300 words) all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
+
+  const response = await groq.chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: "system", content: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+  });
+  return response.choices[0].message.content || "";
+}
+
+/**
+ * For long documents, splits the text into page-sized chunks, summarizes each
+ * one independently (in parallel, bounded by MAX_CONCURRENT_CHUNK_CALLS), and
+ * stitches the per-chunk summaries back together. The result is a much
+ * shorter string that still covers the *entire* document, so the downstream
+ * generation call (summary/flashcards/questions/exam) never has to silently
+ * truncate the tail of a large file. Short documents pass through unchanged.
+ */
+async function buildAggregatedContent(
+  materialContent: string,
+  materialTitle: string,
+  isHe: boolean
+): Promise<string> {
+  if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
+    return materialContent;
+  }
+
+  const chunks = splitTextIntoChunks(materialContent, CHUNK_WORD_LIMIT);
+  if (chunks.length <= 1) {
+    return materialContent;
+  }
+
+  const partials = await mapWithConcurrency(chunks, MAX_CONCURRENT_CHUNK_CALLS, (chunk, i) =>
+    summarizeChunk(chunk, materialTitle, isHe, i + 1, chunks.length)
+  );
+
+  return partials
+    .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))
+    .join("\n\n");
 }
 
 export async function generateSummary(
@@ -97,10 +179,12 @@ export async function generateSummary(
 - Wherever students commonly get confused, mix up similar terms, or miss a key nuance, add a "> 💡 **Pro Tip:** ..." line (as a Markdown blockquote) with a short, sharp reminder
 `;
 
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
+
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 המשימה שלך: צור ${typeDesc}.
@@ -121,7 +205,7 @@ ${useRichFormatting ? richBulletsHe : ""}${summaryType === "quick" ? '- חשוב
 }`
     : `## Study Material: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 Your task: Create ${typeDesc}.
@@ -163,6 +247,7 @@ export async function generateFlashcardsAI(
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
   const { language, materialContent, materialTitle, cardCount, cardTypes } = opts;
   const isHe = language === "he";
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
 
   const typeGuide = isHe
     ? `סוגי כרטיסיות אפשריים:
@@ -179,7 +264,7 @@ export async function generateFlashcardsAI(
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 המשימה: צור ערכת כרטיסיות לימוד מגוונת בעברית (מקסימום ${cardCount} כרטיסיות).
@@ -200,7 +285,7 @@ ${typeGuide}
 }`
     : `## Study Material: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 Task: Create up to ${cardCount} interactive flashcards in English (fewer is allowed if the text is short to prevent duplication).
@@ -240,11 +325,12 @@ export async function generateQuestionsAI(
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
   const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty } = opts;
   const isHe = language === "he";
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 המשימה: צור בדיוק ${questionCount} שאלות תרגול בעברית.
@@ -276,7 +362,7 @@ ${contentSlice(materialContent)}
 }`
     : `## Study Material: "${materialTitle}"
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 Task: Create exactly ${questionCount} practice questions in English.
@@ -328,6 +414,7 @@ export async function generateExamAI(
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics } = opts;
   const isHe = language === "he";
+  const aggregatedContent = await buildAggregatedContent(materialContent, materialTitle, isHe);
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
@@ -349,7 +436,7 @@ export async function generateExamAI(
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 המשימה: צור מבחן עם בדיוק ${questionCount} שאלות בעברית.
@@ -381,7 +468,7 @@ ${contentSlice(materialContent)}
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
 
-${contentSlice(materialContent)}
+${contentSlice(aggregatedContent)}
 
 ---
 Task: Create an exam with exactly ${questionCount} questions in English.

@@ -6,6 +6,7 @@ import {
   GetFlashcardDeckParams, DeleteFlashcardDeckParams, ReviewFlashcardParams, ReviewFlashcardBody
 } from "@workspace/api-zod";
 import { generateFlashcardsAI } from "../lib/ai";
+import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 
 const router = Router();
 
@@ -41,8 +42,11 @@ router.post("/materials/:id/flashcard-decks", async (req, res) => {
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
   if (!material) return res.status(404).json({ error: "Not found" });
 
+  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
   const cardTypes = body.cardTypes?.length ? body.cardTypes : ["qa", "definition"];
-  const cardCount = body.cardCount || 10;
+  const contentLength = (material.extractedText || material.title).trim().length;
+  const cardCount = clampToContentLength(body.cardCount || 10, contentLength, "flashcards");
 
   const cards = await generateFlashcardsAI({
     language: body.language as "he" | "en",

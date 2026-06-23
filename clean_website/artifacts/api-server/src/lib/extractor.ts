@@ -37,10 +37,19 @@ export async function extractYouTube(url: string): Promise<ExtractedContent> {
 }
 
 export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
-  const pdfParse = (await import("pdf-parse")).default;
-  const data = await pdfParse(buffer);
-  const text = data.text.replace(/\s+/g, " ").trim();
-  return { text };
+  // pdf-parse v2 dropped the v1 default-function export in favor of a
+  // PDFParse class — calling it as a function (the old API) silently fails
+  // extraction, leaving materials with empty/error placeholder text that the
+  // AI then has nothing real to ground its answers in.
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const result = await parser.getText();
+    const text = result.text.replace(/\s+/g, " ").trim();
+    return { text };
+  } finally {
+    await parser.destroy();
+  }
 }
 
 export async function transcribeAudio(

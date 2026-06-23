@@ -279,12 +279,13 @@ async function callGroqForChunk(
 // chunk instead of truncating. Below it, material is short enough to pass
 // through whole.
 const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
-// ~1-1.5 pages per chunk. Lowered from 1200 words because even single
-// sequential requests at that size were still tripping Groq's free-tier
-// token-per-minute limit on large (80+ page) documents — smaller requests
-// mean fewer tokens burned per call, which matters if the limit is
-// volume-based rather than purely per-request.
-const CHUNK_WORD_LIMIT = 600;
+// Sized in estimated tokens, not words -- a word-based limit looked safe for
+// English but let Hebrew chunks (which tokenize far less efficiently) blow
+// past Groq's free-tier 6000 TPM cap on a single request (one chunk hit
+// 6450 tokens at the old 600-word limit). 2000 tokens of chunk content still
+// leaves headroom under 6000 once the system prompt, instruction template,
+// and the model's own Hebrew completion tokens are added in.
+const CHUNK_TOKEN_LIMIT = 2000;
 // Groq's free tier rate limits are tight enough that even 2 concurrent
 // chunk calls on a large document reliably triggers 429s, so chunks are
 // processed strictly one at a time (see the for...of loop below) with a
@@ -350,7 +351,7 @@ async function buildAggregatedContent(
     return { content: materialContent, usedFallback: false };
   }
 
-  const chunks = splitTextIntoChunks(materialContent, CHUNK_WORD_LIMIT);
+  const chunks = splitTextIntoChunks(materialContent, CHUNK_TOKEN_LIMIT);
   if (chunks.length <= 1) {
     return { content: materialContent, usedFallback: false };
   }

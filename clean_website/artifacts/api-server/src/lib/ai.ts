@@ -122,27 +122,13 @@ async function callGroqWithRetry(
 const CHUNK_TRIGGER_CHAR_LENGTH = 9000;
 // ~2-3 pages per chunk, per the task spec.
 const CHUNK_WORD_LIMIT = 1200;
-// Caps how many chunk summaries run at once so we don't blow past Groq's
-// rate limits, or stack up enough in-flight requests to trip Render's
-// request timeout, on very large (80+ page) documents.
-const MAX_CONCURRENT_CHUNK_CALLS = 2;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i], i);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
+// Groq's free tier rate limits are tight enough that even 2 concurrent
+// chunk calls on a large document reliably triggers 429s, so chunks are
+// processed strictly one at a time (see the for...of loop below) with a
+// mandatory pause between calls (whether the previous one succeeded or
+// failed) to stay well under Groq's requests-per-minute ceiling. We
+// deliberately trade speed for not getting rate-limited on big documents.
+const INTER_CHUNK_DELAY_MS = 2500;
 
 async function summarizeChunk(
   chunk: string,
@@ -167,10 +153,11 @@ async function summarizeChunk(
 }
 
 /**
- * For long documents, splits the text into page-sized chunks, summarizes each
- * one independently (in parallel, bounded by MAX_CONCURRENT_CHUNK_CALLS), and
- * stitches the per-chunk summaries back together. The result is a much
- * shorter string that still covers the *entire* document, so the downstream
+ * For long documents, splits the text into page-sized chunks and summarizes
+ * them strictly one at a time (no concurrency, with a mandatory delay
+ * between requests to stay under Groq's free-tier rate limits), stitching
+ * the per-chunk summaries back together. The result is a much shorter
+ * string that still covers the *entire* document, so the downstream
  * generation call (summary/flashcards/questions/exam) never has to silently
  * truncate the tail of a large file. Short documents pass through unchanged.
  *
@@ -192,16 +179,25 @@ async function buildAggregatedContent(
     return materialContent;
   }
 
-  const partials = await mapWithConcurrency(chunks, MAX_CONCURRENT_CHUNK_CALLS, async (chunk, i) => {
+  const partials: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
     try {
-      return await summarizeChunk(chunk, materialTitle, isHe, i + 1, chunks.length);
+      partials.push(await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length));
     } catch (error) {
       console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, error);
-      return isHe
-        ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
-        : "[This part of the material could not be processed due to a temporary error]";
+      partials.push(
+        isHe
+          ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
+          : "[This part of the material could not be processed due to a temporary error]"
+      );
     }
-  });
+    // Mandatory pause before the next chunk, regardless of success/failure,
+    // to keep our request rate well below Groq's free-tier limit. Skipped
+    // after the last chunk since there's nothing left to wait for.
+    if (i < chunks.length - 1) {
+      await sleep(INTER_CHUNK_DELAY_MS);
+    }
+  }
 
   return partials
     .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))

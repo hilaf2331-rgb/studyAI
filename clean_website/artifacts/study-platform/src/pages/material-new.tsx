@@ -185,8 +185,8 @@ export const MaterialNewPage: React.FC = () => {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="he">עברית</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="mixed">Mixed</SelectItem>
+                    <SelectItem value="en">אנגלית</SelectItem>
+                    <SelectItem value="mixed">מעורב</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

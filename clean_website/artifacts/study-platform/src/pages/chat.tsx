@@ -58,7 +58,7 @@ export const ChatPage: React.FC = () => {
           <p className="font-semibold text-sm">{isRTL ? "מורה AI" : "AI Tutor"}</p>
           {material && <p className="text-xs text-muted-foreground truncate max-w-xs">{material.title}</p>}
         </div>
-        {material && <Badge variant="outline" className="ms-auto text-xs">{material.language === "he" ? "עברית" : "English"}</Badge>}
+        {material && <Badge variant="outline" className="ms-auto text-xs">{material.language === "he" ? "עברית" : material.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>}
       </div>
 
       {/* Messages */}

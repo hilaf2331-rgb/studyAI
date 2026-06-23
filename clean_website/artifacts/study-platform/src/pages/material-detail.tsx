@@ -265,7 +265,7 @@ export const MaterialDetailPage: React.FC = () => {
   };
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
-  if (!material) return <p className="text-muted-foreground">Not found</p>;
+  if (!material) return <p className="text-muted-foreground">לא נמצא</p>;
 
   const hasContent = (material.extractedText?.length ?? 0) > 20;
   const progressSteps = isRTL ? PROGRESS_STEPS_HE : PROGRESS_STEPS_EN;
@@ -404,7 +404,7 @@ export const MaterialDetailPage: React.FC = () => {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="he">עברית</SelectItem>
-              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="en">אנגלית</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -425,7 +425,7 @@ export const MaterialDetailPage: React.FC = () => {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="he">עברית</SelectItem>
-              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="en">אנגלית</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -446,7 +446,7 @@ export const MaterialDetailPage: React.FC = () => {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="he">עברית</SelectItem>
-              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="en">אנגלית</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -479,7 +479,7 @@ export const MaterialDetailPage: React.FC = () => {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="he">עברית</SelectItem>
-              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="en">אנגלית</SelectItem>
             </SelectContent>
           </Select>
         </div>

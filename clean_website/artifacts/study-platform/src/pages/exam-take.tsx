@@ -40,7 +40,7 @@ export const ExamTakePage: React.FC = () => {
   }, [timeLeft !== null]);
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
-  if (!exam || !exam.questions?.length) return <p>Not found</p>;
+  if (!exam || !exam.questions?.length) return <p>לא נמצא</p>;
 
   const isHebrew = exam.language === "he";
   const questions = exam.questions;

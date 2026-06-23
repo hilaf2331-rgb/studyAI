@@ -18,7 +18,7 @@ export const ExamResultPage: React.FC = () => {
   const { data: exam } = useGetExam(Number(examId), { query: { enabled: !!examId, queryKey: getGetExamQueryKey(Number(examId)) } });
 
   if (loadingResult) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
-  if (!result) return <p>Not found</p>;
+  if (!result) return <p>לא נמצא</p>;
 
   const score = result.score;
   const isPassing = score >= 60;

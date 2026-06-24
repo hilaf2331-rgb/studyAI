@@ -30,6 +30,24 @@ export function getWordCount(text: string | null | undefined): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
+// Documents/URLs over ~40 pages reliably blow past Render's 100s free-tier
+// HTTP timeout once that much text hits Gemini for summarization, and the
+// resulting chunked-summarization burns through Gemini's rate limit in one
+// shot -- there's no hosting-tier fix for that without upgrading, so the
+// extracted text length itself is capped instead, same beta-limit pattern
+// as the YouTube duration cap.
+export const MAX_CONTENT_WORDS = 15000;
+
+export function isContentTooLong(text: string | null | undefined): boolean {
+  return getWordCount(text) > MAX_CONTENT_WORDS;
+}
+
+export function contentTooLongMessage(language: "he" | "en" = "he"): string {
+  return language === "he"
+    ? "הקובץ או האתר מכילים יותר מדי טקסט! בשלב הבטא אנו תומכים בסיכום של עד 40 עמודי חומר במכה אחת."
+    : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
+}
+
 /**
  * If the material's text is too short to generate from, writes a 400 JSON
  * response and returns true (caller should return immediately). Otherwise

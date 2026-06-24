@@ -4,17 +4,63 @@ import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTabl
 import { eq, count, and, inArray } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
-import { isContentTooShort, getWordCount } from "../lib/validation";
+import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
 
 const router = Router();
 
+// Render's free tier is the binding constraint for every beta-only cap in
+// this file: a video upload (heaviest case) can be up to 50MB, so multer's
+// global cap has to allow that -- the smaller per-content-type ceilings
+// below are enforced manually in the route handler instead, since multer
+// can only apply one fileSize limit across all content types.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
+
+const DOCUMENT_CONTENT_TYPES = new Set(["pdf", "docx", "pptx", "xlsx"]);
+
+// Thrown after extraction succeeds but the resulting text is over the beta's
+// per-upload cap -- mirrors YouTubeTooLongError's "reject outright, don't
+// create a material that would just time out on generation anyway" logic,
+// just decided from the extracted text length instead of a video's metadata.
+class ContentTooLongError extends Error {
+  readonly code = "CONTENT_TOO_LONG";
+  constructor(language: "he" | "en") {
+    super(contentTooLongMessage(language));
+    this.name = "ContentTooLongError";
+  }
+}
+
+// File-size ceilings are checked manually (not via multer) so each content
+// type can have its own beta cap instead of one limit shared by everything.
+const MAX_FILE_BYTES: Partial<Record<string, number>> = {
+  pdf: 15 * 1024 * 1024,
+  docx: 15 * 1024 * 1024,
+  pptx: 15 * 1024 * 1024,
+  xlsx: 15 * 1024 * 1024,
+  image: 8 * 1024 * 1024,
+  audio: 25 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+};
+
+function fileTooLargeMessage(contentType: string, language: "he" | "en"): string {
+  if (DOCUMENT_CONTENT_TYPES.has(contentType)) return contentTooLongMessage(language);
+  if (contentType === "image") {
+    return language === "he"
+      ? "התמונה כבדה מדי! בשלב הבטא ניתן להעלות תמונות עד גודל של 8MB."
+      : "This image is too large! During the beta we only support images up to 8MB.";
+  }
+  // audio + video share one message per the beta's combined media cap.
+  return language === "he"
+    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+}
 
 async function getMaterialWithCounts(id: number, userId: number) {
   const [material] = await db.select().from(materialsTable)
@@ -84,6 +130,15 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
   const sourceUrl = body.sourceUrl || undefined;
   const uploadId = body.uploadId || undefined;
 
+  // Reject oversized files outright before any parsing/transcription starts
+  // -- there's no point spending CPU or Whisper/Gemini budget on a file that
+  // would just get capped or time out anyway on Render's free tier.
+  const maxBytes = MAX_FILE_BYTES[contentType];
+  if (req.file && maxBytes && req.file.size > maxBytes) {
+    if (uploadId) clearGenerationProgress(uploadId);
+    return res.status(413).json({ error: fileTooLargeMessage(contentType, language), code: "FILE_TOO_LARGE" });
+  }
+
   const reportProgress = uploadId
     ? (percentage: number) => setGenerationProgress(uploadId, {
         currentChunk: 0,
@@ -128,6 +183,15 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     } else {
       reportProgress?.(100);
     }
+
+    // Documents/URLs aren't capped by file size alone (a 2MB PDF can still
+    // unpack into far more text than Render's free tier can summarize in
+    // one Gemini call) -- so the actual extracted word count is the real
+    // gate, checked only after extraction since that's the earliest point
+    // the text length is known.
+    if ((DOCUMENT_CONTENT_TYPES.has(contentType) || contentType === "url") && isContentTooLong(extractedText)) {
+      throw new ContentTooLongError(language);
+    }
   } catch (err: any) {
     // A confirmed-nonexistent/private video is a user input error, not a
     // processing failure -- reject it outright with a clean 404 instead of
@@ -141,6 +205,14 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     // input issue, not a processing failure, so it's rejected outright
     // instead of creating a material that would just time out anyway.
     if (err instanceof YouTubeTooLongError) {
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(413).json({ error: err.message, code: err.code });
+    }
+    // A document/URL that extracted to more text than the beta's per-upload
+    // cap is a user input issue, not a processing failure -- same reasoning
+    // as the two YouTube cases above, reject outright instead of creating a
+    // material whose later generation calls would just time out.
+    if (err instanceof ContentTooLongError) {
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(413).json({ error: err.message, code: err.code });
     }

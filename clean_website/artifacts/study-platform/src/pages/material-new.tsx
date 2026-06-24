@@ -32,6 +32,62 @@ const DOCUMENT_EXT_TO_CONTENT_TYPE: Record<string, ContentType> = {
   xls: "xlsx",
 };
 
+// Mirrors the backend's per-content-type beta caps in
+// artifacts/api-server/src/routes/materials.ts (MAX_FILE_BYTES) -- checked
+// here too so an oversized file is rejected instantly client-side instead of
+// uploading megabytes just to get a 413 back from the server.
+const MAX_FILE_BYTES: Partial<Record<ContentType, number>> = {
+  pdf: 15 * 1024 * 1024,
+  docx: 15 * 1024 * 1024,
+  pptx: 15 * 1024 * 1024,
+  xlsx: 15 * 1024 * 1024,
+  image: 8 * 1024 * 1024,
+  audio: 25 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+};
+
+const MAX_AUDIO_SECONDS = 20 * 60;
+const MAX_VIDEO_SECONDS = 5 * 60;
+
+function fileTooLargeMessage(resolvedType: ContentType, isRTL: boolean): string {
+  if (resolvedType === "image") {
+    return isRTL
+      ? "התמונה כבדה מדי! בשלב הבטא ניתן להעלות תמונות עד גודל של 8MB."
+      : "This image is too large! During the beta we only support images up to 8MB.";
+  }
+  if (resolvedType === "pdf" || resolvedType === "docx" || resolvedType === "pptx" || resolvedType === "xlsx") {
+    return isRTL
+      ? "הקובץ או האתר מכילים יותר מדי טקסט! בשלב הבטא אנו תומכים בסיכום של עד 40 עמודי חומר במכה אחת."
+      : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
+  }
+  return isRTL
+    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+}
+
+// Reads duration from file metadata via a throwaway <audio>/<video> element
+// -- no upload needed, just a local object URL -- so oversized recordings
+// are caught before the file ever leaves the browser. Best-effort: if
+// metadata can't be read (corrupt file, unsupported codec), resolves to
+// null rather than blocking the upload on an inconclusive check.
+function readMediaDurationSeconds(file: File, kind: "audio" | "video"): Promise<number | null> {
+  return new Promise(resolve => {
+    const el = document.createElement(kind);
+    const url = URL.createObjectURL(file);
+    const cleanup = () => URL.revokeObjectURL(url);
+    el.preload = "metadata";
+    el.onloadedmetadata = () => {
+      cleanup();
+      resolve(Number.isFinite(el.duration) ? el.duration : null);
+    };
+    el.onerror = () => {
+      cleanup();
+      resolve(null);
+    };
+    el.src = url;
+  });
+}
+
 const PICKER_CONFIG: Record<PickerCategory, {
   icon: React.ElementType;
   labelHe: string;
@@ -88,14 +144,15 @@ export const MaterialNewPage: React.FC = () => {
     ? uploadProgress.percentage
     : (isSubmitting ? 0 : null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
-    setFile(f);
-    if (f && !title) setTitle(f.name.replace(/\.[^/.]+$/, ""));
+    if (!f) { setFile(f); return; }
+    if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ""));
 
-    if (f && category === "document") {
+    let resolvedType: ContentType | undefined;
+    if (category === "document") {
       const ext = f.name.split(".").pop()?.toLowerCase() || "";
-      const resolvedType = DOCUMENT_EXT_TO_CONTENT_TYPE[ext];
+      resolvedType = DOCUMENT_EXT_TO_CONTENT_TYPE[ext];
       if (!resolvedType) {
         setError(isRTL
           ? "פורמט קובץ לא נתמך. נא להעלות PDF, Word, PowerPoint או Excel"
@@ -103,15 +160,41 @@ export const MaterialNewPage: React.FC = () => {
         setFile(null);
         return;
       }
-      setError("");
-      setContentType(resolvedType);
-    } else if (f && category === "image") {
-      setContentType("image");
-    } else if (f && category === "audio") {
-      setContentType("audio");
-    } else if (f && category === "video") {
-      setContentType("video");
+    } else if (category === "image") {
+      resolvedType = "image";
+    } else if (category === "audio") {
+      resolvedType = "audio";
+    } else if (category === "video") {
+      resolvedType = "video";
     }
+
+    // Size cap, checked instantly client-side -- mirrors the backend's
+    // MAX_FILE_BYTES so an oversized file never has to leave the browser.
+    if (resolvedType) {
+      const maxBytes = MAX_FILE_BYTES[resolvedType];
+      if (maxBytes && f.size > maxBytes) {
+        setError(fileTooLargeMessage(resolvedType, isRTL));
+        setFile(null);
+        return;
+      }
+    }
+
+    // Duration cap for audio/video, read from local file metadata -- if the
+    // duration can't be determined, the file is allowed through and the
+    // backend's size-based backstop is the final safety net.
+    if (resolvedType === "audio" || resolvedType === "video") {
+      const durationSeconds = await readMediaDurationSeconds(f, resolvedType);
+      const maxSeconds = resolvedType === "audio" ? MAX_AUDIO_SECONDS : MAX_VIDEO_SECONDS;
+      if (durationSeconds !== null && durationSeconds > maxSeconds) {
+        setError(fileTooLargeMessage(resolvedType, isRTL));
+        setFile(null);
+        return;
+      }
+    }
+
+    setError("");
+    setFile(f);
+    if (resolvedType) setContentType(resolvedType);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -409,9 +492,9 @@ export const MaterialNewPage: React.FC = () => {
                         {isRTL ? "לחץ להעלאת קובץ" : "Click to upload file"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 25MB" : "PDF, Word, PowerPoint, Excel up to 25MB")}
-                        {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 25MB" : "MP3, M4A, WAV, OGG up to 25MB")}
-                        {category === "video" && (isRTL ? "MP4, WebM, MOV עד 25MB" : "MP4, WebM, MOV up to 25MB")}
+                        {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 15MB (כ-40 עמודים)" : "PDF, Word, PowerPoint, Excel up to 15MB (~40 pages)")}
+                        {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 25MB ועד 20 דקות" : "MP3, M4A, WAV, OGG up to 25MB and 20 minutes")}
+                        {category === "video" && (isRTL ? "MP4, WebM, MOV עד 50MB ועד 5 דקות" : "MP4, WebM, MOV up to 50MB and 5 minutes")}
                       </p>
                     </div>
                   )}

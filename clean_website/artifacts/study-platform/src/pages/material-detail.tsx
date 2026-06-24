@@ -9,7 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
-import { getStoredToken } from "@/lib/auth";
+import { getStoredToken, useAuth } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -148,7 +148,16 @@ export const MaterialDetailPage: React.FC = () => {
   const id = Number(idStr);
   const { isRTL, t } = useLanguage();
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const qc = useQueryClient();
+
+  // App.tsx already swaps in <AuthPage /> for any logged-out visitor, but
+  // that's a render-level gate, not a real navigation -- a deep link opened
+  // while logged out would otherwise still mount this page's data hooks
+  // against a private materialId. Bail out before any of that fires.
+  useEffect(() => {
+    if (!user) setLocation("/");
+  }, [user, setLocation]);
 
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [flashOpen, setFlashOpen] = useState(false);
@@ -400,8 +409,27 @@ export const MaterialDetailPage: React.FC = () => {
     }
   };
 
+  if (!user) return null;
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
-  if (!material) return <p className="text-muted-foreground">לא נמצא</p>;
+  // The API scopes every material lookup to the requesting user's own rows
+  // (WHERE id = ? AND userId = ?), so a 404/null response here is returned
+  // identically whether the material never existed or simply belongs to
+  // someone else -- there's no separate signal to distinguish the two, and
+  // there shouldn't be, since confirming "it exists but isn't yours" would
+  // leak more to a non-owner than a generic not-found ever should.
+  if (!material) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <AlertCircle className="w-10 h-10 text-muted-foreground" />
+        <p className="text-muted-foreground">
+          {isRTL ? "החומר לא נמצא או שאין לך הרשאה לצפות בו" : "This material doesn't exist or you don't have permission to view it"}
+        </p>
+        <Button variant="outline" onClick={() => setLocation("/")}>
+          {isRTL ? "חזרה לדף הבית" : "Back to home"}
+        </Button>
+      </div>
+    );
+  }
 
   const extractionFailed = material.status === "error";
   const hasContent = !extractionFailed && (material.extractedText?.length ?? 0) > 20;

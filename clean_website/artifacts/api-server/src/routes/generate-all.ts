@@ -17,17 +17,17 @@ const router = Router();
 // isn't constrained by Render's proxy or any HTTP timeout; it just needs to
 // stay comfortably above the worst case for a large, chunked document.
 // generateSummary/generateFlashcardsAI/generateQuestionsAI each chunk the
-// material via buildAggregatedContent (batches of CONCURRENCY_LIMIT chunks
-// run concurrently, ai.ts), then make one further synthesis call.
-// CONCURRENCY_LIMIT was dropped from 4 to 2 to ease 503 "high demand"
-// pressure on Gemini, which roughly doubles the number of sequential
-// batches for the same document -- an 80+ page doc splitting into a
-// dozen-plus chunks now needs ~6 batches instead of ~3. Combined with
-// ai.ts's own per-call retry budget (worst case: 4 attempts x 25s timeout +
-// full exponential backoff with jitter, ~116s), the true worst case across
-// every batch of every one of the three calls below is well into the
-// hundreds of seconds, so this is sized generously rather than tightly.
-const AI_TASK_TIMEOUT_MS = 900_000;
+// material via buildAggregatedContent, which (ai.ts) now processes chunks
+// strictly one at a time (CONCURRENCY_LIMIT = 1) with a fixed cooldown
+// between them, trading speed for reliability against Gemini's 503 "high
+// demand" errors. Per-chunk worst case in ai.ts is ~256s (4 attempts x 60s
+// ATTEMPT_TIMEOUT_MS + full exponential backoff with jitter), so a dozen-plus
+// chunks each hitting that worst case -- extremely unlikely, but this is a
+// ceiling, not an estimate -- could take the better part of an hour. Sized
+// generously rather than tightly since the cost of cutting a real,
+// in-progress generation short is much higher than the cost of a stuck job
+// taking longer to time out.
+const AI_TASK_TIMEOUT_MS = 1_800_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

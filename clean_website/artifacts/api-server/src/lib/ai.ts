@@ -131,16 +131,18 @@ const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_RETRY_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 1500;
 
-// Per-attempt request timeout passed to the Gemini SDK. Render's free tier
-// runs on a heavily throttled CPU, so a single call can occasionally hang far
-// longer than a normal deploy would -- without a bound here, a stalled
-// request keeps the connection open until something upstream (Render's own
-// proxy or, for /generate-all, our own AI_TASK_TIMEOUT_MS) gives up first and
-// returns a bare 502/timeout with no useful detail. 4 attempts x 25s + ~10.5s
-// of backoff is a ~110.5s worst case, which leaves headroom under
-// generate-all's 140s outer task timeout while still giving each attempt a
-// genuinely generous window to finish on slow hardware.
-const ATTEMPT_TIMEOUT_MS = 25_000;
+// Per-attempt request timeout passed to the Gemini SDK -- @google/genai's own
+// config.httpOptions.timeout doesn't reliably abort in-flight requests (see
+// withAttemptTimeout below), so this is the actual ceiling on how long a
+// single call can hang before we give up on it and retry. 25s was too tight:
+// on Render's throttled free-tier CPU (and under "high demand" load on
+// Gemini's side), a call that would have eventually succeeded was getting
+// aborted and burning a retry attempt on it instead. generate-all's outer
+// AI_TASK_TIMEOUT_MS no longer needs to stay near this value -- it only
+// bounds a background promise, not an HTTP response -- so there's room to
+// give each attempt a genuinely generous window before failing fast into a
+// retry.
+const ATTEMPT_TIMEOUT_MS = 60_000;
 
 function isRetryableError(error: any): boolean {
   const status = error?.status ?? error?.response?.status;
@@ -388,22 +390,30 @@ async function summarizeChunk(
   });
 }
 
-// Chunks are summarized in small concurrent batches rather than one at a
-// time -- sequential processing of a 10+ chunk document is what was blowing
-// past generate-all's internal timeout. But concurrency has a cost: each
-// batch fires this many requests at once, and a model under "high demand"
-// (503) gets hit by all of them simultaneously. Kept as a single tunable
-// knob so it can be raised again once 503 rates settle down, without
-// touching the batching logic itself.
-const CONCURRENCY_LIMIT = 2;
+// How many chunks are summarized at once. Concurrency speeds up large
+// documents, but every concurrent request adds to the "demand" Gemini sees
+// at that instant, and 2 was still enough to trip 503s and exhaust retries
+// on real documents. Dropped to 1 -- chunks are now processed strictly one
+// at a time -- to prioritize a slower but reliable run over a faster one
+// that keeps failing. Kept as a single tunable knob so it's a one-line
+// change to raise again later if Gemini's demand eases up.
+const CONCURRENCY_LIMIT = 1;
+
+// Fixed cooldown between chunks (after one finishes, before the next
+// starts). Even at CONCURRENCY_LIMIT 1, back-to-back requests with zero gap
+// can still look like a burst to Gemini's demand-based throttling -- this
+// small pause smooths that out. Skipped after the very last chunk since
+// there's nothing left to protect.
+const INTER_CHUNK_COOLDOWN_MS = 500;
 
 /**
  * For long documents, splits the text into large chunks and summarizes them
- * in small concurrent batches, stitching the per-chunk summaries back
- * together in original order. The result is a much shorter string that
- * still covers the *entire* document, so the downstream generation call
- * (summary/flashcards/questions/exam) never has to silently truncate the
- * tail of a large file. Short documents pass through unchanged.
+ * in batches of CONCURRENCY_LIMIT (currently 1, i.e. strictly one chunk at a
+ * time, with a fixed cooldown between them), stitching the per-chunk
+ * summaries back together in original order. The result is a much shorter
+ * string that still covers the *entire* document, so the downstream
+ * generation call (summary/flashcards/questions/exam) never has to silently
+ * truncate the tail of a large file. Short documents pass through unchanged.
  *
  * A chunk that still fails after all retries is replaced with a placeholder
  * note instead of throwing, so one bad chunk doesn't take down the whole
@@ -472,6 +482,10 @@ async function buildAggregatedContent(
     console.log(`Processed ${completed} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
       setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage, stage: "chunking" });
+    }
+
+    if (completed < chunks.length) {
+      await sleep(INTER_CHUNK_COOLDOWN_MS);
     }
   }
 

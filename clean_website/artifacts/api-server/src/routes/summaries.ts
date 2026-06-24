@@ -3,6 +3,7 @@ import { db, summariesTable, materialsTable, activityTable } from "@workspace/db
 import { eq, and } from "drizzle-orm";
 import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
+import { rejectIfTooShort } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 
@@ -33,9 +34,14 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
   if (!material) return res.status(404).json({ error: "Not found" });
 
+  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
   await requireTokenBalance(userId);
 
-  const materialContent = material.extractedText || material.title;
+  // No fallback to the title or any other metadata -- rejectIfTooShort above
+  // already guarantees extractedText clears the minimum, so this is always
+  // the real transcript/extracted content.
+  const materialContent = material.extractedText || "";
   const result = await generateSummary({
     language: body.language as "he" | "en",
     materialContent,

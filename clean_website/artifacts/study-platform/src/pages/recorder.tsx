@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
-import { NO_CONTENT_MESSAGE_HE, isAudioSilent } from "@/lib/content-check";
+import { NO_CONTENT_MESSAGE_HE, validateRecording } from "@/lib/content-check";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -53,14 +53,6 @@ const SAVE_STEPS_HE = [
   "מכין שאלות חידון...",
   "מסיים ערכת לימוד...",
 ];
-
-// Pre-flight check shared by the manual-save and auto-save (20-minute cap)
-// paths -- a zero-byte blob or a sub-1-second recording (mic permission
-// glitch, instant stop) means there's nothing to transcribe, so it's caught
-// here before performSave ever fires the upload request.
-function hasRecordingContent(blob: Blob | null, durationSeconds: number): boolean {
-  return !!blob && blob.size > 0 && durationSeconds >= 1;
-}
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -267,11 +259,11 @@ export const RecorderPage: React.FC = () => {
   const handleSave = async () => {
     if (!audioBlobRef) return;
     if (!title.trim()) { setError("יש להזין כותרת להקלטה"); return; }
-    if (!hasRecordingContent(audioBlobRef, elapsed)) {
-      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
-      return;
-    }
-    if (await isAudioSilent(audioBlobRef)) {
+    // Hard block: no fallback to the title or any other metadata. If the
+    // recording itself has no real content, performSave (and the API call
+    // it triggers) never runs.
+    const check = await validateRecording(audioBlobRef, elapsed);
+    if (!check.ok) {
       toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
       return;
     }
@@ -285,12 +277,11 @@ export const RecorderPage: React.FC = () => {
   // whatever the user actually has set at that moment.
   useEffect(() => {
     if (!autoStopped || recState !== "stopped" || !audioBlobRef) return;
-    if (!hasRecordingContent(audioBlobRef, elapsed)) {
-      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
-      return;
-    }
+    // Same hard-block gate as handleSave -- an empty/silent recording never
+    // reaches performSave here either, auto-stop or not.
     (async () => {
-      if (await isAudioSilent(audioBlobRef)) {
+      const check = await validateRecording(audioBlobRef, elapsed);
+      if (!check.ok) {
         toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
         return;
       }

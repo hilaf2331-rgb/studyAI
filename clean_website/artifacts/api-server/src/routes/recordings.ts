@@ -5,7 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
 import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError } from "../lib/tokens";
-import { mediaTooLargeMessage } from "../lib/validation";
+import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage } from "../lib/validation";
 
 const router = Router();
 
@@ -57,6 +57,17 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const userId = req.user!.userId;
   if (!req.file) return res.status(400).json({ error: "Audio file is required" });
 
+  // Hard block on a literally-empty payload before any transcription/AI
+  // cost is incurred -- this is the backstop for the frontend's own
+  // zero-byte check in case that's ever bypassed.
+  if (req.file.size === 0) {
+    return res.status(400).json({
+      error: "insufficient_content",
+      message: insufficientAudioContentMessage("he"),
+      code: "EMPTY_RECORDING",
+    });
+  }
+
   const title = (req.body.title as string) || `הקלטה ${new Date().toLocaleDateString("he-IL")}`;
   const recordedAt = req.body.recordedAt ? new Date(req.body.recordedAt) : new Date();
   const durationSeconds = req.body.durationSeconds ? Number(req.body.durationSeconds) : undefined;
@@ -90,6 +101,22 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     req.log.error({ err }, "Transcription failed");
     transcriptionError = err.message;
     extractedText = `[Transcription failed: ${err.message}]`;
+  }
+
+  // Hard block: a silent/near-empty recording transcribes successfully but
+  // to an empty or near-empty string. There is no fallback to the title (or
+  // any other metadata) here -- if the actual transcript doesn't clear the
+  // threshold, the request is rejected outright before anything is
+  // persisted, before incrementActionsUsed, and before any of the three
+  // Gemini calls below ever fire.
+  if (!transcriptionError && extractedText.trim().length < MIN_AUDIO_TRANSCRIPT_LENGTH) {
+    return res.status(400).json({
+      error: "insufficient_content",
+      message: insufficientAudioContentMessage("he"),
+      code: "EMPTY_RECORDING",
+      minLength: MIN_AUDIO_TRANSCRIPT_LENGTH,
+      receivedLength: extractedText.trim().length,
+    });
   }
 
   const [material] = await db.insert(materialsTable).values({

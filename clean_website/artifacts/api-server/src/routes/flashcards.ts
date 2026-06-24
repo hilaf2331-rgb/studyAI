@@ -47,7 +47,9 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
   const cardTypes = body.cardTypes?.length ? body.cardTypes : ["qa", "definition"];
-  const materialContent = material.extractedText || material.title;
+  // No fallback to the title or any other metadata -- rejectIfTooShort above
+  // already guarantees extractedText clears the minimum.
+  const materialContent = material.extractedText || "";
   const contentLength = materialContent.trim().length;
   const cardCount = clampToContentLength(body.cardCount || 10, contentLength, "flashcards");
 

@@ -45,7 +45,9 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
 
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
-  const materialContent = material.extractedText || material.title;
+  // No fallback to the title or any other metadata -- rejectIfTooShort above
+  // already guarantees extractedText clears the minimum.
+  const materialContent = material.extractedText || "";
   const contentLength = materialContent.trim().length;
   // Cap the requested count when the material is short-but-valid (between
   // MIN_CONTENT_LENGTH and SHORT_CONTENT_THRESHOLD). Asking for 10 questions

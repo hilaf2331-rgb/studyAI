@@ -325,7 +325,10 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
       return res.status(404).json({ error: "Not found" });
     }
 
-    const content = material.extractedText || material.title;
+    // No fallback to the title or any other metadata -- if there's no real
+    // extracted content, the length check right below rejects the request
+    // outright instead of generating a kit out of thin air.
+    const content = material.extractedText || "";
     const language = "he";
 
     // Length & sufficiency check — run BEFORE any Gemini calls. There is no

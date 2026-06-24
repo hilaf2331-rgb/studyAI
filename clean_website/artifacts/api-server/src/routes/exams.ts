@@ -81,7 +81,10 @@ type GenerateExamBodyType = ReturnType<typeof GenerateExamBody.parse>;
 // branch only ever wrote intermediate stage:"chunking" entries).
 async function runGenerateExam(material: MaterialRow, userId: number, body: GenerateExamBodyType, questionCount: number): Promise<void> {
   const materialId = material.id;
-  const materialContent = material.extractedText || material.title;
+  // No fallback to the title or any other metadata -- the caller's
+  // rejectIfTooShort check already guarantees extractedText clears the
+  // minimum before this background job is ever started.
+  const materialContent = material.extractedText || "";
 
   try {
     const excludeQuestions = await getExistingQuestionTexts(materialId);
@@ -185,7 +188,9 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
 
     if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
 
-    const materialContent = material.extractedText || material.title;
+    // No fallback to the title or any other metadata -- rejectIfTooShort
+    // above already guarantees extractedText clears the minimum.
+    const materialContent = material.extractedText || "";
     const contentLength = materialContent.trim().length;
     const questionCount = Math.min(
       clampToContentLength(body.questionCount || 10, contentLength, "questions"),

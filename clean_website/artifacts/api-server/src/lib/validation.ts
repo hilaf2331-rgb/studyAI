@@ -57,6 +57,18 @@ export function mediaTooLargeMessage(language: "he" | "en" = "he"): string {
     : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
 }
 
+// Recordings.ts's server-side backstop: a zero-byte upload or a transcript
+// this short (after Whisper has already run) means there's no real speech
+// to build a study kit from -- caught here, by character count of the
+// actual transcript, never by falling back to the recording's title.
+export const MIN_AUDIO_TRANSCRIPT_LENGTH = 50;
+
+export function insufficientAudioContentMessage(language: "he" | "en" = "he"): string {
+  return language === "he"
+    ? "לא נקלט תוכן בהקלטה (אולי הייתה שקטה או קצרה מדי). אנא בדוק את ההקלטה ונסה שוב."
+    : "No content was detected in the recording (it may have been silent or too short). Please check the recording and try again.";
+}
+
 /**
  * If the material's text is too short to generate from, writes a 400 JSON
  * response and returns true (caller should return immediately). Otherwise

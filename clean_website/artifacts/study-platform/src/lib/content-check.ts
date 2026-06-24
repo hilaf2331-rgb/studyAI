@@ -42,3 +42,14 @@ export async function isAudioSilent(blob: Blob): Promise<boolean> {
     ctx?.close();
   }
 }
+
+// Single hard-block gate for the recorder's save flow (manual save +
+// 20-minute auto-stop save both route through this, instead of duplicating
+// the size/duration/silence checks). There is no fallback to the title or
+// any other metadata here -- a recording either has real, audible content
+// or performSave (and therefore the API call) never fires.
+export async function validateRecording(blob: Blob | null, durationSeconds: number): Promise<{ ok: true } | { ok: false }> {
+  if (!blob || blob.size === 0 || durationSeconds < 1) return { ok: false };
+  if (await isAudioSilent(blob)) return { ok: false };
+  return { ok: true };
+}

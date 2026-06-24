@@ -115,7 +115,16 @@ MISSING CONTEXT: If the provided text is empty, unreadable, or too short/corrupt
 Always respond in clear English only.
 Output must be a valid JSON object only — do not include any markdown formatting or commentary outside the JSON.`;
 
-function contentSlice(text: string, maxChars = 20000): string {
+// 20,000 chars was cutting into the aggregated, already chunk-summarized
+// content fed to the final synthesis calls -- on an 84-page document that
+// aggregate is itself many thousands of chars (one ~2000-token summary per
+// chunk), so the old cap was silently dropping most of the document before
+// the model ever saw it. Gemini 2.5 Flash's 1M-token context window has
+// enormous headroom here, so this is raised to a value chosen to comfortably
+// exceed any realistic aggregated-summary length rather than to actively
+// constrain it. chatWithMaterial still passes its own tighter 6000-char cap
+// explicitly, since that call sends the *raw* (unsummarized) material.
+function contentSlice(text: string, maxChars = 120000): string {
   return text.length > maxChars ? text.slice(0, maxChars) + "\n\n[...תוכן קוצר בגלל אורך...]" : text;
 }
 
@@ -357,6 +366,71 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   throw new AIServiceError();
 }
 
+// How many times to re-run a *successful* (no thrown error) Gemini call
+// whose parsed output still comes back empty -- e.g. a finishReason other
+// than STOP that silently truncated the JSON, or a one-off bad parse. This
+// is intentionally small and separate from MAX_RETRY_ATTEMPTS inside
+// callGeminiWithRetry: that retry budget already covers network/5xx/timeout
+// failures, this one covers "the call succeeded but produced nothing useful"
+// so a real empty-output case (e.g. genuinely unreadable material) doesn't
+// also have to survive the full network-error backoff schedule.
+const EMPTY_OUTPUT_RETRY_ATTEMPTS = 2;
+
+// Thrown by a section's validate() callback when a Gemini call returned
+// successfully but with output that doesn't pass that section's own
+// definition of "non-empty" -- gives generate-all.ts a single error type to
+// branch on for the "section failed, fall back instead of aborting" path.
+export class EmptyGenerationError extends Error {
+  constructor(label: string) {
+    super(`${label} produced no usable content after ${EMPTY_OUTPUT_RETRY_ATTEMPTS} attempt(s).`);
+    this.name = "EmptyGenerationError";
+  }
+}
+
+/**
+ * Wraps callGeminiWithRetry with a validation pass: parse() turns the raw
+ * response text into the section's result shape (summary content, card
+ * array, question array, ...), and is expected to throw if that result is
+ * empty/unusable. A throw here is treated as "this attempt produced
+ * nothing", not a network failure, so it gets its own short retry budget
+ * (EMPTY_OUTPUT_RETRY_ATTEMPTS) on top of -- not instead of --
+ * callGeminiWithRetry's own retries. Exhausting that budget raises
+ * EmptyGenerationError, so callers can catch a single specific error type
+ * instead of re-deriving "was this empty or did it actually fail".
+ */
+async function callGeminiJsonWithValidation<T>(
+  params: GeminiCallParams,
+  parse: (text: string) => T,
+  label: string,
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 1; attempt <= EMPTY_OUTPUT_RETRY_ATTEMPTS; attempt++) {
+    const text = await callGeminiWithRetry(params);
+    try {
+      return parse(text);
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `${label}: attempt ${attempt}/${EMPTY_OUTPUT_RETRY_ATTEMPTS} produced empty/invalid output (${err instanceof Error ? err.message : err}), ${attempt < EMPTY_OUTPUT_RETRY_ATTEMPTS ? "retrying..." : "giving up."}`,
+      );
+    }
+  }
+  console.error(`${label}: exhausted all attempts with empty/invalid output. Last error:`, lastError);
+  throw new EmptyGenerationError(label);
+}
+
+// Explicit output-token ceilings for the four final synthesis calls. None of
+// these were previously set, which left them at the SDK default -- on a
+// long, detailed Hebrew response (token-dense relative to ASCII) that default
+// could be reached before the model finished writing, producing a silently
+// truncated (or, after JSON-parsing a cut-off string, fully empty) result
+// with no error raised anywhere. Sized generously per section's actual
+// shape rather than uniformly.
+const SUMMARY_MAX_OUTPUT_TOKENS = 8000;
+const FLASHCARDS_MAX_OUTPUT_TOKENS = 4000;
+const QUESTIONS_MAX_OUTPUT_TOKENS = 6000;
+const EXAM_MAX_OUTPUT_TOKENS = 6000;
+
 // Above this length, a single Gemini call risks silently dropping the tail
 // of the document (or the model just skims the title and hallucinates) — so
 // we chunk instead of truncating. Below it, material is short enough to pass
@@ -428,19 +502,19 @@ async function buildAggregatedContent(
   materialTitle: string,
   isHe: boolean,
   materialId?: number
-): Promise<{ content: string }> {
+): Promise<{ content: string; parts: string[]; chunked: boolean }> {
   // First step, before any chunking or Gemini calls: if we already know
   // we're in a rate-limit cool-down, fail instantly instead of doing wasted
   // work.
   checkCircuitBreaker();
 
   if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
-    return { content: materialContent };
+    return { content: materialContent, parts: [materialContent], chunked: false };
   }
 
   const chunks = splitTextIntoChunks(materialContent, CHUNK_TOKEN_LIMIT);
   if (chunks.length <= 1) {
-    return { content: materialContent };
+    return { content: materialContent, parts: [materialContent], chunked: false };
   }
 
   const partials: string[] = new Array(chunks.length);
@@ -493,7 +567,53 @@ async function buildAggregatedContent(
     .map((p, i) => (isHe ? `### חלק ${i + 1}\n${p}` : `### Part ${i + 1}\n${p}`))
     .join("\n\n");
 
-  return { content };
+  return { content, parts: partials, chunked: true };
+}
+
+// Normalizes a question's text for duplicate detection -- case/whitespace
+// differences shouldn't let an otherwise-identical question slip through as
+// "new".
+function normalizeQuestionText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// Filters out any generated question whose text matches (after
+// normalization) one already generated in a previous run for this material,
+// or a duplicate appearing earlier in the same batch -- used to keep
+// re-runs ("give me a new set of practice questions") from just handing the
+// student the same questions again.
+function dedupeQuestionsAgainstExisting<T extends { question: string }>(
+  questions: T[],
+  existingQuestionTexts: string[],
+): T[] {
+  const seen = new Set(existingQuestionTexts.map(normalizeQuestionText));
+  const result: T[] = [];
+  for (const q of questions) {
+    const norm = normalizeQuestionText(q.question);
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    result.push(q);
+  }
+  return result;
+}
+
+type GeneratedQuestion = {
+  question: string;
+  answer: string;
+  explanation: string;
+  options: string[];
+  correctIndex: number;
+  questionType: string;
+  difficulty: string;
+  modelAnswer?: string;
+};
+
+function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boolean): string {
+  if (existingQuestionTexts.length === 0) return "";
+  const list = existingQuestionTexts.slice(0, 50).map((q) => `- ${q}`).join("\n");
+  return isHe
+    ? `\n\nשאלות שכבר נוצרו בעבר עבור חומר זה — אסור לחזור עליהן או על וריאציות קרובות שלהן, צרו שאלות חדשות ושונות:\n${list}\n`
+    : `\n\nQuestions already generated previously for this material — do not repeat these or close variations, create new and different questions:\n${list}\n`;
 }
 
 export async function generateSummary(
@@ -527,7 +647,75 @@ export async function generateSummary(
 `;
 
   try {
-  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+
+  // Large/chunked documents: rather than risk a single Gemini call silently
+  // truncating its output once asked to comprehensively cover every chunk,
+  // the chapter bodies are assembled deterministically from each chunk's
+  // already-validated factual summary (one chapter per chunk, guaranteed to
+  // cover the whole document since nothing is re-summarized or re-sliced
+  // here). Only the keyPoints + a short executive wrap-up come from a single,
+  // lightweight, bounded-output Gemini call on top of that.
+  if (chunked) {
+    const chapterBody = parts
+      .map((p, i) => (isHe ? `## פרק ${i + 1}\n${p}` : `## Chapter ${i + 1}\n${p}`))
+      .join("\n\n");
+
+    const synthPrompt = isHe
+      ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
+
+${contentSlice(chapterBody)}
+
+---
+המשימה שלך: קרא את כל הפרקים מעלה וצור:
+1. keyPoints — מערך של 5–8 משפטים קצרים, הכי חשובים מכל החומר (מה שהייתה רוצה לדעת לפני הבחינה).
+2. executiveSummary — פסקת "סיכום מנהלים" חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור", המכסה את כל הפרקים.
+
+החזר JSON בלבד במבנה הבא:
+{
+  "keyPoints": ["נקודה 1", "נקודה 2", "נקודה 3", "נקודה 4", "נקודה 5"],
+  "executiveSummary": "פסקת סיכום מנהלים כאן"
+}`
+      : `## Chapter-by-chapter summary of study material "${materialTitle}":
+
+${contentSlice(chapterBody)}
+
+---
+Your task: read every chapter above and produce:
+1. keyPoints — an array of 5-8 short sentences, the most important things from the whole material (what you'd want to know before the exam).
+2. executiveSummary — a warm 3-5 sentence "executive summary" wrap-up, written like you're telling a friend "here's what actually matters", covering all the chapters.
+
+Return ONLY JSON matching this structure:
+{
+  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
+  "executiveSummary": "Executive summary paragraph here"
+}`;
+
+    const { keyPoints, executiveSummary } = await callGeminiJsonWithValidation(
+      {
+        systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+        contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
+        temperature: 0.4,
+        jsonMode: true,
+        maxOutputTokens: 2000,
+      },
+      (text) => {
+        const parsed = safeJsonParse(text);
+        const kp = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
+        const exec = typeof parsed.executiveSummary === "string" ? parsed.executiveSummary : "";
+        if (kp.length === 0 && !exec) throw new Error("empty keyPoints and executiveSummary");
+        return { keyPoints: kp, executiveSummary: exec };
+      },
+      "generateSummary(chaptered)",
+    );
+
+    const execHeading = isHe ? "## סיכום מנהלים" : "## Executive Summary";
+    const content = executiveSummary ? `${chapterBody}\n\n${execHeading}\n${executiveSummary}` : chapterBody;
+    console.log(`generateSummary: assembled ${parts.length}-chapter summary (${content.length} chars, ${keyPoints.length} key points) for material ${materialId ?? "?"}.`);
+    return { content, keyPoints };
+  }
+
+  const aggregatedContent = parts[0];
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -573,21 +761,28 @@ Return ONLY JSON matching this structure:
   "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"]
 }`;
 
-  const text = await callGeminiWithRetry({
-    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    temperature: 0.4,
-    jsonMode: true,
-  });
-
-  const parsed = safeJsonParse(text);
-  if (!parsed.content) {
-    console.warn("generateSummary: parsed JSON had no content field. Raw response (last 500 chars):", text.slice(-500));
-  }
-  return {
-    content: parsed.content || "",
-    keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
-  };
+  const { content, keyPoints } = await callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.4,
+      jsonMode: true,
+      maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      if (!parsed.content || typeof parsed.content !== "string" || !parsed.content.trim()) {
+        throw new Error("empty content field");
+      }
+      return {
+        content: parsed.content as string,
+        keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+      };
+    },
+    "generateSummary",
+  );
+  console.log(`generateSummary: generated summary (${content.length} chars, ${keyPoints.length} key points) for material ${materialId ?? "?"}.`);
+  return { content, keyPoints };
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }
@@ -658,33 +853,43 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const text = await callGeminiWithRetry({
-    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    temperature: 0.3,
-    jsonMode: true,
-  });
-
-  const parsed = safeJsonParse(text);
-  return Array.isArray(parsed.cards) ? parsed.cards : [];
+  const cards = await callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.3,
+      jsonMode: true,
+      maxOutputTokens: FLASHCARDS_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result = Array.isArray(parsed.cards) ? parsed.cards : [];
+      if (result.length === 0) throw new Error("empty cards array");
+      return result;
+    },
+    "generateFlashcardsAI",
+  );
+  console.log(`generateFlashcardsAI: generated ${cards.length} flashcards (requested up to ${cardCount}) for material ${materialId ?? "?"}.`);
+  return cards;
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }
 }
 
 export async function generateQuestionsAI(
-  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string }
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions } = opts;
   const isHe = language === "he";
   try {
   const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-
+${excludeBlock}
 ---
 המשימה: צור בדיוק ${questionCount} שאלות תרגול בעברית.
 סוגי שאלות: ${questionTypes.join(", ")}
@@ -717,7 +922,7 @@ ${contentSlice(aggregatedContent)}
     : `## Study Material: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-
+${excludeBlock}
 ---
 Task: Create exactly ${questionCount} practice questions in English.
 Question types: ${questionTypes.join(", ")}
@@ -748,29 +953,43 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const text = await callGeminiWithRetry({
-    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    temperature: 0.4,
-    jsonMode: true,
-  });
-
-  const parsed = safeJsonParse(text);
-  return Array.isArray(parsed.questions)
-    ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
-    : [];
+  const questions = await callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.4,
+      jsonMode: true,
+      maxOutputTokens: QUESTIONS_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
+        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+        : [];
+      if (result.length === 0) throw new Error("empty questions array");
+      return result;
+    },
+    "generateQuestionsAI",
+  );
+  const deduped = dedupeQuestionsAgainstExisting(questions, excludeQuestions ?? []);
+  if (deduped.length < questions.length) {
+    console.warn(`generateQuestionsAI: dropped ${questions.length - deduped.length} duplicate question(s) against previous runs.`);
+  }
+  console.log(`generateQuestionsAI: generated ${deduped.length} unique questions (requested ${questionCount}) for material ${materialId ?? "?"}.`);
+  return deduped;
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }
 }
 
 export async function generateExamAI(
-  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId } = opts;
+  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;
   const isHe = language === "he";
   try {
   const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
@@ -793,7 +1012,7 @@ ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
 
 ${contentSlice(aggregatedContent)}
-
+${excludeBlock}
 ---
 המשימה: צור מבחן עם בדיוק ${questionCount} שאלות בעברית.
 שלב סוגי שאלות: multiple_choice (70%), true_false (15%), open (15%).
@@ -826,7 +1045,7 @@ ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
 
 ${contentSlice(aggregatedContent)}
-
+${excludeBlock}
 ---
 Task: Create an exam with exactly ${questionCount} questions in English.
 Mix question types: multiple_choice (70%), true_false (15%), open (15%).
@@ -855,17 +1074,30 @@ Return ONLY JSON matching this structure:
   ]
 }`;
 
-  const text = await callGeminiWithRetry({
-    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    temperature: 0.4,
-    jsonMode: true,
-  });
-
-  const parsed = safeJsonParse(text);
-  return Array.isArray(parsed.questions)
-    ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
-    : [];
+  const questions = await callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.4,
+      jsonMode: true,
+      maxOutputTokens: EXAM_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
+        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+        : [];
+      if (result.length === 0) throw new Error("empty questions array");
+      return result;
+    },
+    "generateExamAI",
+  );
+  const deduped = dedupeQuestionsAgainstExisting(questions, excludeQuestions ?? []);
+  if (deduped.length < questions.length) {
+    console.warn(`generateExamAI: dropped ${questions.length - deduped.length} duplicate question(s) against previous exams.`);
+  }
+  console.log(`generateExamAI: generated ${deduped.length} unique questions (requested ${questionCount}) for material ${materialId ?? "?"}.`);
+  return deduped;
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }

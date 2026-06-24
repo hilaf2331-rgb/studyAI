@@ -7,6 +7,7 @@ import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLim
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
+import { getExistingQuestionTexts } from "../lib/question-history";
 
 const router = Router();
 
@@ -48,21 +49,50 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 type MaterialRow = typeof materialsTable.$inferSelect;
 
+// Practice questions are deliberately capped well below maxQuestions'
+// previous dynamic ceiling -- per product direction, a single run is meant
+// to feel like one quiz (not an attempt to exhaust every possible question
+// from the document), and students are expected to re-run generation for a
+// fresh set. Summary and flashcards stay on the dynamic, document-size-aware
+// limits below since those two are the priority: thorough, comprehensive
+// coverage of the whole document.
+const PRACTICE_QUESTION_COUNT = 10;
+
+function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
+  if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError || err instanceof AIServiceError) {
+    return err.message;
+  }
+  return fallbackHe;
+}
+
 // The actual Gemini + DB-insert pipeline, run after the 202 has already gone
 // out to the client. Nothing in here can hold an HTTP response open, so
 // however long Gemini takes, Render's proxy never sees it -- the frontend
 // finds out via polling GET /materials/:id/progress instead. Every exit path
 // (success or failure) ends by writing a terminal "done"/"error" progress
 // entry, since that's the only signal the polling frontend ever gets.
+//
+// Summary, flashcards, and questions are generated in three dedicated
+// sequential stages rather than one concurrent Promise.allSettled batch --
+// each stage's own failure (after its internal retries) is caught locally
+// and replaced with a clear fallback instead of aborting the other stages,
+// so e.g. a flaky question-generation call can never take down an otherwise
+// successful summary + flashcard run.
 async function runGenerateAll(material: MaterialRow, userId: number, content: string): Promise<void> {
   const materialId = material.id;
   const language = "he" as const;
 
   try {
-    const { maxFlashcards, maxQuestions } = getDynamicGenerationLimits(content.length);
+    const { maxFlashcards } = getDynamicGenerationLimits(content.length);
 
-    const [summarySettled, flashSettled, questionSettled] = await Promise.allSettled([
-      withTimeout(
+    // Stage 1/3: summary -- top priority, must be thorough. A failure here
+    // no longer aborts the whole job; it's replaced with a clear fallback
+    // message so flashcards/questions still get a chance to run.
+    console.log(`generate-all[${materialId}]: stage 1/3 -- generating summary...`);
+    let summaryResult: { content: string; keyPoints: string[] };
+    let summaryFailed = false;
+    try {
+      summaryResult = await withTimeout(
         generateSummary({
           language,
           materialContent: content,
@@ -71,8 +101,25 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
         }),
         AI_TASK_TIMEOUT_MS,
         "generateSummary",
-      ),
-      withTimeout(
+      );
+      console.log(`generate-all[${materialId}]: summary stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points.`);
+    } catch (err) {
+      summaryFailed = true;
+      logger.error({ err, materialId }, "generate-all: summary generation failed, using fallback");
+      summaryResult = {
+        content: userFacingAIErrorMessage(err, "לא ניתן היה ליצור סיכום עבור מסמך זה. אנא נסה שוב."),
+        keyPoints: [],
+      };
+    }
+
+    // Stage 2/3: flashcards -- also top priority, thorough coverage of the
+    // document (dynamic cap based on content length). A failure leaves an
+    // empty deck rather than aborting.
+    console.log(`generate-all[${materialId}]: stage 2/3 -- generating flashcards (up to ${maxFlashcards})...`);
+    let flashResult: Awaited<ReturnType<typeof generateFlashcardsAI>> = [];
+    let flashFailed = false;
+    try {
+      flashResult = await withTimeout(
         generateFlashcardsAI({
           language,
           materialContent: content,
@@ -82,43 +129,40 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
         }),
         AI_TASK_TIMEOUT_MS,
         "generateFlashcardsAI",
-      ),
-      withTimeout(
+      );
+      console.log(`generate-all[${materialId}]: flashcards stage done -- ${flashResult.length} cards.`);
+    } catch (err) {
+      flashFailed = true;
+      logger.warn({ err, materialId }, "generate-all: flashcard generation failed, continuing without it");
+    }
+
+    // Stage 3/3: practice questions -- fixed at PRACTICE_QUESTION_COUNT
+    // (one quiz's worth per run; re-run for a fresh set), excluding any
+    // question already generated for this material in a previous run/exam
+    // so repeated runs don't just hand back the same quiz.
+    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
+    let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
+    let questionFailed = false;
+    try {
+      const excludeQuestions = await getExistingQuestionTexts(materialId);
+      questionResult = await withTimeout(
         generateQuestionsAI({
           language,
           materialContent: content,
           materialTitle: material.title,
-          questionCount: maxQuestions,
+          questionCount: PRACTICE_QUESTION_COUNT,
           questionTypes: ["multiple_choice", "true_false"],
           difficulty: "mixed",
+          excludeQuestions,
         }),
         AI_TASK_TIMEOUT_MS,
         "generateQuestionsAI",
-      ),
-    ]);
-
-    if (summarySettled.status === "rejected") {
-      logger.error({ err: summarySettled.reason, materialId }, "generate-all: summary generation failed");
-      const reason = summarySettled.reason;
-      const message =
-        reason instanceof RateLimitExhaustedError || reason instanceof SystemBlockedError || reason instanceof AIServiceError
-          ? reason.message
-          : "Failed to generate summary. Please try again.";
-      setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
-      return;
+      );
+      console.log(`generate-all[${materialId}]: questions stage done -- ${questionResult.length} questions.`);
+    } catch (err) {
+      questionFailed = true;
+      logger.warn({ err, materialId }, "generate-all: question generation failed, continuing without it");
     }
-
-    const summaryResult = summarySettled.value;
-
-    if (flashSettled.status === "rejected") {
-      logger.warn({ err: flashSettled.reason, materialId }, "generate-all: flashcard generation failed, continuing without it");
-    }
-    if (questionSettled.status === "rejected") {
-      logger.warn({ err: questionSettled.reason, materialId }, "generate-all: question generation failed, continuing without it");
-    }
-
-    const flashResult = flashSettled.status === "fulfilled" ? flashSettled.value : [];
-    const questionResult = questionSettled.status === "fulfilled" ? questionSettled.value : [];
 
     await deductTokensForGeneration(
       userId,
@@ -201,7 +245,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
         summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
         deck: { id: deck.id, cardCount: flashResult.length },
         questionSet: { id: qSet.id, questionCount: questionResult.length },
-        partialFailure: flashSettled.status === "rejected" || questionSettled.status === "rejected",
+        partialFailure: summaryFailed || flashFailed || questionFailed,
       },
     });
   } catch (err) {

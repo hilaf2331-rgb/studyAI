@@ -9,6 +9,13 @@ import { generateExamAI, gradeAnswer } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { getExistingQuestionTexts } from "../lib/question-history";
+
+// Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
+// meant to feel like one real quiz/exam rather than an attempt to exhaust
+// every possible question from the material -- students re-run generation
+// (now steered away from repeating prior questions) for a fresh set.
+const MAX_EXAM_QUESTION_COUNT = 10;
 
 const router = Router();
 
@@ -47,10 +54,14 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
 
   const materialContent = material.extractedText || material.title;
   const contentLength = materialContent.trim().length;
-  const questionCount = clampToContentLength(body.questionCount || 10, contentLength, "questions");
+  const questionCount = Math.min(
+    clampToContentLength(body.questionCount || 10, contentLength, "questions"),
+    MAX_EXAM_QUESTION_COUNT,
+  );
 
   await requireTokenBalance(userId);
 
+  const excludeQuestions = await getExistingQuestionTexts(id);
   const generated = await generateExamAI({
     language: body.language as "he" | "en",
     materialContent,
@@ -60,6 +71,7 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
     difficulty: body.difficulty || "mixed",
     topics: body.topics,
     materialId: id,
+    excludeQuestions,
   });
   await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
 

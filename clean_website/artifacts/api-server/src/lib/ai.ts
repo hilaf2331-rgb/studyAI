@@ -111,18 +111,24 @@ function contentSlice(text: string, maxChars = 20000): string {
 // Retries on rate limits (429) and transient server/network errors. Other
 // errors (bad request, auth, etc.) are not retryable and fail immediately.
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
-const MAX_RETRY_ATTEMPTS = 2;
-const BASE_RETRY_DELAY_MS = 1000;
+// 503 "model is currently experiencing high demand" responses from Gemini
+// are explicitly described by Google as temporary -- 3 attempts with only
+// ~3s of total backoff wasn't enough breathing room for those spikes to
+// clear, so this gives transient errors more attempts and more backoff time
+// before giving up. See AI_TASK_TIMEOUT_MS in generate-all.ts, which must
+// stay comfortably above the worst case computed below.
+const MAX_RETRY_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 1500;
 
 // Per-attempt request timeout passed to the Gemini SDK. Render's free tier
 // runs on a heavily throttled CPU, so a single call can occasionally hang far
 // longer than a normal deploy would -- without a bound here, a stalled
 // request keeps the connection open until something upstream (Render's own
 // proxy or, for /generate-all, our own AI_TASK_TIMEOUT_MS) gives up first and
-// returns a bare 502/timeout with no useful detail. 3 attempts x 25s + ~3s of
-// backoff is a ~78s worst case, which leaves headroom under generate-all's
-// 100s outer task timeout while still giving each attempt a genuinely
-// generous window to finish on slow hardware.
+// returns a bare 502/timeout with no useful detail. 4 attempts x 25s + ~10.5s
+// of backoff is a ~110.5s worst case, which leaves headroom under
+// generate-all's 140s outer task timeout while still giving each attempt a
+// genuinely generous window to finish on slow hardware.
 const ATTEMPT_TIMEOUT_MS = 25_000;
 
 function isRetryableError(error: any): boolean {

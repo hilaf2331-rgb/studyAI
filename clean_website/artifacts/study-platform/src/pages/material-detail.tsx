@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
+import { useSmartProgress } from "@/hooks/use-smart-progress";
 
 function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
@@ -35,22 +36,28 @@ function GenerateDialog({
 }) {
   // Only the chunked path (large documents, multiple sequential Groq calls)
   // ever reports totalChunks > 0 — short materials finish in one call before
-  // a poll can even land, so they just show the plain spinner below.
+  // a poll can even land, so those instead drive a simulated bar that keeps
+  // creeping forward for however long the single call actually takes.
   const showChunkProgress = isGenerating && !!progress && progress.totalChunks > 0;
-  const percent = showChunkProgress ? progress!.percentage : 0;
+  const realPercent = showChunkProgress ? progress!.percentage : null;
+  const percent = useSmartProgress(isGenerating, { expectedDurationMs: 20_000, realPercent });
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" />{title}</DialogTitle></DialogHeader>
         <div className="space-y-4">{children}</div>
-        {showChunkProgress && (
+        {isGenerating && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span>{isRTL ? `מעבד חלק ${progress!.currentChunk} מ-${progress!.totalChunks}` : `Processing chunk ${progress!.currentChunk} of ${progress!.totalChunks}`}</span>
-              <span className="text-muted-foreground">{percent}%</span>
+              <span>
+                {showChunkProgress
+                  ? (isRTL ? `מעבד חלק ${progress!.currentChunk} מ-${progress!.totalChunks}` : `Processing chunk ${progress!.currentChunk} of ${progress!.totalChunks}`)
+                  : (isRTL ? "מייצר תוכן..." : "Generating content...")}
+              </span>
+              <span className="text-muted-foreground">{Math.round(percent)}%</span>
             </div>
-            <Progress value={percent} className="h-2" />
+            <Progress value={percent} active className="h-2" />
           </div>
         )}
         <Button onClick={onGenerate} disabled={isGenerating} className="w-full gap-2">
@@ -175,7 +182,6 @@ export const MaterialDetailPage: React.FC = () => {
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
   const [kitError, setKitError] = useState("");
   const [progressStep, setProgressStep] = useState(0);
-  const [progressValue, setProgressValue] = useState(0);
 
   // The exam route used to be a generated synchronous mutation hook
   // (useGenerateExam, expecting an immediate 201), but a chunked exam
@@ -235,11 +241,18 @@ export const MaterialDetailPage: React.FC = () => {
   }, [generationProgress, kitLoading]);
 
   useEffect(() => {
-    if (!kitLoading) { setProgressStep(0); setProgressValue(0); return; }
+    if (!kitLoading) { setProgressStep(0); return; }
     const stepInterval = setInterval(() => setProgressStep(s => Math.min(s + 1, PROGRESS_STEPS_HE.length - 1)), 3500);
-    const barInterval = setInterval(() => setProgressValue(v => (v >= 90 ? 90 : v + 2)), 600);
-    return () => { clearInterval(stepInterval); clearInterval(barInterval); };
+    return () => clearInterval(stepInterval);
   }, [kitLoading]);
+
+  // Real chunk progress (large documents only) always wins over the
+  // simulation below -- but the simulation keeps the bar visibly creeping
+  // forward the rest of the time, instead of freezing at a fixed number while
+  // the sequential summary -> flashcards -> questions pipeline runs for
+  // however many minutes it actually takes.
+  const realKitPercent = generationProgress && generationProgress.totalChunks > 0 ? generationProgress.percentage : null;
+  const progressValue = useSmartProgress(kitLoading, { expectedDurationMs: 45_000, realPercent: realKitPercent });
 
   // generate-all itself returns as soon as the background job is kicked off
   // (see handleGenerateAll) -- the actual outcome lands here, via the same
@@ -259,7 +272,6 @@ export const MaterialDetailPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
     }
     if (generationProgress.stage === "done") {
-      setProgressValue(100);
       setKitLoading(false);
     } else if (generationProgress.stage === "error") {
       setKitError(generationProgress.error || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
@@ -290,7 +302,6 @@ export const MaterialDetailPage: React.FC = () => {
     setKitResult(null);
     setKitError("");
     setProgressStep(0);
-    setProgressValue(0);
 
     try {
       const token = getStoredToken();
@@ -514,26 +525,17 @@ export const MaterialDetailPage: React.FC = () => {
                   )}
                 </div>
               )}
-              {generationProgress && generationProgress.totalChunks > 0 ? (
-                <>
-                  <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
-                    <span className="font-semibold">
-                      {isRTL
-                        ? `עיבוד: ${generationProgress.percentage}% (חלק ${generationProgress.currentChunk} מתוך ${generationProgress.totalChunks})...`
-                        : `Processing: ${generationProgress.percentage}% (chunk ${generationProgress.currentChunk} of ${generationProgress.totalChunks})...`}
-                    </span>
-                  </div>
-                  <Progress value={generationProgress.percentage} className="h-2" />
-                </>
-              ) : (
-                <>
-                  <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
-                    <span className="font-semibold">{progressSteps[progressStep]}</span>
-                    <span className="text-muted-foreground">{progressValue}%</span>
-                  </div>
-                  <Progress value={progressValue} className="h-2" />
-                </>
-              )}
+              <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
+                <span className="font-semibold">
+                  {realKitPercent != null
+                    ? (isRTL
+                        ? `עיבוד: חלק ${generationProgress!.currentChunk} מתוך ${generationProgress!.totalChunks}...`
+                        : `Processing: chunk ${generationProgress!.currentChunk} of ${generationProgress!.totalChunks}...`)
+                    : progressSteps[progressStep]}
+                </span>
+                <span className="text-muted-foreground">{Math.round(progressValue)}%</span>
+              </div>
+              <Progress value={progressValue} active className="h-2" />
               <StudyTipsCarousel isRTL={isRTL} />
             </div>
           )}

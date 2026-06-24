@@ -185,3 +185,15 @@
 .rotate-y-180 {
   transform: rotateY(180deg);
 }
+
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.progress-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary-foreground) / 0.35), transparent);
+  animation: progress-shimmer 1.6s ease-in-out infinite;
+}

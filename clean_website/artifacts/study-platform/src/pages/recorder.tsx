@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
+import { useSmartProgress } from "@/hooks/use-smart-progress";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -87,8 +88,13 @@ export const RecorderPage: React.FC = () => {
 
   // Save progress
   const [saveStep, setSaveStep] = useState(0);
-  const [saveProgress, setSaveProgress] = useState(0);
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
+  // Transcription + 3 parallel Gemini calls scale with recording length --
+  // a 20-second voice memo and a 20-minute lecture shouldn't crawl at the
+  // same pace, so the simulated bar's speed is derived from elapsed.
+  const saveProgress = useSmartProgress(recState === "saving", {
+    expectedDurationMs: Math.min(90_000, Math.max(15_000, elapsed * 700)),
+  });
 
   // History
   const [history, setHistory] = useState<RecordingRow[]>([]);
@@ -204,10 +210,8 @@ export const RecorderPage: React.FC = () => {
     setError("");
     setRecState("saving");
     setSaveStep(0);
-    setSaveProgress(0);
 
     const stepInterval = setInterval(() => setSaveStep(s => Math.min(s + 1, SAVE_STEPS_HE.length - 1)), 6000);
-    const barInterval = setInterval(() => setSaveProgress(v => v >= 88 ? 88 : v + 1.5), 800);
 
     try {
       const fd = new FormData();
@@ -225,7 +229,6 @@ export const RecorderPage: React.FC = () => {
       const data = await res.json();
 
       clearInterval(stepInterval);
-      clearInterval(barInterval);
 
       if (!res.ok) {
         if (data.code === "BETA_LIMIT_REACHED") {
@@ -238,7 +241,6 @@ export const RecorderPage: React.FC = () => {
         return;
       }
 
-      setSaveProgress(100);
       if (data.kit) {
         setKitResult(data.kit);
       }
@@ -246,7 +248,6 @@ export const RecorderPage: React.FC = () => {
       loadHistory();
     } catch (err: any) {
       clearInterval(stepInterval);
-      clearInterval(barInterval);
       setError("שמירת ההקלטה נכשלה. נסה שנית.");
       setRecState("error");
     }
@@ -280,7 +281,6 @@ export const RecorderPage: React.FC = () => {
     setError("");
     setKitResult(null);
     setSaveStep(0);
-    setSaveProgress(0);
     setAutoStopped(false);
   };
 
@@ -467,7 +467,7 @@ export const RecorderPage: React.FC = () => {
                   <p className="text-xs text-muted-foreground mt-0.5">זה ייקח כ-30–60 שניות — Groq מעבד בשבילך</p>
                 </div>
               </div>
-              <Progress value={saveProgress} className="h-2.5" />
+              <Progress value={saveProgress} active className="h-2.5" />
               <div className="flex gap-5 text-xs text-muted-foreground">
                 {[
                   { icon: Mic, label: "תמלול", done: saveStep >= 2 },

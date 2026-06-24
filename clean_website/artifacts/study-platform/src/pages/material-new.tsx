@@ -15,6 +15,8 @@ import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, Ch
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
+import { Progress } from "@/components/ui/progress";
+import { useSmartProgress } from "@/hooks/use-smart-progress";
 
 type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "video";
 
@@ -49,6 +51,17 @@ const MAX_FILE_BYTES: Partial<Record<ContentType, number>> = {
 
 const MAX_AUDIO_SECONDS = 20 * 60;
 const MAX_VIDEO_SECONDS = 5 * 60;
+
+// Drives the simulated progress bar's pace -- bigger files realistically
+// take longer to extract/transcribe, so the crawl should be slower for them
+// instead of using one fixed speed regardless of content type or size.
+function estimateExpectedDurationMs(contentType: ContentType, file: File | null): number {
+  if (!file) return contentType === "youtube" || contentType === "url" ? 12_000 : 6_000;
+  const sizeMB = file.size / (1024 * 1024);
+  if (contentType === "audio" || contentType === "video") return Math.min(60_000, Math.max(8_000, sizeMB * 1200));
+  if (contentType === "image") return 5_000;
+  return Math.min(40_000, Math.max(5_000, sizeMB * 2500));
+}
 
 function fileTooLargeMessage(resolvedType: ContentType, isRTL: boolean): string {
   if (resolvedType === "image") {
@@ -142,9 +155,11 @@ export const MaterialNewPage: React.FC = () => {
       queryKey: getGetUploadProgressQueryKey(uploadId ?? ""),
     },
   });
-  const percent = uploadProgress?.stage === "extracting" || uploadProgress?.stage === "error"
+  const realPercent = uploadProgress?.stage === "extracting" || uploadProgress?.stage === "error"
     ? uploadProgress.percentage
-    : (isSubmitting ? 0 : null);
+    : null;
+  const expectedDurationMs = estimateExpectedDurationMs(contentType, file);
+  const percent = useSmartProgress(isSubmitting, { expectedDurationMs, realPercent });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -530,25 +545,10 @@ export const MaterialNewPage: React.FC = () => {
 
             {isSubmitting && (contentType === "youtube" || contentType === "url" || cfg.acceptsFile) && (
               <div className="space-y-1.5">
-                {percent !== null ? (
-                  <>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all duration-300"
-                        style={{ width: `${Math.max(percent, 4)}%` }}
-                      />
-                    </div>
-                    <p className="text-center text-xs text-muted-foreground">
-                      {isRTL ? `מחלץ תוכן... ${percent}%` : `Extracting content... ${percent}%`}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-center text-xs text-muted-foreground animate-pulse">
-                    {isRTL
-                      ? "מחלץ תוכן וממיר... זה עשוי לקחת מספר שניות"
-                      : "Extracting and processing content... this may take a few seconds"}
-                  </p>
-                )}
+                <Progress value={Math.max(percent, 4)} active className="h-2" />
+                <p className="text-center text-xs text-muted-foreground">
+                  {isRTL ? `מחלץ תוכן... ${Math.round(percent)}%` : `Extracting content... ${Math.round(percent)}%`}
+                </p>
               </div>
             )}
           </form>

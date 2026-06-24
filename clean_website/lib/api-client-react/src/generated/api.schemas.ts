@@ -130,10 +130,10 @@ export type GenerateAllResultQuestionSet = {
 };
 
 export interface GenerateAllResult {
-  summary: GenerateAllResultSummary;
-  deck: GenerateAllResultDeck;
-  questionSet: GenerateAllResultQuestionSet;
-  partialFailure: boolean;
+  summary?: GenerateAllResultSummary;
+  deck?: GenerateAllResultDeck;
+  questionSet?: GenerateAllResultQuestionSet;
+  partialFailure?: boolean;
 }
 
 export interface GenerationProgress {
@@ -141,7 +141,7 @@ export interface GenerationProgress {
   totalChunks: number;
   percentage: number;
   stage: GenerationProgressStage;
-  /** Present once stage is "done" — the ids/counts of the generated study kit. */
+  /** Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is "done". */
   result?: GenerateAllResult;
   /** Present once stage is "error" — a user-facing failure message. */
   error?: string;

@@ -137,9 +137,9 @@ const PROGRESS_STEPS_HE = ["מנתח את חומר הלימוד...", "מייצר
 const PROGRESS_STEPS_EN = ["Analyzing study material...", "Generating detailed summary...", "Building flashcard deck...", "Preparing quiz questions...", "Finishing your study kit..."];
 
 interface KitResult {
-  summary: { id: number; keyPointCount: number };
-  deck: { id: number; cardCount: number };
-  questionSet: { id: number; questionCount: number };
+  summary?: { id: number; keyPointCount: number };
+  deck?: { id: number; cardCount: number };
+  questionSet?: { id: number; questionCount: number };
   partialFailure?: boolean;
 }
 
@@ -201,14 +201,20 @@ export const MaterialDetailPage: React.FC = () => {
   // background pipeline writes a terminal "done"/"error" entry.
   useEffect(() => {
     if (!kitLoading || !generationProgress) return;
-    if (generationProgress.stage === "done" && generationProgress.result) {
-      setKitResult(generationProgress.result);
-      setProgressValue(100);
-      setKitLoading(false);
+    // Each stage (summary, then flashcards, then questions) lands in `result`
+    // as soon as its own DB rows are committed -- merge it in the moment it
+    // shows up so e.g. "View Summary" goes live while flashcards/quiz are
+    // still generating, instead of waiting for the whole job to finish.
+    if (generationProgress.result) {
+      setKitResult(prev => ({ ...prev, ...generationProgress.result }));
       qc.invalidateQueries({ queryKey: getListSummariesQueryKey(id) });
       qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) });
       qc.invalidateQueries({ queryKey: getListQuestionSetsQueryKey(id) });
       qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
+    }
+    if (generationProgress.stage === "done") {
+      setProgressValue(100);
+      setKitLoading(false);
     } else if (generationProgress.stage === "error") {
       setKitError(generationProgress.error || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
       setKitLoading(false);
@@ -377,6 +383,33 @@ export const MaterialDetailPage: React.FC = () => {
           )}
           {kitLoading && (
             <div className="space-y-4">
+              {/* Summary lands first and stays visible the instant its stage
+                  finishes persisting, while flashcards/quiz show a pending
+                  chip until their own stage completes -- the user can start
+                  reading instead of staring at a frozen page. */}
+              {(kitResult?.summary || kitResult?.deck || kitResult?.questionSet) && (
+                <div className={`flex flex-wrap gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                  {kitResult?.summary && (
+                    <Link href={`/summaries/${kitResult.summary.id}`}>
+                      <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בסיכום" : "View Summary"}</Button>
+                    </Link>
+                  )}
+                  {kitResult?.deck ? (
+                    <Link href={`/flashcards/${kitResult.deck.id}`}>
+                      <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בכרטיסיות" : "View Flashcards"}</Button>
+                    </Link>
+                  ) : (
+                    <Badge variant="outline" className="gap-1"><Loader2 className="w-3 h-3 animate-spin" />{isRTL ? "כרטיסיות בהכנה..." : "Flashcards generating..."}</Badge>
+                  )}
+                  {kitResult?.questionSet ? (
+                    <Link href={`/questions/${kitResult.questionSet.id}`}>
+                      <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בחידון" : "View Quiz"}</Button>
+                    </Link>
+                  ) : (
+                    <Badge variant="outline" className="gap-1"><Loader2 className="w-3 h-3 animate-spin" />{isRTL ? "חידון בהכנה..." : "Quiz generating..."}</Badge>
+                  )}
+                </div>
+              )}
               {generationProgress && generationProgress.totalChunks > 0 ? (
                 <>
                   <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
@@ -405,7 +438,7 @@ export const MaterialDetailPage: React.FC = () => {
               <div className="text-green-700 font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5" />{isRTL ? "ערכת הלימוד מוכנה!" : "Your study kit is ready!"}
               </div>
-              {(kitResult.partialFailure || (kitResult.deck.cardCount === 0 && kitResult.questionSet.questionCount === 0)) && (
+              {(kitResult.partialFailure || (kitResult.deck?.cardCount === 0 && kitResult.questionSet?.questionCount === 0)) && (
                 <p className="text-amber-700 text-sm flex items-start gap-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg px-3 py-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   {isRTL
@@ -414,15 +447,21 @@ export const MaterialDetailPage: React.FC = () => {
                 </p>
               )}
               <div className={`flex flex-wrap gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
-                <Link href={`/summaries/${kitResult.summary.id}`}>
-                  <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בסיכום" : "View Summary"}</Button>
-                </Link>
-                <Link href={`/flashcards/${kitResult.deck.id}`}>
-                  <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בכרטיסיות" : "View Flashcards"}</Button>
-                </Link>
-                <Link href={`/questions/${kitResult.questionSet.id}`}>
-                  <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בחידון" : "View Quiz"}</Button>
-                </Link>
+                {kitResult.summary && (
+                  <Link href={`/summaries/${kitResult.summary.id}`}>
+                    <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בסיכום" : "View Summary"}</Button>
+                  </Link>
+                )}
+                {kitResult.deck && (
+                  <Link href={`/flashcards/${kitResult.deck.id}`}>
+                    <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בכרטיסיות" : "View Flashcards"}</Button>
+                  </Link>
+                )}
+                {kitResult.questionSet && (
+                  <Link href={`/questions/${kitResult.questionSet.id}`}>
+                    <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בחידון" : "View Quiz"}</Button>
+                  </Link>
+                )}
               </div>
             </div>
           )}

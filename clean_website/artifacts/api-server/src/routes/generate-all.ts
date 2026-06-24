@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { generateSummaryAndFlashcards, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
+import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -11,17 +11,17 @@ import { getExistingQuestionTexts } from "../lib/question-history";
 
 const router = Router();
 
-// Per-task timeout. Each Gemini call gets its own clock instead of sharing
-// one budget, so a single slow call can't silently swallow the others'
-// remaining time. This only bounds a background promise (the 202 response
-// has already gone out by the time runGenerateAll runs -- see below), so it
-// isn't constrained by Render's proxy or any HTTP timeout; it just needs to
-// stay comfortably above the worst case for a large, chunked document.
-// generateSummaryAndFlashcards splits the raw document into ~15,000-char
-// sub-chunks (ai.ts) and processes them strictly one at a time with a fixed
-// cooldown between them, trading speed for reliability against Gemini's 503
-// "high demand" errors. Per-chunk worst case in ai.ts is ~256s (4 attempts x
-// 60s ATTEMPT_TIMEOUT_MS + full exponential backoff with jitter), so a
+// Per-task timeout. Each stage's Gemini work gets its own clock instead of
+// sharing one budget, so a single slow stage can't silently swallow the
+// others' remaining time. This only bounds a background promise (the 202
+// response has already gone out by the time runGenerateAll runs -- see
+// below), so it isn't constrained by Render's proxy or any HTTP timeout; it
+// just needs to stay comfortably above the worst case for a large, chunked
+// document. Every stage (summary, flashcards, questions) now processes the
+// document strictly one chunk at a time with a fixed cooldown between them
+// (ai.ts), trading speed for reliability against Gemini's 503 "high demand"
+// errors. Per-chunk worst case in ai.ts is ~256s (4 attempts x 60s
+// ATTEMPT_TIMEOUT_MS + full exponential backoff with jitter), so a
 // dozen-plus chunks each hitting that worst case -- extremely unlikely, but
 // this is a ceiling, not an estimate -- could take the better part of an
 // hour. Sized generously rather than tightly since the cost of cutting a
@@ -71,13 +71,19 @@ function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
 // (success or failure) ends by writing a terminal "done"/"error" progress
 // entry, since that's the only signal the polling frontend ever gets.
 //
-// Summary+flashcards (one strict chunk-by-chunk MapReduce pass, see
-// generateSummaryAndFlashcards in ai.ts) and practice questions are
-// generated in two dedicated sequential stages rather than one concurrent
-// Promise.allSettled batch -- each stage's own failure (after its internal
-// retries) is caught locally and replaced with a clear fallback instead of
-// aborting the other stage, so e.g. a flaky question-generation call can
-// never take down an otherwise successful summary + flashcard run.
+// Summary, flashcards, and practice questions now run as three dedicated
+// SEQUENTIAL stages, each one persisted to the DB and surfaced to the
+// frontend (via a cumulative `result` on the progress entry) the moment it
+// finishes -- summary first, since that's the priority the user actually
+// reads while the other two keep generating. Each stage's own failure
+// (after its internal retries) is caught locally and replaced with a clear
+// fallback instead of aborting the rest of the job, so e.g. a flaky
+// question-generation call can never take down an otherwise successful
+// summary + flashcard run. Flashcards and questions reuse the exact chunk
+// boundaries the summary stage already computed (summaryResult.parts)
+// instead of each independently re-chunking and re-summarizing the same raw
+// document -- the same call-count savings the old merged pipeline aimed for,
+// without merging the calls themselves back together.
 async function runGenerateAll(material: MaterialRow, userId: number, content: string): Promise<void> {
   const materialId = material.id;
   const language = "he" as const;
@@ -85,55 +91,112 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
   try {
     const { maxFlashcards } = getDynamicGenerationLimits(content.length);
 
-    // Stage 1/2: summary + flashcards -- both top priority, thorough
-    // coverage of the whole document. Processed together because they now
-    // share a single chunk-by-chunk pass over the raw material (one isolated
-    // Gemini call per ~15,000-char sub-chunk producing that sub-chunk's
-    // summary AND flashcards together) instead of each independently
-    // re-chunking and re-summarizing the same document. A failure here
-    // falls back to a clear message / empty deck rather than aborting the
-    // job -- questions still get a chance to run.
-    console.log(`generate-all[${materialId}]: stage 1/2 -- generating summary + flashcards (up to ${maxFlashcards} cards)...`);
-    let summaryResult: { content: string; keyPoints: string[] };
-    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
-    let cleanSummaryContent = "";
+    // Stage 1/3: summary -- top priority. generateSummary is already
+    // internally chunked (ai.ts/buildAggregatedContent) for large documents,
+    // and now also returns `parts`/`chunked` so stages 2 and 3 below can
+    // reuse those same chunks instead of re-chunking the raw document again.
+    console.log(`generate-all[${materialId}]: stage 1/3 -- generating summary...`);
+    let summaryResult: { content: string; keyPoints: string[]; parts: string[]; chunked: boolean };
     let summaryFailed = false;
-    let flashFailed = false;
     try {
-      const result = await withTimeout(
-        generateSummaryAndFlashcards({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          summaryType: "detailed",
-          maxFlashcards,
-          cardTypes: ["definition", "qa", "formula", "concept"],
-        }),
+      summaryResult = await withTimeout(
+        generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId }),
         AI_TASK_TIMEOUT_MS,
-        "generateSummaryAndFlashcards",
+        "generateSummary",
       );
-      summaryResult = result.summary;
-      flashResult = result.flashcards;
-      cleanSummaryContent = result.cleanContent;
-      flashFailed = flashResult.length === 0;
-      console.log(`generate-all[${materialId}]: summary+flashcards stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points, ${flashResult.length} cards.`);
+      console.log(`generate-all[${materialId}]: summary stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points.`);
     } catch (err) {
       summaryFailed = true;
-      flashFailed = true;
-      logger.error({ err, materialId }, "generate-all: summary+flashcards generation failed, using fallback");
+      logger.error({ err, materialId }, "generate-all: summary generation failed, using fallback");
       summaryResult = {
         content: userFacingAIErrorMessage(err, "לא ניתן היה ליצור סיכום עבור מסמך זה. אנא נסה שוב."),
         keyPoints: [],
+        parts: [content],
+        chunked: false,
       };
     }
 
-    // Stage 2/2: practice questions -- fixed at PRACTICE_QUESTION_COUNT
+    const [summary] = await db.insert(summariesTable).values({
+      materialId,
+      summaryType: "detailed",
+      language,
+      content: summaryResult.content,
+      keyPoints: summaryResult.keyPoints,
+    }).returning();
+
+    if (!summary?.id) {
+      logger.error({ materialId }, "generate-all: summary insert failed, aborting");
+      setGenerationProgress(materialId, {
+        currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+        error: "Generated content was incomplete. Please try again.",
+      });
+      return;
+    }
+
+    setGenerationProgress(materialId, {
+      currentChunk: 0, totalChunks: 0, percentage: 33, stage: "running",
+      result: { summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length } },
+    });
+
+    // Stage 2/3: flashcards -- reuses summaryResult.parts (when the document
+    // was actually chunked) so this stage processes the document one small,
+    // bounded-output Gemini call per chunk instead of re-chunking and
+    // re-summarizing a second time.
+    console.log(`generate-all[${materialId}]: stage 2/3 -- generating flashcards (up to ${maxFlashcards} cards)...`);
+    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+    let flashFailed = false;
+    try {
+      flashResult = await withTimeout(
+        generateFlashcardsAI({
+          language,
+          materialContent: content,
+          materialTitle: material.title,
+          materialId,
+          cardCount: maxFlashcards,
+          cardTypes: ["definition", "qa", "formula", "concept"],
+          precomputedParts: summaryFailed ? undefined : summaryResult.parts,
+        }),
+        AI_TASK_TIMEOUT_MS,
+        "generateFlashcardsAI",
+      );
+      console.log(`generate-all[${materialId}]: flashcards stage done -- ${flashResult.length} cards.`);
+    } catch (err) {
+      flashFailed = true;
+      logger.warn({ err, materialId }, "generate-all: flashcard generation failed, continuing without it");
+    }
+
+    const [deck] = await db.insert(flashcardDecksTable).values({
+      materialId,
+      title: `${material.title} — כרטיסיות`,
+      language,
+    }).returning();
+
+    if (flashResult.length > 0 && deck?.id) {
+      await db.insert(flashcardsTable).values(
+        flashResult.map(c => ({
+          deckId: deck.id,
+          front: c.front,
+          back: c.back,
+          difficulty: c.difficulty || "medium",
+          cardType: c.cardType || "qa",
+        }))
+      );
+    }
+
+    setGenerationProgress(materialId, {
+      currentChunk: 0, totalChunks: 0, percentage: 66, stage: "running",
+      result: {
+        summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
+        deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
+      },
+    });
+
+    // Stage 3/3: practice questions -- fixed at PRACTICE_QUESTION_COUNT
     // (one quiz's worth per run; re-run for a fresh set), excluding any
     // question already generated for this material in a previous run/exam
-    // so repeated runs don't just hand back the same quiz. Generated from
-    // the summary just assembled above (small) rather than the raw document,
-    // so this stage never re-chunks the material a third time.
-    console.log(`generate-all[${materialId}]: stage 2/2 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
+    // so repeated runs don't just hand back the same quiz. Also reuses
+    // summaryResult.parts, same as the flashcards stage above.
+    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
     let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
     let questionFailed = false;
     try {
@@ -143,11 +206,12 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           language,
           materialContent: content,
           materialTitle: material.title,
+          materialId,
           questionCount: PRACTICE_QUESTION_COUNT,
           questionTypes: ["multiple_choice", "true_false"],
           difficulty: "mixed",
           excludeQuestions,
-          precomputedContent: summaryFailed ? undefined : cleanSummaryContent,
+          precomputedParts: summaryFailed ? undefined : summaryResult.parts,
         }),
         AI_TASK_TIMEOUT_MS,
         "generateQuestionsAI",
@@ -158,70 +222,40 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       logger.warn({ err, materialId }, "generate-all: question generation failed, continuing without it");
     }
 
+    const [qSet] = await db.insert(questionSetsTable).values({
+      materialId,
+      title: `${material.title} — חידון`,
+      language,
+    }).returning();
+
+    if (questionResult.length > 0 && qSet?.id) {
+      await db.insert(questionsTable).values(
+        questionResult.map(q => ({
+          setId: qSet.id,
+          questionType: q.questionType || "multiple_choice",
+          question: q.question,
+          answer: q.answer,
+          explanation: q.explanation || null,
+          options: q.options || [],
+          difficulty: q.difficulty || "medium",
+        }))
+      );
+    }
+
+    await db.insert(activityTable).values({
+      userId,
+      activityType: "summary",
+      description: `Generated full exam kit for "${material.title}"`,
+      materialTitle: material.title,
+    });
+
     await deductTokensForGeneration(
       userId,
       content,
       summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
     );
 
-    const [[summary], [deck], [qSet]] = await Promise.all([
-      db.insert(summariesTable).values({
-        materialId,
-        summaryType: "detailed",
-        language,
-        content: summaryResult.content,
-        keyPoints: summaryResult.keyPoints,
-      }).returning(),
-
-      db.insert(flashcardDecksTable).values({
-        materialId,
-        title: `${material.title} — כרטיסיות`,
-        language,
-      }).returning(),
-
-      db.insert(questionSetsTable).values({
-        materialId,
-        title: `${material.title} — חידון`,
-        language,
-      }).returning(),
-    ]);
-
-    await Promise.all([
-      flashResult.length > 0
-        ? db.insert(flashcardsTable).values(
-            flashResult.map(c => ({
-              deckId: deck.id,
-              front: c.front,
-              back: c.back,
-              difficulty: c.difficulty || "medium",
-              cardType: c.cardType || "qa",
-            }))
-          )
-        : Promise.resolve(),
-
-      questionResult.length > 0
-        ? db.insert(questionsTable).values(
-            questionResult.map(q => ({
-              setId: qSet.id,
-              questionType: q.questionType || "multiple_choice",
-              question: q.question,
-              answer: q.answer,
-              explanation: q.explanation || null,
-              options: q.options || [],
-              difficulty: q.difficulty || "medium",
-            }))
-          )
-        : Promise.resolve(),
-
-      db.insert(activityTable).values({
-        userId,
-        activityType: "summary",
-        description: `Generated full exam kit for "${material.title}"`,
-        materialTitle: material.title,
-      }),
-    ]);
-
-    if (!summary?.id || !deck?.id || !qSet?.id) {
+    if (!qSet?.id) {
       logger.error({ materialId }, "generate-all: incomplete insert result, reporting failure");
       setGenerationProgress(materialId, {
         currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
@@ -237,7 +271,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       stage: "done",
       result: {
         summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
-        deck: { id: deck.id, cardCount: flashResult.length },
+        deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
         questionSet: { id: qSet.id, questionCount: questionResult.length },
         partialFailure: summaryFailed || flashFailed || questionFailed,
       },

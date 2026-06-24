@@ -1,8 +1,13 @@
+// Each field is populated the moment its own stage finishes and is persisted
+// to the DB -- generate-all.ts now runs summary -> flashcards -> questions as
+// three sequential stages instead of one merged blob, writing a cumulative
+// result after each one so the frontend can show (e.g.) the summary the
+// instant it's ready instead of waiting for flashcards/questions too.
 export interface GenerateAllResult {
-  summary: { id: number; keyPointCount: number };
-  deck: { id: number; cardCount: number };
-  questionSet: { id: number; questionCount: number };
-  partialFailure: boolean;
+  summary?: { id: number; keyPointCount: number };
+  deck?: { id: number; cardCount: number };
+  questionSet?: { id: number; questionCount: number };
+  partialFailure?: boolean;
 }
 
 export interface GenerationProgress {
@@ -15,7 +20,11 @@ export interface GenerationProgress {
   // other than "idle". "chunking"/"extracting" remain for the existing
   // per-call chunk tracking nested inside that job.
   stage: "chunking" | "extracting" | "running" | "done" | "idle" | "error";
-  // Present once stage is "done".
+  // Populated incrementally while stage is still "running" -- one stage's
+  // worth of fields lands as soon as that stage's DB rows are committed, so
+  // a poll mid-job can already see e.g. result.summary while result.deck and
+  // result.questionSet are still absent. Fully populated (whichever stages
+  // succeeded) once stage is "done".
   result?: GenerateAllResult;
   // Present once stage is "error" -- a user-facing failure message.
   error?: string;

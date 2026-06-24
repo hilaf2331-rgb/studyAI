@@ -704,276 +704,18 @@ function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boole
     : `\n\nQuestions already generated previously for this material — do not repeat these or close variations, create new and different questions:\n${list}\n`;
 }
 
-// Strict chunk-by-chunk pipeline used by generate-all.ts for large
-// documents. Previously, generateSummary/generateFlashcardsAI/
-// generateQuestionsAI each independently re-chunked and re-summarized the
-// SAME raw document via their own buildAggregatedContent call -- on an
-// 84-page document that tripled the number of Gemini calls a single run
-// made, and the final flashcard/exam/question call still got the entire
-// (now large) aggregated content in one shot, risking the truncation and
-// 503s reported against that document. This collapses summary + flashcard
-// generation into ONE pass: each ~15,000-char sub-chunk (roughly 5-8 pages)
-// gets exactly one isolated Gemini call producing both its factual summary
-// and its flashcards together, so no single call's input or output payload
-// ever approaches the sizes that were triggering failures.
-const SUBCHUNK_CHAR_LIMIT = 15000;
-const CHUNK_COMBINED_MAX_OUTPUT_TOKENS = 3000;
-const MAX_CARDS_PER_CHUNK = 6;
-
-async function processSummaryAndFlashcardsChunk(
-  chunk: string,
-  materialTitle: string,
-  isHe: boolean,
-  index: number,
-  total: number,
-  cardsForChunk: number,
-): Promise<{ summary: string; cards: Array<{ front: string; back: string; difficulty: string; cardType: string }> }> {
-  const prompt = isHe
-    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
-
-${chunk}
-
----
-בצע שתי משימות על הקטע הזה בלבד -- אל תתייחס לחלקים אחרים של החומר:
-1. summary: סכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע, כרשימת נקודות עובדתיות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף מידע שלא מופיע בקטע.
-2. cards: צור עד ${cardsForChunk} כרטיסיות לימוד ייחודיות, מבוססות רק על עובדות מהקטע הזה. אם אין מספיק עובדות שונות -- צור פחות כרטיסיות, אסור לחזור על מושג.
-
-החזר JSON בלבד במבנה הבא:
-{"summary": "...", "cards": [{"front": "שאלה", "back": "תשובה", "difficulty": "medium", "cardType": "definition"}]}`
-    : `## Part ${index}/${total} of study material: "${materialTitle}"
-
-${chunk}
-
----
-Do two tasks on this part only -- do not reference other parts:
-1. summary: thoroughly and precisely summarize all facts, concepts, and important points in this part as a factual bullet list, no headings or preamble. Omit nothing substantive, add nothing not in this part.
-2. cards: create up to ${cardsForChunk} unique flashcards based only on facts in this part. Create fewer if there aren't enough distinct facts -- never repeat a concept.
-
-Return ONLY JSON matching this structure:
-{"summary": "...", "cards": [{"front": "question", "back": "answer", "difficulty": "medium", "cardType": "definition"}]}`;
-
-  return callGeminiJsonWithValidation(
-    {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      temperature: 0.3,
-      jsonMode: true,
-      maxOutputTokens: CHUNK_COMBINED_MAX_OUTPUT_TOKENS,
-    },
-    (text) => {
-      const parsed = safeJsonParse(text);
-      const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
-      const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
-      if (!summary && cards.length === 0) throw new Error("empty summary and cards");
-      return { summary, cards };
-    },
-    `processSummaryAndFlashcardsChunk(${index}/${total})`,
-  );
-}
-
-/**
- * Strict MapReduce pipeline for large documents: splits the raw material
- * into ~15,000-char sub-chunks and makes exactly one isolated Gemini call
- * per chunk for both its summary and its flashcards (see
- * processSummaryAndFlashcardsChunk above), processed strictly sequentially
- * with the same inter-chunk cooldown buildAggregatedContent uses. A chunk
- * that fails after every retry is replaced with a placeholder summary and
- * simply contributes no cards, instead of aborting the whole document --
- * the same "fail one part, not the run" guarantee buildAggregatedContent
- * already gives the rest of the pipeline. A confirmed rate-limit exhaustion
- * still aborts immediately rather than burning the rest of the budget on
- * chunks that would also fail.
- *
- * Short/unchunked documents fall through to the existing single-call
- * generateSummary/generateFlashcardsAI implementations unchanged, since
- * those already work reliably at that size.
- */
-export async function generateSummaryAndFlashcards(
-  opts: AIGenerationOptions & { summaryType: string; maxFlashcards: number; cardTypes: string[] }
-): Promise<{
-  summary: { content: string; keyPoints: string[] };
-  flashcards: Array<{ front: string; back: string; difficulty: string; cardType: string }>;
-  // Genuinely-summarized content only (no failure placeholders) -- the safe
-  // input for any further AI call (e.g. question generation) made on top of
-  // this result. Falls back to `summary.content` on the non-chunked path,
-  // where there are no placeholders to begin with.
-  cleanContent: string;
-}> {
-  const { language, materialContent, materialTitle, materialId, maxFlashcards } = opts;
-  const isHe = language === "he";
-
-  checkCircuitBreaker();
-
-  try {
-    if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
-      const [summary, flashcards] = await Promise.all([
-        generateSummary(opts),
-        generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
-      ]);
-      return { summary, flashcards, cleanContent: summary.content };
-    }
-
-    const chunks = splitTextIntoChunks(materialContent, SUBCHUNK_CHAR_LIMIT);
-    if (chunks.length <= 1) {
-      const [summary, flashcards] = await Promise.all([
-        generateSummary(opts),
-        generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
-      ]);
-      return { summary, flashcards, cleanContent: summary.content };
-    }
-
-    const cardsPerChunk = Math.max(1, Math.min(MAX_CARDS_PER_CHUNK, Math.ceil(maxFlashcards / chunks.length)));
-    const chapterParts: string[] = new Array(chunks.length);
-    // Only genuinely-generated summaries -- never placeholder failure text --
-    // so downstream synthesis (keyPoints/executiveSummary) and question
-    // generation are never fed back a description of our own failure.
-    const successfulParts: string[] = [];
-    const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
-    let failedChunkCount = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        const { summary, cards } = await processSummaryAndFlashcardsChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length, cardsPerChunk);
-        const resolvedSummary = summary || (isHe
-          ? "[לא נמצאו עובדות נוספות בחלק זה]"
-          : "[No additional facts found in this part]");
-        chapterParts[i] = resolvedSummary;
-        if (summary) successfulParts.push(summary);
-        allCards.push(...cards);
-      } catch (err) {
-        if (err instanceof RateLimitExhaustedError) throw err;
-        console.error(`generateSummaryAndFlashcards: chunk ${i + 1}/${chunks.length} failed after retries:`, err);
-        failedChunkCount++;
-        chapterParts[i] = isHe
-          ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
-          : "[This part of the material could not be processed due to a temporary error]";
-      }
-
-      const completed = i + 1;
-      const percentage = Math.round((completed / chunks.length) * 100);
-      console.log(`generateSummaryAndFlashcards: processed ${completed}/${chunks.length} chunks (${percentage}%), ${allCards.length} cards so far.`);
-      if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage, stage: "chunking" });
-      }
-      if (completed < chunks.length) {
-        await sleep(INTER_CHUNK_COOLDOWN_MS);
-      }
-    }
-
-    // If every single chunk failed, there is nothing real to summarize or
-    // quiz on -- surface a clear failure instead of silently returning a
-    // "successful" result made entirely of failure-placeholder text (which
-    // would otherwise get fed straight into question generation as source
-    // material, producing quiz questions about our own error message).
-    if (failedChunkCount === chunks.length) {
-      throw new AIServiceError();
-    }
-
-    const seenFronts = new Set<string>();
-    const flashcards = allCards
-      .filter((c) => {
-        const norm = normalizeQuestionText(c.front || "");
-        if (!norm || seenFronts.has(norm)) return false;
-        seenFronts.add(norm);
-        return true;
-      })
-      .slice(0, maxFlashcards);
-
-    const chapterBody = chapterParts
-      .map((p, i) => (isHe ? `## פרק ${i + 1}\n${p}` : `## Chapter ${i + 1}\n${p}`))
-      .join("\n\n");
-
-    // Genuinely-summarized chunks only, joined without the failure-chapter
-    // placeholders -- this is what the keyPoints/executiveSummary synthesis
-    // below reads, and what generate-all.ts hands to question generation as
-    // precomputedContent. chapterBody (above) keeps every chapter, including
-    // placeholders, purely for the user-facing displayed summary.
-    const cleanContent = successfulParts.join("\n\n");
-
-    // A chunk can technically "succeed" (cards generated) while returning no
-    // summary text at all -- that doesn't trip failedChunkCount above, but
-    // still leaves nothing real to hand to question generation. Guard on the
-    // actual content, not just the failure count, so a content-shaped but
-    // empty result can never reach generate-all.ts's precomputedContent.
-    if (!cleanContent.trim()) {
-      throw new AIServiceError();
-    }
-
-    // Only the keyPoints + a short executive wrap-up come from one more,
-    // lightweight, bounded-output Gemini call on top of the already-assembled
-    // chapter body -- never the full chapter text fed through a second large
-    // synthesis call. A failure here degrades to no keyPoints/executiveSummary
-    // rather than losing the (already-assembled, much bigger) chapter body.
-    let keyPoints: string[] = [];
-    let executiveSummary = "";
-    try {
-      const synthPrompt = isHe
-        ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
-
-${contentSlice(cleanContent)}
-
----
-המשימה שלך: קרא את כל הפרקים מעלה וצור:
-1. keyPoints — מערך של 5–8 משפטים קצרים, הכי חשובים מכל החומר (מה שהייתה רוצה לדעת לפני הבחינה).
-2. executiveSummary — פסקת "סיכום מנהלים" חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור", המכסה את כל הפרקים.
-
-החזר JSON בלבד במבנה הבא:
-{
-  "keyPoints": ["נקודה 1", "נקודה 2", "נקודה 3", "נקודה 4", "נקודה 5"],
-  "executiveSummary": "פסקת סיכום מנהלים כאן"
-}`
-        : `## Chapter-by-chapter summary of study material "${materialTitle}":
-
-${contentSlice(cleanContent)}
-
----
-Your task: read every chapter above and produce:
-1. keyPoints — an array of 5-8 short sentences, the most important things from the whole material (what you'd want to know before the exam).
-2. executiveSummary — a warm 3-5 sentence "executive summary" wrap-up, written like you're telling a friend "here's what actually matters", covering all the chapters.
-
-Return ONLY JSON matching this structure:
-{
-  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
-  "executiveSummary": "Executive summary paragraph here"
-}`;
-
-      const result = await callGeminiJsonWithValidation(
-        {
-          systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
-          contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
-          temperature: 0.4,
-          jsonMode: true,
-          maxOutputTokens: 2000,
-        },
-        (text) => {
-          const parsed = safeJsonParse(text);
-          const kp = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
-          const exec = typeof parsed.executiveSummary === "string" ? parsed.executiveSummary : "";
-          if (kp.length === 0 && !exec) throw new Error("empty keyPoints and executiveSummary");
-          return { keyPoints: kp, executiveSummary: exec };
-        },
-        "generateSummaryAndFlashcards(keyPoints)",
-      );
-      keyPoints = result.keyPoints;
-      executiveSummary = result.executiveSummary;
-    } catch (err) {
-      console.error("generateSummaryAndFlashcards: keyPoints/executiveSummary synthesis failed, continuing without it:", err);
-    }
-
-    const execHeading = isHe ? "## סיכום מנהלים" : "## Executive Summary";
-    const content = executiveSummary ? `${chapterBody}\n\n${execHeading}\n${executiveSummary}` : chapterBody;
-
-    console.log(`generateSummaryAndFlashcards: assembled ${chapterParts.length}-chapter summary (${content.length} chars, ${keyPoints.length} key points) and ${flashcards.length} flashcards for material ${materialId ?? "?"}.`);
-
-    return { summary: { content, keyPoints }, flashcards, cleanContent };
-  } finally {
-    if (materialId !== undefined) clearGenerationProgress(materialId);
-  }
-}
-
 export async function generateSummary(
   opts: AIGenerationOptions & { summaryType: string; topic?: string }
-): Promise<{ content: string; keyPoints: string[] }> {
+): Promise<{
+  content: string;
+  keyPoints: string[];
+  // The same per-chunk factual summaries buildAggregatedContent computed for
+  // this call -- returned so generate-all.ts can hand them straight to the
+  // flashcards/questions stages (as precomputedParts) instead of re-chunking
+  // and re-summarizing the same raw document a second and third time.
+  parts: string[];
+  chunked: boolean;
+}> {
   const { language, materialContent, materialTitle, summaryType, topic, materialId } = opts;
   const isHe = language === "he";
 
@@ -1067,7 +809,7 @@ Return ONLY JSON matching this structure:
     const execHeading = isHe ? "## סיכום מנהלים" : "## Executive Summary";
     const content = executiveSummary ? `${chapterBody}\n\n${execHeading}\n${executiveSummary}` : chapterBody;
     console.log(`generateSummary: assembled ${parts.length}-chapter summary (${content.length} chars, ${keyPoints.length} key points) for material ${materialId ?? "?"}.`);
-    return { content, keyPoints };
+    return { content, keyPoints, parts, chunked };
   }
 
   const aggregatedContent = parts[0];
@@ -1137,21 +879,14 @@ Return ONLY JSON matching this structure:
     "generateSummary",
   );
   console.log(`generateSummary: generated summary (${content.length} chars, ${keyPoints.length} key points) for material ${materialId ?? "?"}.`);
-  return { content, keyPoints };
+  return { content, keyPoints, parts, chunked };
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }
 }
 
-export async function generateFlashcardsAI(
-  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[] }
-): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
-  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId } = opts;
-  const isHe = language === "he";
-  try {
-  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
-
-  const typeGuide = isHe
+function flashcardTypeGuide(isHe: boolean): string {
+  return isHe
     ? `סוגי כרטיסיות אפשריים:
 - definition (הגדרה): "מהי/מהו [מושג]?" → הגדרה מדויקת ומלאה
 - formula (נוסחה): "נוסחת/חוק [שם]?" → הנוסחה + משמעות המשתנים
@@ -1162,6 +897,128 @@ export async function generateFlashcardsAI(
 - formula: "Formula/Law of [name]?" → the formula + variable meanings
 - concept: "Explain [concept]" → plain-language explanation with example
 - qa: Deep question about a principle/process → detailed answer`;
+}
+
+// Output-token ceiling for ONE chunk's worth of flashcards -- deliberately
+// much smaller than FLASHCARDS_MAX_OUTPUT_TOKENS since each call here only
+// has to cover a small slice of the document, not the whole thing.
+const CHUNK_FLASHCARDS_MAX_OUTPUT_TOKENS = 2000;
+const CARDS_PER_CHUNK_CAP = 6;
+
+async function generateFlashcardsForChunk(
+  chunk: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number,
+  cardsForChunk: number,
+  cardTypes: string[],
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+  const typeGuide = flashcardTypeGuide(isHe);
+  const userPrompt = isHe
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
+
+${chunk}
+
+---
+המשימה: צור עד ${cardsForChunk} כרטיסיות לימוד ייחודיות בעברית, מבוססות רק על עובדות מהחלק הזה בלבד -- אל תתייחס לחלקים אחרים של החומר.
+
+${typeGuide}
+
+חוקי ברזל: אסור לחזור על שום מושג. אם אין מספיק עובדות שונות בחלק הזה -- צור פחות כרטיסיות, עדיף מעט וייחודי מהרבה וחזרתי.
+
+החזר JSON במבנה הבא בלבד:
+{"cards": [{"front": "שאלה ייחודית", "back": "תשובה מלאה", "difficulty": "medium", "cardType": "definition"}]}`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"
+
+${chunk}
+
+---
+Task: create up to ${cardsForChunk} unique flashcards in English, based only on facts in this part -- do not reference other parts.
+
+${typeGuide}
+
+Strict rules: never repeat a concept. Create fewer cards if this part doesn't have enough distinct facts -- fewer unique cards beats more repetitive ones. Distribute across types: ${cardTypes.join(", ")}.
+
+Return ONLY JSON matching this structure:
+{"cards": [{"front": "question", "back": "complete answer", "difficulty": "medium", "cardType": "definition"}]}`;
+
+  return callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.3,
+      jsonMode: true,
+      maxOutputTokens: CHUNK_FLASHCARDS_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result = Array.isArray(parsed.cards) ? parsed.cards : [];
+      if (result.length === 0) throw new Error("empty cards array");
+      return result;
+    },
+    `generateFlashcardsForChunk(${index}/${total})`,
+  );
+}
+
+export async function generateFlashcardsAI(
+  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts } = opts;
+  const isHe = language === "he";
+  try {
+  // generate-all.ts passes Stage 1's already-computed chunk parts here so
+  // this stage never re-chunks/re-summarizes the raw document a second
+  // time. Other callers (the standalone flashcards route) don't pass this,
+  // so they chunk the raw material themselves via buildAggregatedContent.
+  const { parts, chunked } = precomputedParts !== undefined
+    ? { parts: precomputedParts, chunked: precomputedParts.length > 1 }
+    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+
+  // Large/chunked documents: one small, bounded-output Gemini call per
+  // chunk instead of a single call over the whole aggregated text. This is
+  // what actually fixes the truncation/empty-response failures on large
+  // documents -- a single call asked to cover dozens of pages within
+  // FLASHCARDS_MAX_OUTPUT_TOKENS was the root cause, not just a speed issue.
+  if (chunked) {
+    const cardsPerChunk = Math.max(2, Math.min(CARDS_PER_CHUNK_CAP, Math.ceil(cardCount / parts.length)));
+    const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+
+    for (let i = 0; i < parts.length; i++) {
+      try {
+        const chunkCards = await generateFlashcardsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, cardsPerChunk, cardTypes);
+        allCards.push(...chunkCards);
+      } catch (err) {
+        if (err instanceof RateLimitExhaustedError) throw err;
+        console.error(`generateFlashcardsAI: chunk ${i + 1}/${parts.length} failed after retries, skipping:`, err);
+      }
+
+      const completed = i + 1;
+      const percentage = Math.round((completed / parts.length) * 100);
+      if (materialId !== undefined) {
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+      }
+      if (completed < parts.length) {
+        await sleep(INTER_CHUNK_COOLDOWN_MS);
+      }
+    }
+
+    const seenFronts = new Set<string>();
+    const deduped = allCards.filter((c) => {
+      const norm = normalizeQuestionText(c.front || "");
+      if (!norm || seenFronts.has(norm)) return false;
+      seenFronts.add(norm);
+      return true;
+    });
+    if (deduped.length === 0) throw new EmptyGenerationError("generateFlashcardsAI");
+
+    const trimmed = deduped.slice(0, cardCount);
+    console.log(`generateFlashcardsAI: generated ${trimmed.length} flashcards across ${parts.length} chunks (requested up to ${cardCount}) for material ${materialId ?? "?"}.`);
+    return trimmed;
+  }
+
+  const aggregatedContent = parts[0];
+  const typeGuide = flashcardTypeGuide(isHe);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -1231,21 +1088,140 @@ Return ONLY JSON matching this structure:
   }
 }
 
+// Output-token ceiling for ONE chunk's worth of questions -- a fraction of
+// QUESTIONS_MAX_OUTPUT_TOKENS since each call only needs to cover a small
+// slice of the document.
+const CHUNK_QUESTIONS_MAX_OUTPUT_TOKENS = 2500;
+const QUESTIONS_PER_CHUNK_CAP = 4;
+
+async function generateQuestionsForChunk(
+  chunk: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number,
+  questionsForChunk: number,
+  questionTypes: string[],
+  difficulty: string,
+  excludeBlock: string,
+): Promise<GeneratedQuestion[]> {
+  const userPrompt = isHe
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
+
+${chunk}
+${excludeBlock}
+---
+המשימה: צור עד ${questionsForChunk} שאלות תרגול בעברית, מבוססות רק על תוכן מהחלק הזה בלבד -- אל תתייחס לחלקים אחרים.
+סוגי שאלות: ${questionTypes.join(", ")}
+רמת קושי: ${difficulty}
+
+כללים חשובים:
+- multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
+- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים, מבוססים על טעות מושגית נפוצה או בלבול בין מונחים קרובים מהחלק הזה. אסור מסיחים מגוחכים או כאלה שניתן לפסול בלי לדעת את התוכן.
+- דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית ותקנית. אסור מילים מומצאות או "גיבריש".
+- true_false: options = ["נכון", "לא נכון"]. correctIndex = 0 (נכון) או 1 (לא נכון).
+- open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה, ו-"modelAnswer" הוא תשובת מודל מקיפה.
+- כל שאלה חייבת להיות על תוכן אמיתי מהחלק הזה — אסור להמציא. אם אין מספיק תוכן ייחודי, צור פחות שאלות.
+- "explanation": הסבר קצר, ברור ומעודד.
+
+החזר JSON במבנה הבא:
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"
+
+${chunk}
+${excludeBlock}
+---
+Task: create up to ${questionsForChunk} practice questions in English, based only on content from this part -- do not reference other parts.
+Question types: ${questionTypes.join(", ")}
+Difficulty: ${difficulty}
+
+Important rules:
+- multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index.
+- Distractors must be realistic and challenging, based on a common misconception or confusion between closely related terms from this part. No throwaway distractors.
+- Linguistic accuracy (mandatory): every word in every option must be a real, grammatically correct word in the target language. Never use made-up words or gibberish.
+- true_false: options = ["True", "False"]. correctIndex = 0 (True) or 1 (False).
+- open: options = [], correctIndex = 0. "answer" is a short reference answer, "modelAnswer" is a comprehensive model answer.
+- All questions must be based on real content from this part -- no fabrication. Create fewer questions if there isn't enough unique content.
+- "explanation": a brief, clear, encouraging explanation.
+
+Return ONLY JSON matching this structure:
+{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
+
+  return callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.4,
+      jsonMode: true,
+      maxOutputTokens: CHUNK_QUESTIONS_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
+        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+        : [];
+      if (result.length === 0) throw new Error("empty questions array");
+      return result;
+    },
+    `generateQuestionsForChunk(${index}/${total})`,
+  );
+}
+
 export async function generateQuestionsAI(
-  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedContent?: string }
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedContent } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts } = opts;
   const isHe = language === "he";
   try {
-  // generate-all.ts passes the already-assembled summary (small) here
-  // instead of the raw document, so the question stage doesn't redundantly
-  // re-chunk and re-summarize the same material a third time -- see
-  // generateSummaryAndFlashcards above. Other callers (the standalone
-  // practice-questions and exam routes) don't pass this, so they keep
-  // chunking the raw material themselves as before.
-  const { content: aggregatedContent } = precomputedContent !== undefined
-    ? { content: precomputedContent }
+  // generate-all.ts passes Stage 1's already-computed chunk parts here so
+  // this stage never re-chunks/re-summarizes the raw document a second
+  // time. Other callers (the standalone practice-questions route) don't
+  // pass this, so they chunk the raw material themselves.
+  const { parts, chunked } = precomputedParts !== undefined
+    ? { parts: precomputedParts, chunked: precomputedParts.length > 1 }
     : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+
+  // Large/chunked documents: one small, bounded-output call per chunk
+  // instead of one call over the whole aggregated text -- this is what
+  // actually prevents truncation/empty-response failures on large
+  // documents, not just a speed optimization. excludeQuestions accumulates
+  // across chunks within the same run too, so chunk 2 never repeats a
+  // question chunk 1 already produced.
+  if (chunked) {
+    const perChunkCount = Math.max(2, Math.min(QUESTIONS_PER_CHUNK_CAP, Math.ceil(questionCount / parts.length)));
+    const cumulativeExclude = [...(excludeQuestions ?? [])];
+    const allQuestions: GeneratedQuestion[] = [];
+
+    for (let i = 0; i < parts.length; i++) {
+      const excludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
+      try {
+        const chunkQuestions = await generateQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, questionTypes, difficulty, excludeBlock);
+        const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
+        allQuestions.push(...deduped);
+        cumulativeExclude.push(...deduped.map((q) => q.question));
+      } catch (err) {
+        if (err instanceof RateLimitExhaustedError) throw err;
+        console.error(`generateQuestionsAI: chunk ${i + 1}/${parts.length} failed after retries, skipping:`, err);
+      }
+
+      const completed = i + 1;
+      const percentage = Math.round((completed / parts.length) * 100);
+      if (materialId !== undefined) {
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+      }
+      if (completed < parts.length) {
+        await sleep(INTER_CHUNK_COOLDOWN_MS);
+      }
+    }
+
+    if (allQuestions.length === 0) throw new EmptyGenerationError("generateQuestionsAI");
+
+    const trimmed = allQuestions.slice(0, questionCount);
+    console.log(`generateQuestionsAI: generated ${trimmed.length} unique questions across ${parts.length} chunks (requested ${questionCount}) for material ${materialId ?? "?"}.`);
+    return trimmed;
+  }
+
+  const aggregatedContent = parts[0];
   const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
 
   const userPrompt = isHe
@@ -1345,29 +1321,153 @@ Return ONLY JSON matching this structure:
   }
 }
 
+const EXAM_TYPE_MAP: Record<string, { he: string; en: string }> = {
+  practice:   { he: "תרגול (שאלות מגוונות בקצב נוח)", en: "practice (varied questions, relaxed pace)" },
+  topic_quiz: { he: "חידון נושאי (ממוקד בנושאים ספציפיים)", en: "topic quiz (focused on specific topics)" },
+  midterm:    { he: "מבחן אמצע סמסטר (מקיף, מעורב)", en: "midterm exam (comprehensive, mixed types)" },
+  final:      { he: "מבחן גמר (מקיף, קשה, מעמיק)", en: "final exam (comprehensive, challenging, in-depth)" },
+};
+
+function examTypeDesc(examType: string, isHe: boolean): string {
+  return isHe
+    ? (EXAM_TYPE_MAP[examType]?.he ?? EXAM_TYPE_MAP.practice.he)
+    : (EXAM_TYPE_MAP[examType]?.en ?? EXAM_TYPE_MAP.practice.en);
+}
+
+// Output-token ceiling for ONE chunk's worth of exam questions.
+const CHUNK_EXAM_MAX_OUTPUT_TOKENS = 2500;
+const EXAM_QUESTIONS_PER_CHUNK_CAP = 4;
+
+async function generateExamQuestionsForChunk(
+  chunk: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number,
+  questionsForChunk: number,
+  examDesc: string,
+  difficulty: string,
+  topicsLine: string,
+  excludeBlock: string,
+): Promise<GeneratedQuestion[]> {
+  const userPrompt = isHe
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
+${topicsLine}
+סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
+
+${chunk}
+${excludeBlock}
+---
+המשימה: צור עד ${questionsForChunk} שאלות מבחן בעברית, מבוססות רק על תוכן מהחלק הזה בלבד -- אל תתייחס לחלקים אחרים.
+שלב סוגי שאלות: multiple_choice (70%), true_false (15%), open (15%).
+
+כללי JSON:
+- multiple_choice: 4 אפשרויות, correctIndex = אינדקס 0-3 של הנכונה.
+- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים, מבוססים על טעות מושגית נפוצה מהחלק הזה. אסור מסיחים מגוחכים.
+- דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה חייבת להיות מילה עברית אמיתית ותקנית.
+- true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
+- open: options = [], correctIndex = 0. "answer" תשובה קצרה, "modelAnswer" תשובת מודל מקיפה.
+- אם אין מספיק תוכן ייחודי בחלק הזה, צור פחות שאלות.
+- "explanation": הסבר קצר, ברור ומעודד.
+
+החזר JSON במבנה הבא בלבד:
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"
+${topicsLine}
+Exam type: ${examDesc} | Difficulty: ${difficulty}
+
+${chunk}
+${excludeBlock}
+---
+Task: create up to ${questionsForChunk} exam questions in English, based only on content from this part -- do not reference other parts.
+Mix question types: multiple_choice (70%), true_false (15%), open (15%).
+
+JSON rules:
+- multiple_choice: 4 options, correctIndex = 0-based index of the correct one.
+- Distractors must be realistic and challenging, based on a common misconception from this part. No throwaway distractors.
+- Linguistic accuracy (mandatory): every word in every option must be a real, grammatically correct word.
+- true_false: options = ["True", "False"], correctIndex = 0 or 1.
+- open: options = [], correctIndex = 0. "answer" short reference answer, "modelAnswer" comprehensive model answer.
+- Create fewer questions if there isn't enough unique content in this part.
+- "explanation": a brief, clear, encouraging explanation.
+
+Return ONLY JSON matching this structure:
+{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
+
+  return callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      temperature: 0.4,
+      jsonMode: true,
+      maxOutputTokens: CHUNK_EXAM_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
+        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+        : [];
+      if (result.length === 0) throw new Error("empty questions array");
+      return result;
+    },
+    `generateExamQuestionsForChunk(${index}/${total})`,
+  );
+}
+
 export async function generateExamAI(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;
   const isHe = language === "he";
   try {
-  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
   const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
     : "";
 
-  const examTypeMap: Record<string, { he: string; en: string }> = {
-    practice:   { he: "תרגול (שאלות מגוונות בקצב נוח)", en: "practice (varied questions, relaxed pace)" },
-    topic_quiz: { he: "חידון נושאי (ממוקד בנושאים ספציפיים)", en: "topic quiz (focused on specific topics)" },
-    midterm:    { he: "מבחן אמצע סמסטר (מקיף, מעורב)", en: "midterm exam (comprehensive, mixed types)" },
-    final:      { he: "מבחן גמר (מקיף, קשה, מעמיק)", en: "final exam (comprehensive, challenging, in-depth)" },
-  };
+  const examDesc = examTypeDesc(examType, isHe);
 
-  const examDesc = isHe
-    ? (examTypeMap[examType]?.he ?? examTypeMap.practice.he)
-    : (examTypeMap[examType]?.en ?? examTypeMap.practice.en);
+  // Large/chunked documents: one small, bounded-output call per chunk
+  // instead of one call over the whole aggregated text -- same fix as
+  // generateFlashcardsAI/generateQuestionsAI above, since this route has the
+  // same single-call truncation risk on a large document.
+  if (chunked) {
+    const perChunkCount = Math.max(2, Math.min(EXAM_QUESTIONS_PER_CHUNK_CAP, Math.ceil(questionCount / parts.length)));
+    const cumulativeExclude = [...(excludeQuestions ?? [])];
+    const allQuestions: GeneratedQuestion[] = [];
+
+    for (let i = 0; i < parts.length; i++) {
+      const chunkExcludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
+      try {
+        const chunkQuestions = await generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock);
+        const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
+        allQuestions.push(...deduped);
+        cumulativeExclude.push(...deduped.map((q) => q.question));
+      } catch (err) {
+        if (err instanceof RateLimitExhaustedError) throw err;
+        console.error(`generateExamAI: chunk ${i + 1}/${parts.length} failed after retries, skipping:`, err);
+      }
+
+      const completed = i + 1;
+      const percentage = Math.round((completed / parts.length) * 100);
+      if (materialId !== undefined) {
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+      }
+      if (completed < parts.length) {
+        await sleep(INTER_CHUNK_COOLDOWN_MS);
+      }
+    }
+
+    if (allQuestions.length === 0) throw new EmptyGenerationError("generateExamAI");
+
+    const trimmed = allQuestions.slice(0, questionCount);
+    console.log(`generateExamAI: generated ${trimmed.length} unique questions across ${parts.length} chunks (requested ${questionCount}) for material ${materialId ?? "?"}.`);
+    return trimmed;
+  }
+
+  const aggregatedContent = parts[0];
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"

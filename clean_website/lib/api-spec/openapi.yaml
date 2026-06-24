@@ -839,7 +839,7 @@ components:
           type: string
           enum: [chunking, extracting, running, done, idle, error]
         result:
-          description: Present once stage is "done" — the ids/counts of the generated study kit.
+          description: Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is "done".
           $ref: "#/components/schemas/GenerateAllResult"
         error:
           description: Present once stage is "error" — a user-facing failure message.
@@ -847,7 +847,6 @@ components:
 
     GenerateAllResult:
       type: object
-      required: [summary, deck, questionSet, partialFailure]
       properties:
         summary:
           type: object

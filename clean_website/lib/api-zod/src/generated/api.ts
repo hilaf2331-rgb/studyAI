@@ -202,17 +202,17 @@ export const GetMaterialProgressResponse = zod.object({
   "summary": zod.object({
   "id": zod.number(),
   "keyPointCount": zod.number()
-}),
+}).optional(),
   "deck": zod.object({
   "id": zod.number(),
   "cardCount": zod.number()
-}),
+}).optional(),
   "questionSet": zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
-}),
-  "partialFailure": zod.boolean()
-}).optional().describe('Present once stage is \"done\" — the ids\/counts of the generated study kit.'),
+}).optional(),
+  "partialFailure": zod.boolean().optional()
+}).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
 
@@ -233,17 +233,17 @@ export const GetUploadProgressResponse = zod.object({
   "summary": zod.object({
   "id": zod.number(),
   "keyPointCount": zod.number()
-}),
+}).optional(),
   "deck": zod.object({
   "id": zod.number(),
   "cardCount": zod.number()
-}),
+}).optional(),
   "questionSet": zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
-}),
-  "partialFailure": zod.boolean()
-}).optional().describe('Present once stage is \"done\" — the ids\/counts of the generated study kit.'),
+}).optional(),
+  "partialFailure": zod.boolean().optional()
+}).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
 

@@ -10,8 +10,8 @@ import type { GenerateAllResultQuestionSet } from './generateAllResultQuestionSe
 import type { GenerateAllResultSummary } from './generateAllResultSummary';
 
 export interface GenerateAllResult {
-  summary: GenerateAllResultSummary;
-  deck: GenerateAllResultDeck;
-  questionSet: GenerateAllResultQuestionSet;
-  partialFailure: boolean;
+  summary?: GenerateAllResultSummary;
+  deck?: GenerateAllResultDeck;
+  questionSet?: GenerateAllResultQuestionSet;
+  partialFailure?: boolean;
 }

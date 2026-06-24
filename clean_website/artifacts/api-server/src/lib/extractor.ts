@@ -31,13 +31,29 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
+// Thrown when YouTube's own oEmbed endpoint confirms the video doesn't
+// exist, was removed, or is private -- a clean, specific error (rather than
+// a generic Error) so callers (see materials.ts) can recognize it and skip
+// straight to a 404 instead of running it through every extraction
+// fallback below or silently creating a material out of a fake link.
+export class YouTubeVideoNotFoundError extends Error {
+  readonly code = "VIDEO_NOT_FOUND";
+  constructor() {
+    super("This YouTube video does not exist or is private. Please check the link and try again.");
+    this.name = "YouTubeVideoNotFoundError";
+  }
+}
+
 // Fetches a video's public title/channel via YouTube's oEmbed endpoint --
-// no API key required, works for any public video. Used only as the
-// metadata-only last resort below, when neither the transcript scraper nor
-// Gemini's direct video access could get at the actual content.
+// no API key required, works for any public video. Also doubles as the
+// existence check in extractYouTube below: oEmbed 404s/401s for exactly the
+// videos worth rejecting upfront (deleted, never existed, or private).
 async function fetchYouTubeOEmbed(url: string): Promise<{ title: string; author?: string }> {
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
   const res = await fetch(oembedUrl);
+  if (res.status === 404 || res.status === 401) {
+    throw new YouTubeVideoNotFoundError();
+  }
   if (!res.ok) throw new Error(`YouTube oEmbed lookup failed: ${res.status}`);
   const data = (await res.json()) as { title?: string; author_name?: string };
   if (!data.title) throw new Error("YouTube oEmbed response had no title");
@@ -50,8 +66,9 @@ async function fetchYouTubeOEmbed(url: string): Promise<{ title: string; author?
 // error here is never allowed to abort the whole pipeline. Each stage below
 // is strictly more degraded than the last: real transcript -> Gemini
 // watching the video directly -> Gemini reasoning from just the title.
-// Only a genuine rate-limit/system cooldown propagates past this function,
-// since no fallback would help with that either.
+// Only a genuine rate-limit/system cooldown, or a confirmed-nonexistent
+// video (caught by the validation step up front), propagates past this
+// function -- no fallback would help with either of those.
 export async function extractYouTube(
   url: string,
   onProgress?: ProgressCallback,
@@ -59,6 +76,26 @@ export async function extractYouTube(
 ): Promise<ExtractedContent> {
   const videoId = getYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube URL");
+
+  onProgress?.(10);
+
+  // Validate the video actually exists/is public *before* trying anything
+  // else -- there's no point scraping a transcript or asking Gemini to
+  // "watch" a video that was never real to begin with. A confirmed 404/401
+  // here (YouTubeVideoNotFoundError) is deliberately re-thrown immediately;
+  // any other failure (network blip, oEmbed itself being flaky) is not
+  // proof the video is missing, so it's swallowed and extraction proceeds
+  // as if validation was never run.
+  let metadata: { title: string; author?: string } | undefined;
+  try {
+    metadata = await fetchYouTubeOEmbed(url);
+  } catch (error) {
+    if (error instanceof YouTubeVideoNotFoundError) throw error;
+    console.warn(
+      `extractYouTube: oEmbed existence check failed for ${videoId}, proceeding without it:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   onProgress?.(20);
 
@@ -96,8 +133,12 @@ export async function extractYouTube(
 
   onProgress?.(75);
 
-  const metadata = await fetchYouTubeOEmbed(url);
-  const text = await generateContentFromVideoMetadata(metadata, url, language);
+  // metadata was already fetched during the upfront validation step above,
+  // unless that call itself failed for a non-404/401 (flaky) reason -- in
+  // that case it's worth one more attempt here since this is the last
+  // fallback before giving up entirely.
+  const finalMetadata = metadata ?? (await fetchYouTubeOEmbed(url));
+  const text = await generateContentFromVideoMetadata(finalMetadata, url, language);
 
   onProgress?.(100);
   return { text: sanitizeExtractedText(text) };

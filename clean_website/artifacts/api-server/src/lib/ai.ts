@@ -137,8 +137,8 @@ const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 // clear, so this gives transient errors more attempts and more backoff time
 // before giving up. See AI_TASK_TIMEOUT_MS in generate-all.ts, which must
 // stay comfortably above the worst case computed below.
-const MAX_RETRY_ATTEMPTS = 3;
-const BASE_RETRY_DELAY_MS = 1500;
+const MAX_RETRY_ATTEMPTS = 4;
+const BASE_RETRY_DELAY_MS = 3000;
 
 // Per-attempt request timeout passed to the Gemini SDK -- @google/genai's own
 // config.httpOptions.timeout doesn't reliably abort in-flight requests (see
@@ -478,7 +478,7 @@ const CONCURRENCY_LIMIT = 1;
 // can still look like a burst to Gemini's demand-based throttling -- this
 // small pause smooths that out. Skipped after the very last chunk since
 // there's nothing left to protect.
-const INTER_CHUNK_COOLDOWN_MS = 500;
+const INTER_CHUNK_COOLDOWN_MS = 2000;
 
 /**
  * For long documents, splits the text into large chunks and summarizes them
@@ -518,6 +518,7 @@ async function buildAggregatedContent(
   }
 
   const partials: string[] = new Array(chunks.length);
+  let failedChunkCount = 0;
   for (let batchStart = 0; batchStart < chunks.length; batchStart += CONCURRENCY_LIMIT) {
     const batchIndexes = Array.from(
       { length: Math.min(CONCURRENCY_LIMIT, chunks.length - batchStart) },
@@ -545,6 +546,7 @@ async function buildAggregatedContent(
         partials[i] = result.value;
       } else {
         console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, result.reason);
+        failedChunkCount++;
         partials[i] = isHe
           ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
           : "[This part of the material could not be processed due to a temporary error]";
@@ -561,6 +563,14 @@ async function buildAggregatedContent(
     if (completed < chunks.length) {
       await sleep(INTER_CHUNK_COOLDOWN_MS);
     }
+  }
+
+  // Same guard as generateSummaryAndFlashcards: if every chunk failed, this
+  // would otherwise return "successfully" composed entirely of failure
+  // placeholders, which downstream callers (summary/flashcard/question
+  // generation) would then treat as real source material.
+  if (failedChunkCount === chunks.length) {
+    throw new AIServiceError();
   }
 
   const content = partials
@@ -801,6 +811,15 @@ export async function generateSummaryAndFlashcards(
     // precomputedContent. chapterBody (above) keeps every chapter, including
     // placeholders, purely for the user-facing displayed summary.
     const cleanContent = successfulParts.join("\n\n");
+
+    // A chunk can technically "succeed" (cards generated) while returning no
+    // summary text at all -- that doesn't trip failedChunkCount above, but
+    // still leaves nothing real to hand to question generation. Guard on the
+    // actual content, not just the failure count, so a content-shaped but
+    // empty result can never reach generate-all.ts's precomputedContent.
+    if (!cleanContent.trim()) {
+      throw new AIServiceError();
+    }
 
     // Only the keyPoints + a short executive wrap-up come from one more,
     // lightweight, bounded-output Gemini call on top of the already-assembled

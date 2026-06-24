@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import { LanguageProvider } from "@/lib/i18n";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
+import { AppErrorBoundary } from "@/components/error-boundary";
 import NotFound from "@/pages/not-found";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 
@@ -72,9 +73,11 @@ function App() {
         <LanguageProvider>
           <AuthProvider>
             <TooltipProvider>
-              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <AppRoutes />
-              </WouterRouter>
+              <AppErrorBoundary>
+                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                  <AppRoutes />
+                </WouterRouter>
+              </AppErrorBoundary>
               <Toaster />
             </TooltipProvider>
           </AuthProvider>

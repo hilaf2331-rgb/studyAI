@@ -3,7 +3,7 @@ import multer from "multer";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
 import { eq, count, and, inArray } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody } from "@workspace/api-zod";
-import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError } from "../lib/extractor";
+import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -136,6 +136,13 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     if (err instanceof YouTubeVideoNotFoundError) {
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(404).json({ error: err.message, code: err.code });
+    }
+    // Same logic as above -- a video over the beta's length cap is a user
+    // input issue, not a processing failure, so it's rejected outright
+    // instead of creating a material that would just time out anyway.
+    if (err instanceof YouTubeTooLongError) {
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(413).json({ error: err.message, code: err.code });
     }
     req.log.error({ err }, "Content extraction failed");
     processingError = err.message || "Extraction failed";

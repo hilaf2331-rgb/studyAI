@@ -71,6 +71,44 @@ async function fetchYouTubeOEmbed(url: string): Promise<{ title: string; author?
   return { title: data.title, author: data.author_name };
 }
 
+// During beta, a 40-minute lecture reliably blows past Render's free-tier
+// request timeout mid-extraction and then burns through the Gemini rate
+// limit on retry -- there's no hosting-tier fix for that without upgrading,
+// so the video length itself is capped instead.
+const MAX_YOUTUBE_DURATION_SECONDS = 25 * 60;
+
+export class YouTubeTooLongError extends Error {
+  readonly code = "VIDEO_TOO_LONG";
+  constructor(language: "he" | "en") {
+    super(
+      language === "he"
+        ? "סרטון ארוך מדי! בשלב הבטא אנו תומכים בסרטונים של עד 25 דקות בלבד."
+        : "Video too long! During the beta we only support videos up to 25 minutes."
+    );
+    this.name = "YouTubeTooLongError";
+  }
+}
+
+// oEmbed doesn't expose duration, and adding the YouTube Data API would mean
+// a new API key/credential just for this -- the watch page's own
+// ytInitialPlayerResponse blob (loaded into every page, no API key needed)
+// already carries it as videoDetails.lengthSeconds, the same kind of public
+// page-scrape youtube-transcript itself relies on for captions. Best-effort
+// only: any fetch/parse failure returns null rather than throwing, since a
+// duration check that can't run is not proof a video is too long.
+async function fetchYouTubeDurationSeconds(url: string): Promise<number | null> {
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyAI/1.0)" } });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const match = html.match(/"lengthSeconds":"(\d+)"/);
+    return match ? Number(match[1]) : null;
+  } catch (error) {
+    console.warn("fetchYouTubeDurationSeconds: failed to determine duration, skipping length check:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 // YouTube routinely blocks transcript-scraping requests coming from hosted
 // server IPs (Render, etc.) with YoutubeTranscriptDisabledError -- even on
 // videos that do have captions available to a normal browser -- so a thrown
@@ -88,6 +126,16 @@ export async function extractYouTube(
   const videoId = getYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube URL");
   const canonicalUrl = canonicalYouTubeUrl(videoId);
+
+  // Reject oversized videos before doing any real work -- there's no point
+  // starting a transcript fetch or a multi-minute Gemini video-watch call
+  // only to time out on Render's free tier partway through. Best-effort: if
+  // the duration can't be determined, this silently allows the video
+  // through rather than blocking it on an inconclusive check.
+  const durationSeconds = await fetchYouTubeDurationSeconds(canonicalUrl);
+  if (durationSeconds !== null && durationSeconds > MAX_YOUTUBE_DURATION_SECONDS) {
+    throw new YouTubeTooLongError(language);
+  }
 
   onProgress?.(10);
 

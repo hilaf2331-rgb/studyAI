@@ -11,7 +11,10 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const TEXT_MODEL = "gemini-1.5-flash";
+// gemini-1.5-flash was fully retired by Google on 2025-09-24 -- every call
+// to it now 404s immediately (not retryable), which is why failures here
+// surface in seconds rather than after the full retry budget is exhausted.
+const TEXT_MODEL = "gemini-3.5-flash";
 // Audio transcription (Whisper) stays on Groq — see extractor.ts, which
 // reads GROQ_API_KEY directly via a raw fetch call. This constant is kept
 // here only because extractor.ts imports it alongside other AI helpers.
@@ -263,7 +266,9 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   // error for debugging, but never leak it to the client: callers and the
   // app-wide catch-all error handler should only ever see a clear,
   // user-facing message here, not a raw SDK error shape.
-  console.error("callGeminiWithRetry: request failed after all retries:", lastError);
+  console.error(
+    `callGeminiWithRetry: request failed after all retries. status=${lastError?.status ?? "?"} message=${lastError?.message ?? lastError}`,
+  );
   throw new AIServiceError();
 }
 

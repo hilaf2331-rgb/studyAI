@@ -96,14 +96,18 @@ export const FlashcardStudyPage: React.FC = () => {
       <div className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
         <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
           {/* Front */}
-          <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center justify-center p-8 shadow-lg">
-            <Badge variant="secondary" className="mb-4 capitalize">{current.cardType}</Badge>
-            <p className="text-xl font-semibold text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.front}</p>
-            <p className="text-xs text-muted-foreground mt-6">{isRTL ? "לחץ להפוך" : "Click to flip"}</p>
+          <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">
+            <Badge variant="secondary" className="mb-4 capitalize shrink-0">{current.cardType}</Badge>
+            <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
+              <p className="text-xl font-semibold text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.front}</p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4 shrink-0">{isRTL ? "לחץ להפוך" : "Click to flip"}</p>
           </div>
           {/* Back */}
-          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-2xl border-2 border-primary/30 bg-primary/5 flex flex-col items-center justify-center p-8 shadow-lg">
-            <p className="text-lg text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.back}</p>
+          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-2xl border-2 border-primary/30 bg-primary/5 flex flex-col items-center p-6 shadow-lg overflow-hidden">
+            <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
+              <p className="text-lg text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.back}</p>
+            </div>
           </div>
         </div>
       </div>

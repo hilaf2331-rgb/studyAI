@@ -1115,15 +1115,27 @@ Return ONLY JSON matching this structure:
 function flashcardTypeGuide(isHe: boolean): string {
   return isHe
     ? `סוגי כרטיסיות אפשריים:
-- definition (הגדרה): "מהי/מהו [מושג]?" → הגדרה מדויקת ומלאה
-- formula (נוסחה): "נוסחת/חוק [שם]?" → הנוסחה + משמעות המשתנים
-- concept (מושג): "הסבר את [מושג]" → הסבר בשפה פשוטה עם דוגמה
-- qa (שאלה ותשובה): שאלה מעמיקה על עקרון/תהליך → תשובה מפורטת`
+- definition (הגדרה): "מהי/מהו [מושג]?" → הגדרה מדויקת וקצרה
+- formula (נוסחה): "נוסחת/חוק [שם]?" → הנוסחה + משמעות המשתנים בקצרה
+- concept (מושג): "הסבר את [מושג]" → הסבר תכליתי בשפה פשוטה
+- qa (שאלה ותשובה): שאלה מעמיקה על עקרון/תהליך → תשובה תכליתית`
     : `Card types:
-- definition: "What is [term]?" → precise, complete definition
-- formula: "Formula/Law of [name]?" → the formula + variable meanings
-- concept: "Explain [concept]" → plain-language explanation with example
-- qa: Deep question about a principle/process → detailed answer`;
+- definition: "What is [term]?" → precise, brief definition
+- formula: "Formula/Law of [name]?" → the formula + variable meanings, briefly
+- concept: "Explain [concept]" → to-the-point, plain-language explanation
+- qa: Deep question about a principle/process → to-the-point answer`;
+}
+
+// Flashcards are reviewed for a few seconds at a time, not read like a
+// textbook -- a "back" field that runs to a full paragraph overflows the
+// fixed-size card UI and overlaps the review buttons below it, and it
+// defeats the point of a flashcard (quick recall, not re-reading the
+// source). Every prompt below enforces this same hard cap regardless of
+// card type.
+function flashcardLengthRule(isHe: boolean): string {
+  return isHe
+    ? `אורך התשובה (back): מקסימום 2-3 משפטים קצרים, רצוי כתבי-יד (bullet points) אם יש כמה נקודות. אסור לכתוב פסקאות! תשובה ארוכה מ-40 מילים היא שגיאה.`
+    : `Answer length (back): maximum 2-3 short sentences, ideally bullet points if there's more than one fact. No paragraphs. An answer longer than 40 words is an error.`;
 }
 
 // Output-token ceiling for ONE chunk's worth of flashcards -- deliberately
@@ -1142,6 +1154,7 @@ async function generateFlashcardsForChunk(
   cardTypes: string[],
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
   const typeGuide = flashcardTypeGuide(isHe);
+  const lengthRule = flashcardLengthRule(isHe);
   const userPrompt = isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
 
@@ -1154,8 +1167,10 @@ ${typeGuide}
 
 חוקי ברזל: אסור לחזור על שום מושג. אם אין מספיק עובדות שונות בחלק הזה -- צור פחות כרטיסיות, עדיף מעט וייחודי מהרבה וחזרתי.
 
+${lengthRule}
+
 החזר JSON במבנה הבא בלבד:
-{"cards": [{"front": "שאלה ייחודית", "back": "תשובה מלאה", "difficulty": "medium", "cardType": "definition"}]}`
+{"cards": [{"front": "שאלה ייחודית", "back": "תשובה קצרה ותכליתית", "difficulty": "medium", "cardType": "definition"}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1167,8 +1182,10 @@ ${typeGuide}
 
 Strict rules: never repeat a concept. Create fewer cards if this part doesn't have enough distinct facts -- fewer unique cards beats more repetitive ones. Distribute across types: ${cardTypes.join(", ")}.
 
+${lengthRule}
+
 Return ONLY JSON matching this structure:
-{"cards": [{"front": "question", "back": "complete answer", "difficulty": "medium", "cardType": "definition"}]}`;
+{"cards": [{"front": "question", "back": "short, to-the-point answer", "difficulty": "medium", "cardType": "definition"}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1252,6 +1269,7 @@ async function generateFlashcardsAIImpl(
 
   const aggregatedContent = parts[0];
   const typeGuide = flashcardTypeGuide(isHe);
+  const lengthRule = flashcardLengthRule(isHe);
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -1267,12 +1285,13 @@ ${typeGuide}
 1. אסור לחזור על שום מושג! כל כרטיסייה חייבת לעסוק בנושא, משפט או עובדה שונים לחלוטין מהטקסט.
 2. אם כבר שאלת על "פרווה", הנושא הזה חסום! עבור לעובדה הבאה (למשל: צבע העור, תזונה, יכולת שחייה, עובי השומן).
 3. אם נגמרו העובדות השונות בטקסט, עצור מיד ואל תייצר כרטיסיות נוספות. עדיף 4 כרטיסיות שונות לחלוטין מאשר 6 שחוזרות על עצמן.
+4. ${lengthRule}
 
 החזר JSON במבנה הבא בלבד:
 {
   "cards": [
-    {"front": "שאלה ייחודית 1", "back": "תשובה מלאה 1", "difficulty": "medium", "cardType": "definition"},
-    {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה מלאה 2", "difficulty": "medium", "cardType": "concept"}
+    {"front": "שאלה ייחודית 1", "back": "תשובה קצרה 1", "difficulty": "medium", "cardType": "definition"},
+    {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה קצרה 2", "difficulty": "medium", "cardType": "concept"}
   ]
 }`
     : `## Study Material: "${materialTitle}"
@@ -1288,13 +1307,14 @@ Strict rules to avoid duplication:
 1. Distribute across types: ${cardTypes.join(", ")}.
 2. ZERO REPETITION: Do not ask about the same fact, concept, or variable more than once. Every card must cover a completely unique piece of information.
 3. If a concept was tested once, do not create another card for it under a different type.
-4. Front = short, sharp question. Back = complete, accurate answer based strictly on the text.
+4. Front = short, sharp question. Back = short, accurate answer based strictly on the text.
 5. Difficulty: easy, medium, hard.
+6. ${lengthRule}
 
 Return ONLY JSON matching this structure:
 {
   "cards": [
-    {"front": "question", "back": "complete answer", "difficulty": "medium", "cardType": "definition"}
+    {"front": "question", "back": "short answer", "difficulty": "medium", "cardType": "definition"}
   ]
 }`;
 

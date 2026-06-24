@@ -327,7 +327,16 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
         break;
       }
-      const delay = BASE_RETRY_DELAY_MS * 2 ** attempt + Math.random() * 250;
+      // Full exponential backoff, then jitter scaled to the backoff itself
+      // (0-50% of it) rather than a flat +/-250ms. With concurrencyLimit > 1,
+      // several chunks hit a 503 in the same tick and would otherwise all
+      // retry on the same fixed schedule -- a flat jitter window is too
+      // narrow to desynchronize them, so the jitter needs to grow with the
+      // delay to actually spread retries out and avoid hitting an
+      // already-overloaded model again at the same moment.
+      const exponentialDelay = BASE_RETRY_DELAY_MS * 2 ** attempt;
+      const jitter = Math.random() * exponentialDelay * 0.5;
+      const delay = exponentialDelay + jitter;
       console.warn(
         `Gemini call failed (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS + 1}, status ${error?.status ?? "?"}). Retrying in ${Math.round(delay)}ms...`
       );
@@ -380,11 +389,13 @@ async function summarizeChunk(
 }
 
 // Chunks are summarized in small concurrent batches rather than one at a
-// time. A single 84-page document can split into 10+ chunks, and at ~5-15s
-// per Gemini call, doing them sequentially is what was blowing past
-// generate-all's internal timeout -- this cuts wall-clock time by roughly
-// the batch size while staying well under Gemini's free-tier RPM ceiling.
-const CHUNK_BATCH_SIZE = 4;
+// time -- sequential processing of a 10+ chunk document is what was blowing
+// past generate-all's internal timeout. But concurrency has a cost: each
+// batch fires this many requests at once, and a model under "high demand"
+// (503) gets hit by all of them simultaneously. Kept as a single tunable
+// knob so it can be raised again once 503 rates settle down, without
+// touching the batching logic itself.
+const CONCURRENCY_LIMIT = 2;
 
 /**
  * For long documents, splits the text into large chunks and summarizes them
@@ -423,9 +434,9 @@ async function buildAggregatedContent(
   }
 
   const partials: string[] = new Array(chunks.length);
-  for (let batchStart = 0; batchStart < chunks.length; batchStart += CHUNK_BATCH_SIZE) {
+  for (let batchStart = 0; batchStart < chunks.length; batchStart += CONCURRENCY_LIMIT) {
     const batchIndexes = Array.from(
-      { length: Math.min(CHUNK_BATCH_SIZE, chunks.length - batchStart) },
+      { length: Math.min(CONCURRENCY_LIMIT, chunks.length - batchStart) },
       (_, j) => batchStart + j,
     );
 

@@ -17,6 +17,8 @@ import { apiUrl } from "@/lib/api-base";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { Progress } from "@/components/ui/progress";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
+import { useToast } from "@/hooks/use-toast";
+import { MIN_TEXT_CHARS, noContentMessage, isAudioSilent } from "@/lib/content-check";
 
 type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "video";
 
@@ -122,6 +124,7 @@ const PICKER_CONFIG: Record<PickerCategory, {
 
 export const MaterialNewPage: React.FC = () => {
   const { isRTL } = useLanguage();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const search = useSearch();
   const qc = useQueryClient();
@@ -223,6 +226,22 @@ export const MaterialNewPage: React.FC = () => {
     }
     if (cfg.acceptsFile && !file) {
       setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
+    }
+
+    // Content-presence gate -- runs before the request ever leaves the
+    // browser, so an empty/near-empty upload never burns a beta action or
+    // an extraction/AI call that was always going to produce nothing useful.
+    if (contentType === "text" && text.trim().length < MIN_TEXT_CHARS) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
+    }
+    if (cfg.acceptsFile && file && file.size === 0) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
+    }
+    if (contentType === "audio" && file && (await isAudioSilent(file))) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
     }
 
     const newUploadId = crypto.randomUUID();

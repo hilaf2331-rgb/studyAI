@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
+import { useToast } from "@/hooks/use-toast";
+import { NO_CONTENT_MESSAGE_HE, isAudioSilent } from "@/lib/content-check";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -52,6 +54,14 @@ const SAVE_STEPS_HE = [
   "מסיים ערכת לימוד...",
 ];
 
+// Pre-flight check shared by the manual-save and auto-save (20-minute cap)
+// paths -- a zero-byte blob or a sub-1-second recording (mic permission
+// glitch, instant stop) means there's nothing to transcribe, so it's caught
+// here before performSave ever fires the upload request.
+function hasRecordingContent(blob: Blob | null, durationSeconds: number): boolean {
+  return !!blob && blob.size > 0 && durationSeconds >= 1;
+}
+
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -67,6 +77,7 @@ function formatDateTime(iso: string) {
 
 export const RecorderPage: React.FC = () => {
   const { isRTL } = useLanguage();
+  const { toast } = useToast();
   const search = useSearch();
   const { data: courses } = useListCourses();
 
@@ -253,9 +264,17 @@ export const RecorderPage: React.FC = () => {
     }
   }, [mimeType, elapsed, courseId, loadHistory]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!audioBlobRef) return;
     if (!title.trim()) { setError("יש להזין כותרת להקלטה"); return; }
+    if (!hasRecordingContent(audioBlobRef, elapsed)) {
+      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+      return;
+    }
+    if (await isAudioSilent(audioBlobRef)) {
+      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+      return;
+    }
     performSave(audioBlobRef, title.trim());
   };
 
@@ -266,10 +285,20 @@ export const RecorderPage: React.FC = () => {
   // whatever the user actually has set at that moment.
   useEffect(() => {
     if (!autoStopped || recState !== "stopped" || !audioBlobRef) return;
-    const recTitle = title.trim() || `הקלטה ${new Date().toLocaleDateString("he-IL")} ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
-    if (!title.trim()) setTitle(recTitle);
-    performSave(audioBlobRef, recTitle);
-  }, [autoStopped, recState, audioBlobRef, performSave]);
+    if (!hasRecordingContent(audioBlobRef, elapsed)) {
+      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+      return;
+    }
+    (async () => {
+      if (await isAudioSilent(audioBlobRef)) {
+        toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+        return;
+      }
+      const recTitle = title.trim() || `הקלטה ${new Date().toLocaleDateString("he-IL")} ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+      if (!title.trim()) setTitle(recTitle);
+      performSave(audioBlobRef, recTitle);
+    })();
+  }, [autoStopped, recState, audioBlobRef, elapsed, title, toast, performSave]);
 
   const resetRecorder = () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);

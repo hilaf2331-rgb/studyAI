@@ -13,10 +13,10 @@ const router = Router();
 // Per-task timeout. Each Gemini call gets its own clock instead of sharing
 // one budget, so a single slow call can't silently swallow the others'
 // remaining time. Must stay comfortably above ai.ts's own internal retry
-// budget (~78s worst case: 3 attempts x 25s timeout + backoff) so a real
+// budget (~110.5s worst case: 4 attempts x 25s timeout + backoff) so a real
 // retry exhaustion produces our clear "network or service issue" message
 // instead of this generic timeout firing first.
-const AI_TASK_TIMEOUT_MS = 100_000;
+const AI_TASK_TIMEOUT_MS = 140_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

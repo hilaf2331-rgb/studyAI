@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
+import { useListCourses } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
@@ -8,11 +9,19 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
   AlertCircle, Clock, Calendar, Zap,
 } from "lucide-react";
+
+// Hard ceiling matching the backend's MAX_RECORDING_SECONDS in
+// recordings.ts -- a live recording auto-stops here so a student can't
+// accidentally record for hours and blow past Render's free-tier HTTP
+// timeout once the file hits transcription + AI generation.
+const MAX_RECORDING_SECONDS = 20 * 60;
 
 type RecorderState = "idle" | "recording" | "stopped" | "saving" | "done" | "error";
 
@@ -56,6 +65,11 @@ function formatDateTime(iso: string) {
 
 export const RecorderPage: React.FC = () => {
   const { isRTL } = useLanguage();
+  const search = useSearch();
+  const { data: courses } = useListCourses();
+
+  // Preselect the course when arriving from a specific course page, e.g. /recorder?courseId=5
+  const preselectedCourseId = new URLSearchParams(search).get("courseId") || "";
 
   // Recorder state
   const [recState, setRecState] = useState<RecorderState>("idle");
@@ -64,8 +78,10 @@ export const RecorderPage: React.FC = () => {
   const [audioBlobRef, setAudioBlobRef] = useState<Blob | null>(null);
   const [mimeType, setMimeType] = useState("audio/webm");
   const [title, setTitle] = useState("");
+  const [courseId, setCourseId] = useState<string>(preselectedCourseId);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [autoStopped, setAutoStopped] = useState(false);
 
   // Save progress
   const [saveStep, setSaveStep] = useState(0);
@@ -116,6 +132,7 @@ export const RecorderPage: React.FC = () => {
     setAudioBlobRef(null);
     setElapsed(0);
     setKitResult(null);
+    setAutoStopped(false);
     setRecState("idle");
     chunksRef.current = [];
 
@@ -153,7 +170,22 @@ export const RecorderPage: React.FC = () => {
       setRecState("recording");
       animateWaveform();
 
-      timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
+      // Reads/clears timerRef.current directly rather than through a
+      // captured variable, since refs stay live across renders -- avoids
+      // the stale-closure trap of reading state set up at the start of this
+      // long-lived interval callback.
+      timerRef.current = setInterval(() => {
+        setElapsed(s => {
+          const next = s + 1;
+          if (next >= MAX_RECORDING_SECONDS) {
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            mediaRecorderRef.current?.stop();
+            setAutoStopped(true);
+            setRecState("stopped");
+          }
+          return next;
+        });
+      }, 1000);
     } catch (err: any) {
       setError("לא ניתן לגשת למיקרופון. אנא אפשר גישה בהגדרות הדפדפן.");
       setRecState("error");
@@ -166,9 +198,7 @@ export const RecorderPage: React.FC = () => {
     setRecState("stopped");
   };
 
-  const handleSave = async () => {
-    if (!audioBlobRef) return;
-    if (!title.trim()) { setError("יש להזין כותרת להקלטה"); return; }
+  const performSave = useCallback(async (blob: Blob, recTitle: string) => {
     setError("");
     setRecState("saving");
     setSaveStep(0);
@@ -179,10 +209,11 @@ export const RecorderPage: React.FC = () => {
 
     try {
       const fd = new FormData();
-      fd.append("audio", audioBlobRef, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
-      fd.append("title", title.trim());
+      fd.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+      fd.append("title", recTitle);
       fd.append("recordedAt", recordedAtRef.current.toISOString());
       fd.append("durationSeconds", String(elapsed));
+      if (courseId) fd.append("courseId", courseId);
 
       const res = await fetch(apiUrl("/api/recordings"), {
         method: "POST",
@@ -206,7 +237,25 @@ export const RecorderPage: React.FC = () => {
       setError("שמירת ההקלטה נכשלה. נסה שנית.");
       setRecState("error");
     }
+  }, [mimeType, elapsed, courseId, loadHistory]);
+
+  const handleSave = () => {
+    if (!audioBlobRef) return;
+    if (!title.trim()) { setError("יש להזין כותרת להקלטה"); return; }
+    performSave(audioBlobRef, title.trim());
   };
+
+  // Auto-save once the 20-minute hard limit stops the recorder: this effect
+  // (not the mr.onstop callback itself, which closes over stale state from
+  // when recording started) re-runs with fresh state whenever audioBlobRef
+  // is populated after an auto-stop, so the saved title/courseId reflect
+  // whatever the user actually has set at that moment.
+  useEffect(() => {
+    if (!autoStopped || recState !== "stopped" || !audioBlobRef) return;
+    const recTitle = title.trim() || `הקלטה ${new Date().toLocaleDateString("he-IL")} ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+    if (!title.trim()) setTitle(recTitle);
+    performSave(audioBlobRef, recTitle);
+  }, [autoStopped, recState, audioBlobRef, performSave]);
 
   const resetRecorder = () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -219,6 +268,7 @@ export const RecorderPage: React.FC = () => {
     setKitResult(null);
     setSaveStep(0);
     setSaveProgress(0);
+    setAutoStopped(false);
   };
 
   const deleteRecording = async (id: number) => {
@@ -305,6 +355,13 @@ export const RecorderPage: React.FC = () => {
           {/* Stopped — preview + title + save */}
           {recState === "stopped" && (
             <div className="space-y-4">
+              {autoStopped && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-20 דקות, מעבד את החומר...
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">משך הקלטה: <span className="font-mono font-semibold">{formatDuration(elapsed)}</span></span>
                 <Badge variant="secondary">מוכן לשמירה</Badge>
@@ -337,26 +394,46 @@ export const RecorderPage: React.FC = () => {
                 </p>
               </div>
 
+              {courses && courses.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>קורס (אופציונלי)</Label>
+                  <Select value={courseId} onValueChange={setCourseId}>
+                    <SelectTrigger><SelectValue placeholder="ללא קורס" /></SelectTrigger>
+                    <SelectContent>
+                      {courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {error && (
                 <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0" />{error}
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" onClick={resetRecorder} className="gap-2">
-                  <Mic className="w-4 h-4" /> הקלט מחדש
-                </Button>
-                <Button onClick={handleSave} disabled={!title.trim()} className="gap-2 bg-primary">
-                  <Zap className="w-4 h-4" /> שמור וצור ערכה ⚡
-                </Button>
-              </div>
+              {!autoStopped && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Button variant="outline" onClick={resetRecorder} className="gap-2">
+                    <Mic className="w-4 h-4" /> הקלט מחדש
+                  </Button>
+                  <Button onClick={handleSave} disabled={!title.trim()} className="gap-2 bg-primary">
+                    <Zap className="w-4 h-4" /> שמור וצור ערכה ⚡
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
           {/* Saving — animated progress */}
           {recState === "saving" && (
             <div className="space-y-5 py-2">
+              {autoStopped && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-20 דקות, מעבד את החומר...
+                </div>
+              )}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <Loader2 className="w-5 h-5 text-primary animate-spin" />

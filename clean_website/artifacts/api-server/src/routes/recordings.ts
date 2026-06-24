@@ -5,9 +5,18 @@ import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { mediaTooLargeMessage } from "../lib/validation";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+// Same beta cap as the audio file-upload path in materials.ts -- a live
+// browser recording is just another audio upload from Render's perspective,
+// so it gets the same 25MB ceiling to stay clear of the free-tier HTTP
+// timeout. The 20-minute duration cap is enforced client-side (auto-stop) in
+// recorder.tsx; this is the server-side backstop in case that client check
+// is bypassed.
+const MAX_RECORDING_BYTES = 25 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RECORDING_BYTES } });
 
 router.get("/recordings", async (req, res) => {
   const userId = req.user!.userId;
@@ -42,6 +51,8 @@ router.get("/recordings/:id/audio", async (req, res) => {
   res.end(buf);
 });
 
+const MAX_RECORDING_SECONDS = 20 * 60;
+
 router.post("/recordings", upload.single("audio"), async (req, res) => {
   const userId = req.user!.userId;
   if (!req.file) return res.status(400).json({ error: "Audio file is required" });
@@ -49,7 +60,13 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const title = (req.body.title as string) || `הקלטה ${new Date().toLocaleDateString("he-IL")}`;
   const recordedAt = req.body.recordedAt ? new Date(req.body.recordedAt) : new Date();
   const durationSeconds = req.body.durationSeconds ? Number(req.body.durationSeconds) : undefined;
+  const courseId = req.body.courseId ? Number(req.body.courseId) : undefined;
   const mimeType = req.file.mimetype || "audio/webm";
+
+  if (durationSeconds && durationSeconds > MAX_RECORDING_SECONDS) {
+    return res.status(413).json({ error: mediaTooLargeMessage("he"), code: "RECORDING_TOO_LONG" });
+  }
+
   const audioData = req.file.buffer.toString("base64");
 
   let extractedText = "";
@@ -65,6 +82,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
 
   const [material] = await db.insert(materialsTable).values({
     userId,
+    courseId,
     title,
     contentType: "audio",
     language: "he",

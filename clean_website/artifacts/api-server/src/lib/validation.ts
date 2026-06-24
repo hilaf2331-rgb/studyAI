@@ -48,6 +48,15 @@ export function contentTooLongMessage(language: "he" | "en" = "he"): string {
     : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
 }
 
+// Shared with the direct browser-recording upload route (recordings.ts),
+// which enforces the same 25MB/20-minute audio cap as the file-upload path
+// in materials.ts -- same Render free-tier rationale, same message.
+export function mediaTooLargeMessage(language: "he" | "en" = "he"): string {
+  return language === "he"
+    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+}
+
 /**
  * If the material's text is too short to generate from, writes a 400 JSON
  * response and returns true (caller should return immediately). Otherwise

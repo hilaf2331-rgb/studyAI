@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, ArrowRight, BookOpen, FileText, Plus, Trash2,
-  BrainCircuit, HelpCircle, FileQuestion, Loader2, AlertCircle, CheckCircle2,
+  BrainCircuit, HelpCircle, FileQuestion, Loader2, AlertCircle, CheckCircle2, Mic,
 } from "lucide-react";
 
 function StatusBadge({ status, isRTL }: { status: string; isRTL: boolean }) {
@@ -110,10 +110,16 @@ export const CourseDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
-        <Button className="gap-2 shrink-0" onClick={() => setLocation(`/materials/new?courseId=${courseId}`)}>
-          <Plus className="w-4 h-4" />
-          {isRTL ? "הוסף חומר" : "Add Material"}
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/recorder?courseId=${courseId}`)}>
+            <Mic className="w-4 h-4" />
+            {isRTL ? "הקלט הרצאה" : "Record Lecture"}
+          </Button>
+          <Button className="gap-2" onClick={() => setLocation(`/materials/new?courseId=${courseId}`)}>
+            <Plus className="w-4 h-4" />
+            {isRTL ? "הוסף חומר" : "Add Material"}
+          </Button>
+        </div>
       </div>
 
       {loadingMaterials ? (

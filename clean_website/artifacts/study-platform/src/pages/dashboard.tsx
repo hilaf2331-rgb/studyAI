@@ -33,10 +33,10 @@ export const Dashboard: React.FC = () => {
   const { data: streak } = useGetStudyStreak();
 
   const statCards = [
-    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: BookOpen, color: "text-blue-500", border: "border-l-blue-500" },
-    { label: t("totalMaterials"), value: stats?.totalMaterials ?? 0, icon: GraduationCap, color: "text-purple-500", border: "border-l-purple-500" },
-    { label: t("totalFlashcards"), value: stats?.totalFlashcards ?? 0, icon: BrainCircuit, color: "text-amber-500", border: "border-l-amber-500" },
-    { label: t("averageScore"), value: `${stats?.averageScore ?? 0}%`, icon: Target, color: "text-green-500", border: "border-l-green-500" },
+    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: BookOpen, color: "text-blue-500", border: "border-s-blue-500" },
+    { label: t("totalMaterials"), value: stats?.totalMaterials ?? 0, icon: GraduationCap, color: "text-purple-500", border: "border-s-purple-500" },
+    { label: t("totalFlashcards"), value: stats?.totalFlashcards ?? 0, icon: BrainCircuit, color: "text-amber-500", border: "border-s-amber-500" },
+    { label: t("averageScore"), value: `${stats?.averageScore ?? 0}%`, icon: Target, color: "text-green-500", border: "border-s-green-500" },
   ];
 
   return (
@@ -61,7 +61,7 @@ export const Dashboard: React.FC = () => {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(s => (
-          <Card key={s.label} className={`border-l-4 ${s.border} shadow-sm hover:shadow-md transition-shadow`}>
+          <Card key={s.label} className={`border-s-4 ${s.border} shadow-sm hover:shadow-md transition-shadow`}>
             <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-5">
               <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</CardTitle>
               <s.icon className={`w-4 h-4 ${s.color}`} />

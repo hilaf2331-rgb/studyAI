@@ -187,6 +187,21 @@ export const DeleteMaterialParams = zod.object({
 
 
 /**
+ * @summary Delete multiple materials in a single batch request
+ */
+
+
+
+export const BulkDeleteMaterialsBody = zod.object({
+  "ids": zod.array(zod.number()).min(1)
+})
+
+export const BulkDeleteMaterialsResponse = zod.object({
+  "deletedCount": zod.number()
+})
+
+
+/**
  * @summary Poll chunked-generation progress for a material, or the status of a background generate-all job for it
  */
 export const GetMaterialProgressParams = zod.object({

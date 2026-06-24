@@ -21,6 +21,8 @@ import type {
 
 import type {
   ActivityItem,
+  BulkDeleteMaterialsInput,
+  BulkDeleteMaterialsResult,
   ChatMessage,
   ChatMessageInput,
   Course,
@@ -804,6 +806,77 @@ export const useDeleteMaterial = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteMaterialMutationOptions(options));
+    }
+
+export const getBulkDeleteMaterialsUrl = () => {
+
+
+
+
+  return `/api/materials/bulk-delete`
+}
+
+/**
+ * @summary Delete multiple materials in a single batch request
+ */
+export const bulkDeleteMaterials = async (bulkDeleteMaterialsInput: BulkDeleteMaterialsInput, options?: RequestInit): Promise<BulkDeleteMaterialsResult> => {
+
+  return customFetch<BulkDeleteMaterialsResult>(getBulkDeleteMaterialsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bulkDeleteMaterialsInput,)
+  }
+);}
+
+
+
+
+export const getBulkDeleteMaterialsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkDeleteMaterials>>, TError,{data: BodyType<BulkDeleteMaterialsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkDeleteMaterials>>, TError,{data: BodyType<BulkDeleteMaterialsInput>}, TContext> => {
+
+const mutationKey = ['bulkDeleteMaterials'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkDeleteMaterials>>, {data: BodyType<BulkDeleteMaterialsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkDeleteMaterials(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkDeleteMaterialsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkDeleteMaterials>>>
+    export type BulkDeleteMaterialsMutationBody = BodyType<BulkDeleteMaterialsInput>
+    export type BulkDeleteMaterialsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete multiple materials in a single batch request
+ */
+export const useBulkDeleteMaterials = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkDeleteMaterials>>, TError,{data: BodyType<BulkDeleteMaterialsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkDeleteMaterials>>,
+        TError,
+        {data: BodyType<BulkDeleteMaterialsInput>},
+        TContext
+      > => {
+      return useMutation(getBulkDeleteMaterialsMutationOptions(options));
     }
 
 export const getGetMaterialProgressUrl = (id: number,) => {

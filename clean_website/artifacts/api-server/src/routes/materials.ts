@@ -1,8 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
-import { eq, count, and } from "drizzle-orm";
-import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams } from "@workspace/api-zod";
+import { eq, count, and, inArray } from "drizzle-orm";
+import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage } from "../lib/extractor";
 import { isContentTooShort, getWordCount } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -199,6 +199,23 @@ router.delete("/materials/:id", async (req, res) => {
     .returning({ id: materialsTable.id });
   if (!deleted) return res.status(404).json({ error: "Not found" });
   res.status(204).end();
+});
+
+// One DELETE statement scoped to (id IN ids) AND userId, instead of N
+// separate requests/round-trips from the frontend's multi-select -- the
+// related rows (summaries, decks, question sets, exams, etc.) all cascade
+// via their FK's onDelete: "cascade", so this single statement is enough to
+// clean up everything regardless of how many materials are in the batch.
+// The userId scope means ids belonging to other users are silently ignored
+// rather than erroring, same as the single-delete route's 404-only-if-yours
+// behavior, just without a per-id 404 to report back.
+router.post("/materials/bulk-delete", async (req, res) => {
+  const userId = req.user!.userId;
+  const { ids } = BulkDeleteMaterialsBody.parse(req.body);
+  const deleted = await db.delete(materialsTable)
+    .where(and(inArray(materialsTable.id, ids), eq(materialsTable.userId, userId)))
+    .returning({ id: materialsTable.id });
+  res.json({ deletedCount: deleted.length });
 });
 
 export default router;

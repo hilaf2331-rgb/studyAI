@@ -194,6 +194,15 @@ export interface MaterialInput {
   uploadId?: string;
 }
 
+export interface BulkDeleteMaterialsInput {
+  /** @minItems 1 */
+  ids: number[];
+}
+
+export interface BulkDeleteMaterialsResult {
+  deletedCount: number;
+}
+
 export type SummarySummaryType = typeof SummarySummaryType[keyof typeof SummarySummaryType];
 
 

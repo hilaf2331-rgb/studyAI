@@ -8,6 +8,8 @@
 
 export * from './activityItem';
 export * from './activityItemActivityType';
+export * from './bulkDeleteMaterialsInput';
+export * from './bulkDeleteMaterialsResult';
 export * from './chatMessage';
 export * from './chatMessageInput';
 export * from './chatMessageInputLanguage';

@@ -184,9 +184,39 @@ export const MaterialDetailPage: React.FC = () => {
   // progress instead of a bare spinner during the (now strictly sequential,
   // multi-minute) chunked processing of large documents.
   const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || genExam.isPending || kitLoading;
+  // Stays enabled even when nothing is generating locally, so a fresh mount
+  // (e.g. navigating back to this page) can find out whether the backend's
+  // in-memory job tracker still has an active generate-all run for this
+  // material -- otherwise kitLoading (which never survives a remount) is the
+  // only thing gating the poll, and a still-running job becomes invisible to
+  // the UI the moment the user navigates away and back.
   const { data: generationProgress } = useGetMaterialProgress(id, {
-    query: { enabled: !!id && anyGenerating, refetchInterval: anyGenerating ? 1500 : false, queryKey: getGetMaterialProgressQueryKey(id) },
+    query: {
+      enabled: !!id,
+      refetchInterval: (query) => {
+        const stage = query.state.data?.stage;
+        const stageActive = stage === "running" || stage === "chunking" || stage === "extracting";
+        return anyGenerating || stageActive ? 1500 : false;
+      },
+      queryKey: getGetMaterialProgressQueryKey(id),
+    },
   });
+
+  // Resumes tracking of a job that's still running on the server but whose
+  // local kitLoading flag was lost (page remount). Deliberately ignores a
+  // "done"/"error" stage here -- those persist in the server's in-memory
+  // tracker indefinitely, and resurrecting them on every later visit would
+  // wrongly re-show the "your kit is ready" card for materials whose kit
+  // finished generating in some earlier session.
+  useEffect(() => {
+    if (kitLoading || !generationProgress) return;
+    const stage = generationProgress.stage;
+    if (stage === "running" || stage === "chunking" || stage === "extracting") {
+      setKitLoading(true);
+      setKitError("");
+      if (generationProgress.result) setKitResult(prev => ({ ...prev, ...generationProgress.result }));
+    }
+  }, [generationProgress, kitLoading]);
 
   useEffect(() => {
     if (!kitLoading) { setProgressStep(0); setProgressValue(0); return; }

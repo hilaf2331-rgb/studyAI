@@ -76,34 +76,56 @@ export interface AIGenerationOptions {
 }
 
 // פונקציית עזר חסינת תקלות משופרת לחילוץ ופענוח JSON מה-AI
+//
+// jsonMode's responseMimeType is supposed to guarantee a bare JSON object,
+// but Gemini still sometimes prefixes it with markdown commentary/headers
+// (e.g. "## Chapter 2\n```json\n{...}\n```") rather than wrapping the whole
+// response in a fence anchored at position 0 -- so a fence stripped only at
+// the start/end of the string (the old behavior) misses anything that
+// precedes it. This now scans for a fenced block anywhere in the text first,
+// then falls back to locating the outermost { ... } pair, so leading
+// headers/prose never break the parse.
 function safeJsonParse(rawText: string): any {
   if (!rawText) return {};
-  // Strip ```json / ``` fences first -- jsonMode's responseMimeType should
-  // already prevent these, but some Gemini responses still wrap output in
-  // markdown fences regardless of the requested mime type.
-  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    try {
-      // חילוץ מדויק מהסוגריים המסולסלים הראשונים ועד האחרונים
-      const firstBrace = cleaned.indexOf('{');
-      const lastBrace = cleaned.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
-      }
-    } catch (innerError) {
-      // Truncated rather than the full text -- this is most often hit when
-      // the model's JSON got cut off mid-output (see thinkingBudget: 0
-      // below), so the interesting part is the END of the string, not a
-      // multi-KB dump of content that parsed fine up to that point.
-      console.error("Failed to parse AI JSON response. Last 500 chars:", cleaned.slice(-500));
-    }
-    return {};
+  let text = rawText.trim();
+
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    text = fenceMatch[1].trim();
   }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Fall through to brace extraction below.
+  }
+
+  try {
+    // חילוץ מדויק מהסוגריים המסולסלים הראשונים ועד האחרונים
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+    }
+  } catch {
+    // Truncated rather than the full text -- this is most often hit when
+    // the model's JSON got cut off mid-output (see thinkingBudget: 0
+    // below), so the interesting part is the END of the string, not a
+    // multi-KB dump of content that parsed fine up to that point.
+  }
+  console.error("Failed to parse AI JSON response. Last 500 chars:", text.slice(-500));
+  return {};
 }
 
-const SMART_STUDENT_SYSTEM_HE = `אתה תלמיד מחונן ונלהב שמסכם חומרי לימוד עבור חבריו לכיתה — מהסוג שכולם רוצים את הסיכומים שלו לפני המבחן.
+// Persona/grounding rules only -- deliberately excludes any JSON-format
+// directive, since this same text is reused by summarizeChunk's plain-text
+// (non-jsonMode) call below. Mixing a "you must output JSON only" rule into
+// a system prompt for a call that actually wants a plain bullet list is
+// what was producing the raw "{...}"-wrapped or markdown-fenced chunk
+// summaries bleeding into the final stitched content -- the model was
+// trying to satisfy both the system prompt's JSON mandate and the user
+// prompt's "plain text, no headings" request at once.
+const SMART_STUDENT_PERSONA_HE = `אתה תלמיד מחונן ונלהב שמסכם חומרי לימוד עבור חבריו לכיתה — מהסוג שכולם רוצים את הסיכומים שלו לפני המבחן.
 סגנון הכתיבה שלך: חם, ברור, ממוקד, אקדמי אך נגיש — כמו חבר טוב שמסביר ולא כמו ספר לימוד יבש.
 אתה משתמש בדוגמאות קונקרטיות כדי להמחיש מושגים מורכבים, ומוסיף "טיפ זהב" קצר במקומות שבהם תלמידים נוטים להתבלבל או לטעות במבחן.
 
@@ -115,10 +137,9 @@ STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
 5. STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts. Quality and precision always come before filling up quantity.
 6. MISSING CONTEXT: If the provided text is empty, unreadable, or too short/corrupted to contain real study content (e.g. an error message instead of actual material), DO NOT invent a summary from general knowledge. Instead return content/cards/questions that explicitly state the material could not be read and ask the user to re-upload it.
 
-ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.
-הפלט חייב להיות קובץ JSON תקני בלבד — אל תוסיף שום מילה, הסבר או סימני Markdown לפני או אחרי ה-JSON.`;
+ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.`;
 
-const SMART_STUDENT_SYSTEM_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates — the kind of student whose notes everyone wants before the exam.
+const SMART_STUDENT_PERSONA_EN = `You are a gifted and enthusiastic student who summarizes study materials for classmates — the kind of student whose notes everyone wants before the exam.
 Your writing style: warm, clear, focused, academic yet genuinely engaging — like a sharp friend explaining things over coffee, not a dry textbook.
 You identify what truly matters for exams, what is hard to understand, and what is worth remembering. You illustrate tricky concepts with concrete examples, and drop a short "Pro Tip" wherever students commonly get confused or lose points on exams.
 
@@ -126,8 +147,15 @@ STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating i
 
 MISSING CONTEXT: If the provided text is empty, unreadable, or too short/corrupted to contain real study content (e.g. an error message instead of actual material), DO NOT invent a summary from general knowledge. Instead return content that explicitly states the material could not be read and asks the user to re-upload it.
 
-Always respond in clear English only.
-Output must be a valid JSON object only — do not include any markdown formatting or commentary outside the JSON.`;
+Always respond in clear English only.`;
+
+const JSON_ONLY_SUFFIX_HE = `\n\nהפלט חייב להיות קובץ JSON תקני בלבד — אל תוסיף שום מילה, הסבר, כותרת או סימני Markdown לפני או אחרי ה-JSON. אסור לעטוף את ה-JSON בגדר קוד (\`\`\`json). התשובה כולה חייבת להתחיל ב-{ ולהסתיים ב-}, ללא שום תוכן נוסף.`;
+const JSON_ONLY_SUFFIX_EN = `\n\nOutput must be a valid JSON object only — do not include any markdown formatting, headings, or commentary outside the JSON. Never wrap the JSON in a code fence (\`\`\`json). The entire response must start with { and end with }, with nothing else before or after it.`;
+
+// Used by every jsonMode:true call below (flashcards, questions, exam,
+// summary synthesis) -- the persona plus the strict JSON-only directive.
+const SMART_STUDENT_SYSTEM_HE = SMART_STUDENT_PERSONA_HE + JSON_ONLY_SUFFIX_HE;
+const SMART_STUDENT_SYSTEM_EN = SMART_STUDENT_PERSONA_EN + JSON_ONLY_SUFFIX_EN;
 
 // 20,000 chars was cutting into the aggregated, already chunk-summarized
 // content fed to the final synthesis calls -- on an 84-page document that
@@ -531,11 +559,11 @@ async function summarizeChunk(
   total: number
 ): Promise<string> {
   const prompt = isHe
-    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.`
-    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nThoroughly and precisely summarize all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.`;
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.\n\nהפלט הוא טקסט רגיל בלבד -- אסור להחזיר JSON, אסור לעטוף את התשובה בגדר קוד (\`\`\`), ואל תחזור על הכותרת "## חלק ${index}/${total}" שמופיעה למעלה בתחילת התשובה שלך.`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nThoroughly and precisely summarize all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.\n\nOutput plain text only -- do not return JSON, do not wrap the response in a code fence (\`\`\`), and do not repeat the "## Part ${index}/${total}" heading shown above at the start of your answer.`;
 
   return callGeminiWithRetry({
-    systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+    systemInstruction: isHe ? SMART_STUDENT_PERSONA_HE : SMART_STUDENT_PERSONA_EN,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     temperature: 0.2,
     maxOutputTokens: CHUNK_COMPLETION_MAX_TOKENS,
@@ -704,6 +732,68 @@ function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boole
     : `\n\nQuestions already generated previously for this material — do not repeat these or close variations, create new and different questions:\n${list}\n`;
 }
 
+// Output-token ceiling for expanding ONE chunk's plain factual bullet list
+// (from buildAggregatedContent) into a full, structured Markdown chapter --
+// headings, bold terms, examples, tip callouts. Generous relative to
+// CHUNK_COMPLETION_MAX_TOKENS since this call is meant to genuinely deepen
+// and restructure that chunk's content, not just reformat a sentence of it.
+const CHUNK_RICH_CHAPTER_MAX_OUTPUT_TOKENS = 3000;
+
+// Turns one chunk's already-extracted facts into a deep, structured Markdown
+// chapter instead of leaving the final "Detailed Summary" as a flat,
+// unformatted stitch of factual bullet lists -- this is the actual
+// "reduction" step readers see, so it needs to read like the rest of the
+// app's rich summaries (headings, bold terms, worked examples, tip
+// callouts), not a compressed digest. Runs per chunk with its own bounded
+// output (same chunking discipline as flashcards/questions) so this can't
+// truncate or time out the way a single call over the whole document would.
+async function richifyChapter(
+  factualSummary: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number,
+): Promise<string> {
+  const prompt = isHe
+    ? `## פרק ${index}/${total} מחומר הלימוד "${materialTitle}" — להלן העובדות שחולצו מהקטע הזה של החומר:
+
+${factualSummary}
+
+---
+המשימה: הרחב את העובדות לעיל לפרק סיכום מפורט, מובנה ועמוק בעברית, בפורמט Markdown:
+- כותרת ראשית אחת (##) שמתארת את עיקרי הפרק
+- תתי-כותרות (###) לכל תת-נושא בתוך הפרק
+- נקודות (- ) לכל פרט עובדתי — חובה לכלול את כל העובדות שמופיעות לעיל, בלי לדלג על אף אחת
+- **הדגשה** למושגים ולמונחים קריטיים
+- לפחות דוגמה קונקרטית אחת (מתוך העובדות לעיל, לא מומצאת) לכל מושג מורכב או מופשט
+- בכל מקום שתלמידים נוטים להתבלבל, הוסף שורת "> 💡 **טיפ זהב:** ..." (כציטוט Markdown)
+
+אסור להמציא מידע שלא מופיע בעובדות לעיל. אסור לקצר, לסנן או לדלג על עובדות — המטרה היא להעמיק ולהבנות את התוכן הקיים, לא לסכם אותו מחדש בקיצור.
+הפלט הוא טקסט Markdown רגיל בלבד — אסור JSON, אסור גדר קוד (\`\`\`), בלי הקדמות לפני הכותרת.`
+    : `## Chapter ${index}/${total} of study material "${materialTitle}" -- facts extracted from this part of the material:
+
+${factualSummary}
+
+---
+Task: expand the facts above into a detailed, structured, in-depth summary chapter in English, in Markdown format:
+- One main heading (##) describing what this chapter covers
+- Sub-headings (###) for each sub-topic within the chapter
+- Bullet points (- ) for every factual detail -- you must include every fact listed above, skipping none
+- **Bold** key terms and critical concepts
+- At least one concrete example (drawn from the facts above, never invented) per complex or abstract concept
+- Wherever students commonly get confused, add a "> 💡 **Pro Tip:** ..." line (as a Markdown blockquote)
+
+Do not invent information that isn't in the facts above. Do not shorten, filter, or skip facts -- the goal is to deepen and structure the existing content, not re-summarize it briefly.
+Output plain Markdown text only -- no JSON, no code fence (\`\`\`), no preamble before the heading.`;
+
+  return callGeminiWithRetry({
+    systemInstruction: isHe ? SMART_STUDENT_PERSONA_HE : SMART_STUDENT_PERSONA_EN,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    temperature: 0.4,
+    maxOutputTokens: CHUNK_RICH_CHAPTER_MAX_OUTPUT_TOKENS,
+  });
+}
+
 export async function generateSummary(
   opts: AIGenerationOptions & { summaryType: string; topic?: string }
 ): Promise<{
@@ -754,9 +844,31 @@ export async function generateSummary(
   // here). Only the keyPoints + a short executive wrap-up come from a single,
   // lightweight, bounded-output Gemini call on top of that.
   if (chunked) {
-    const chapterBody = parts
-      .map((p, i) => (isHe ? `## פרק ${i + 1}\n${p}` : `## Chapter ${i + 1}\n${p}`))
-      .join("\n\n");
+    // Each chunk's factual bullet list (from buildAggregatedContent) gets its
+    // own bounded richifyChapter call rather than being stitched in raw --
+    // otherwise the final summary reads like a flat fact dump instead of the
+    // headed/bolded/example-laden chapters the non-chunked branch produces.
+    const richChapters: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      try {
+        const rich = await richifyChapter(parts[i], materialTitle, isHe, i + 1, parts.length);
+        richChapters.push(rich.trim() || (isHe ? `## פרק ${i + 1}\n${parts[i]}` : `## Chapter ${i + 1}\n${parts[i]}`));
+      } catch (err) {
+        if (err instanceof RateLimitExhaustedError) throw err;
+        console.error(`generateSummary: richify failed for chunk ${i + 1}/${parts.length}, falling back to raw chunk:`, err);
+        richChapters.push(isHe ? `## פרק ${i + 1}\n${parts[i]}` : `## Chapter ${i + 1}\n${parts[i]}`);
+      }
+
+      const completed = i + 1;
+      const percentage = Math.round((completed / parts.length) * 100);
+      if (materialId !== undefined) {
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+      }
+      if (completed < parts.length) {
+        await sleep(INTER_CHUNK_COOLDOWN_MS);
+      }
+    }
+    const chapterBody = richChapters.join("\n\n");
 
     const synthPrompt = isHe
       ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":

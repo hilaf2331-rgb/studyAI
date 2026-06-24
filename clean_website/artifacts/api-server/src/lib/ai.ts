@@ -761,6 +761,18 @@ type GeneratedQuestion = {
   modelAnswer?: string;
 };
 
+// One malformed entry (missing/wrong-typed field, often from the model's
+// JSON getting truncated mid-array) used to sink the whole response via a
+// blind .map() -- this drops only the bad entries so the rest of an
+// otherwise-valid batch still counts instead of triggering a full retry/skip.
+function filterValidQuestions(arr: any[]): GeneratedQuestion[] {
+  return arr.filter((q): q is GeneratedQuestion =>
+    q && typeof q.question === "string" && q.question.trim().length > 0 &&
+    typeof q.answer === "string" && q.answer.trim().length > 0 &&
+    Array.isArray(q.options) && q.options.every((o: any) => typeof o === "string")
+  );
+}
+
 function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boolean): string {
   if (existingQuestionTexts.length === 0) return "";
   const list = existingQuestionTexts.slice(0, 50).map((q) => `- ${q}`).join("\n");
@@ -1512,8 +1524,12 @@ function examTypeDesc(examType: string, isHe: boolean): string {
     : (EXAM_TYPE_MAP[examType]?.en ?? EXAM_TYPE_MAP.practice.en);
 }
 
-// Output-token ceiling for ONE chunk's worth of exam questions.
-const CHUNK_EXAM_MAX_OUTPUT_TOKENS = 2500;
+// Output-token ceiling for ONE chunk's worth of exam questions. Higher than
+// the equivalent questions-pipeline cap (2500) because every exam chunk
+// always mixes in open questions with a full modelAnswer, which run
+// noticeably longer than multiple_choice/true_false -- the old 2500 cap was
+// truncating those mid-object often enough to fail validation on every chunk.
+const CHUNK_EXAM_MAX_OUTPUT_TOKENS = 4096;
 const EXAM_QUESTIONS_PER_CHUNK_CAP = 4;
 
 async function generateExamQuestionsForChunk(
@@ -1582,8 +1598,8 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
-      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
-        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+      const result = Array.isArray(parsed.questions)
+        ? filterValidQuestions(parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 })))
         : [];
       if (result.length === 0) throw new Error("empty questions array");
       return result;
@@ -1731,8 +1747,8 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
-      const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
-        ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
+      const result = Array.isArray(parsed.questions)
+        ? filterValidQuestions(parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 })))
         : [];
       if (result.length === 0) throw new Error("empty questions array");
       return result;

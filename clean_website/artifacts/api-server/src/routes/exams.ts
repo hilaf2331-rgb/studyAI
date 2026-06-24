@@ -101,12 +101,31 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
       "generateExamAI",
     );
 
+    // Coerce/sanitize every row right at the DB boundary -- ai.ts already
+    // filters out structurally invalid questions, but this is the last line
+    // of defense against a stray non-string options element or wrong-typed
+    // field reaching the questions.options text[] column and blowing up the
+    // whole bulk insert (and with it, every otherwise-good question in the
+    // batch) with a DrizzleQueryError. Computed before the exam row itself
+    // so questionCount reflects what actually gets inserted.
+    const rows = generated
+      .filter(q => typeof q.question === "string" && q.question.trim().length > 0 && typeof q.answer === "string" && q.answer.trim().length > 0)
+      .map(q => ({
+        questionType: typeof q.questionType === "string" ? q.questionType : "multiple_choice",
+        question: q.question,
+        answer: q.answer,
+        explanation: typeof q.explanation === "string" ? q.explanation : null,
+        modelAnswer: typeof q.modelAnswer === "string" ? q.modelAnswer : null,
+        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === "string") : [],
+        difficulty: typeof q.difficulty === "string" ? q.difficulty : "medium",
+      }));
+
     const [exam] = await db.insert(examsTable).values({
       materialId,
       title: `${material.title} - ${body.examType} Exam`,
       language: body.language,
       examType: body.examType,
-      questionCount: generated.length,
+      questionCount: rows.length,
       timeLimitMinutes: body.timeLimitMinutes || null,
       difficulty: body.difficulty || "mixed",
     }).returning();
@@ -120,19 +139,8 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
       return;
     }
 
-    if (generated.length > 0) {
-      await db.insert(questionsTable).values(
-        generated.map(q => ({
-          examId: exam.id,
-          questionType: q.questionType || "multiple_choice",
-          question: q.question,
-          answer: q.answer,
-          explanation: q.explanation || null,
-          modelAnswer: q.modelAnswer || null,
-          options: q.options || [],
-          difficulty: q.difficulty || "medium",
-        }))
-      );
+    if (rows.length > 0) {
+      await db.insert(questionsTable).values(rows.map(r => ({ ...r, examId: exam.id })));
     }
 
     await db.insert(activityTable).values({
@@ -149,7 +157,7 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
       totalChunks: 0,
       percentage: 100,
       stage: "done",
-      result: { exam: { id: exam.id, questionCount: generated.length } },
+      result: { exam: { id: exam.id, questionCount: rows.length } },
     });
   } catch (err) {
     logger.error({ err, materialId }, "exams: unhandled background failure");

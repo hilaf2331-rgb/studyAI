@@ -379,21 +379,27 @@ async function summarizeChunk(
   });
 }
 
+// Chunks are summarized in small concurrent batches rather than one at a
+// time. A single 84-page document can split into 10+ chunks, and at ~5-15s
+// per Gemini call, doing them sequentially is what was blowing past
+// generate-all's internal timeout -- this cuts wall-clock time by roughly
+// the batch size while staying well under Gemini's free-tier RPM ceiling.
+const CHUNK_BATCH_SIZE = 4;
+
 /**
  * For long documents, splits the text into large chunks and summarizes them
- * one at a time, stitching the per-chunk summaries back together. The result
- * is a much shorter string that still covers the *entire* document, so the
- * downstream generation call (summary/flashcards/questions/exam) never has
- * to silently truncate the tail of a large file. Short documents pass
- * through unchanged. Gemini's free tier (15 requests/minute) doesn't require
- * the inter-request throttling Groq's tight TPM cap used to force.
+ * in small concurrent batches, stitching the per-chunk summaries back
+ * together in original order. The result is a much shorter string that
+ * still covers the *entire* document, so the downstream generation call
+ * (summary/flashcards/questions/exam) never has to silently truncate the
+ * tail of a large file. Short documents pass through unchanged.
  *
  * A chunk that still fails after all retries is replaced with a placeholder
  * note instead of throwing, so one bad chunk doesn't take down the whole
  * request with a 500 — the rest of the document is still summarized.
  *
  * When materialId is given, "chunk X of Y" progress is recorded after every
- * chunk so the frontend can poll GET /materials/:id/progress and show the
+ * batch so the frontend can poll GET /materials/:id/progress and show the
  * user real status during processing instead of a bare spinner.
  */
 async function buildAggregatedContent(
@@ -416,29 +422,45 @@ async function buildAggregatedContent(
     return { content: materialContent };
   }
 
-  const partials: string[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    try {
-      partials.push(await summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length));
-    } catch (error) {
-      if (error instanceof RateLimitExhaustedError) {
-        // The rate-limit window is confirmed exhausted — don't keep burning
-        // budget on the remaining chunks, abort the whole request
-        // immediately so the user gets the alert right away.
-        console.error(`Aborting chunk processing at ${i + 1}/${chunks.length}: rate limit exhausted (retry-after=${error.retryAfterSeconds}s).`);
-        throw error;
-      }
-      console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, error);
-      partials.push(
-        isHe
-          ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
-          : "[This part of the material could not be processed due to a temporary error]"
-      );
+  const partials: string[] = new Array(chunks.length);
+  for (let batchStart = 0; batchStart < chunks.length; batchStart += CHUNK_BATCH_SIZE) {
+    const batchIndexes = Array.from(
+      { length: Math.min(CHUNK_BATCH_SIZE, chunks.length - batchStart) },
+      (_, j) => batchStart + j,
+    );
+
+    const settled = await Promise.allSettled(
+      batchIndexes.map((i) => summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length)),
+    );
+
+    const rateLimitFailure = settled.find(
+      (r) => r.status === "rejected" && r.reason instanceof RateLimitExhaustedError,
+    ) as PromiseRejectedResult | undefined;
+    if (rateLimitFailure) {
+      // The rate-limit window is confirmed exhausted — don't keep burning
+      // budget on the remaining chunks, abort the whole request
+      // immediately so the user gets the alert right away.
+      console.error(`Aborting chunk processing in batch starting at ${batchStart}: rate limit exhausted.`);
+      throw rateLimitFailure.reason;
     }
-    const percentage = Math.round(((i + 1) / chunks.length) * 100);
-    console.log(`Processed ${i + 1} out of ${chunks.length} chunks (${percentage}%)`);
+
+    settled.forEach((result, j) => {
+      const i = batchIndexes[j];
+      if (result.status === "fulfilled") {
+        partials[i] = result.value;
+      } else {
+        console.error(`Failed to summarize chunk ${i + 1}/${chunks.length} after retries:`, result.reason);
+        partials[i] = isHe
+          ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
+          : "[This part of the material could not be processed due to a temporary error]";
+      }
+    });
+
+    const completed = batchStart + batchIndexes.length;
+    const percentage = Math.round((completed / chunks.length) * 100);
+    console.log(`Processed ${completed} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
-      setGenerationProgress(materialId, { currentChunk: i + 1, totalChunks: chunks.length, percentage, stage: "chunking" });
+      setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage, stage: "chunking" });
     }
   }
 

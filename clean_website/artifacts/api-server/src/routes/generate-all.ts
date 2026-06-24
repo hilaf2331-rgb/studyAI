@@ -12,11 +12,18 @@ const router = Router();
 
 // Per-task timeout. Each Gemini call gets its own clock instead of sharing
 // one budget, so a single slow call can't silently swallow the others'
-// remaining time. Must stay comfortably above ai.ts's own internal retry
-// budget (~110.5s worst case: 4 attempts x 25s timeout + backoff) so a real
-// retry exhaustion produces our clear "network or service issue" message
-// instead of this generic timeout firing first.
-const AI_TASK_TIMEOUT_MS = 140_000;
+// remaining time. This only bounds a background promise (the 202 response
+// has already gone out by the time runGenerateAll runs -- see below), so it
+// isn't constrained by Render's proxy or any HTTP timeout; it just needs to
+// stay comfortably above the worst case for a large, chunked document.
+// generateSummary/generateFlashcardsAI/generateQuestionsAI each chunk the
+// material via buildAggregatedContent (batches of CHUNK_BATCH_SIZE chunks
+// run concurrently, ai.ts), then make one further synthesis call. An
+// 80+ page document can split into a dozen-plus chunks; even in batches of
+// 4, with ai.ts's own per-call retry budget (~110.5s worst case: 4 attempts
+// x 25s timeout + backoff) on a couple of those batches, this needs much
+// more headroom than a single-call budget would.
+const AI_TASK_TIMEOUT_MS = 480_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
+import { generateSummaryAndFlashcards, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -17,17 +17,16 @@ const router = Router();
 // has already gone out by the time runGenerateAll runs -- see below), so it
 // isn't constrained by Render's proxy or any HTTP timeout; it just needs to
 // stay comfortably above the worst case for a large, chunked document.
-// generateSummary/generateFlashcardsAI/generateQuestionsAI each chunk the
-// material via buildAggregatedContent, which (ai.ts) now processes chunks
-// strictly one at a time (CONCURRENCY_LIMIT = 1) with a fixed cooldown
-// between them, trading speed for reliability against Gemini's 503 "high
-// demand" errors. Per-chunk worst case in ai.ts is ~256s (4 attempts x 60s
-// ATTEMPT_TIMEOUT_MS + full exponential backoff with jitter), so a dozen-plus
-// chunks each hitting that worst case -- extremely unlikely, but this is a
-// ceiling, not an estimate -- could take the better part of an hour. Sized
-// generously rather than tightly since the cost of cutting a real,
-// in-progress generation short is much higher than the cost of a stuck job
-// taking longer to time out.
+// generateSummaryAndFlashcards splits the raw document into ~15,000-char
+// sub-chunks (ai.ts) and processes them strictly one at a time with a fixed
+// cooldown between them, trading speed for reliability against Gemini's 503
+// "high demand" errors. Per-chunk worst case in ai.ts is ~256s (4 attempts x
+// 60s ATTEMPT_TIMEOUT_MS + full exponential backoff with jitter), so a
+// dozen-plus chunks each hitting that worst case -- extremely unlikely, but
+// this is a ceiling, not an estimate -- could take the better part of an
+// hour. Sized generously rather than tightly since the cost of cutting a
+// real, in-progress generation short is much higher than the cost of a
+// stuck job taking longer to time out.
 const AI_TASK_TIMEOUT_MS = 1_800_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -72,12 +71,13 @@ function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
 // (success or failure) ends by writing a terminal "done"/"error" progress
 // entry, since that's the only signal the polling frontend ever gets.
 //
-// Summary, flashcards, and questions are generated in three dedicated
-// sequential stages rather than one concurrent Promise.allSettled batch --
-// each stage's own failure (after its internal retries) is caught locally
-// and replaced with a clear fallback instead of aborting the other stages,
-// so e.g. a flaky question-generation call can never take down an otherwise
-// successful summary + flashcard run.
+// Summary+flashcards (one strict chunk-by-chunk MapReduce pass, see
+// generateSummaryAndFlashcards in ai.ts) and practice questions are
+// generated in two dedicated sequential stages rather than one concurrent
+// Promise.allSettled batch -- each stage's own failure (after its internal
+// retries) is caught locally and replaced with a clear fallback instead of
+// aborting the other stage, so e.g. a flaky question-generation call can
+// never take down an otherwise successful summary + flashcard run.
 async function runGenerateAll(material: MaterialRow, userId: number, content: string): Promise<void> {
   const materialId = material.id;
   const language = "he" as const;
@@ -85,62 +85,53 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
   try {
     const { maxFlashcards } = getDynamicGenerationLimits(content.length);
 
-    // Stage 1/3: summary -- top priority, must be thorough. A failure here
-    // no longer aborts the whole job; it's replaced with a clear fallback
-    // message so flashcards/questions still get a chance to run.
-    console.log(`generate-all[${materialId}]: stage 1/3 -- generating summary...`);
+    // Stage 1/2: summary + flashcards -- both top priority, thorough
+    // coverage of the whole document. Processed together because they now
+    // share a single chunk-by-chunk pass over the raw material (one isolated
+    // Gemini call per ~15,000-char sub-chunk producing that sub-chunk's
+    // summary AND flashcards together) instead of each independently
+    // re-chunking and re-summarizing the same document. A failure here
+    // falls back to a clear message / empty deck rather than aborting the
+    // job -- questions still get a chance to run.
+    console.log(`generate-all[${materialId}]: stage 1/2 -- generating summary + flashcards (up to ${maxFlashcards} cards)...`);
     let summaryResult: { content: string; keyPoints: string[] };
+    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
     let summaryFailed = false;
+    let flashFailed = false;
     try {
-      summaryResult = await withTimeout(
-        generateSummary({
+      const result = await withTimeout(
+        generateSummaryAndFlashcards({
           language,
           materialContent: content,
           materialTitle: material.title,
           summaryType: "detailed",
+          maxFlashcards,
+          cardTypes: ["definition", "qa", "formula", "concept"],
         }),
         AI_TASK_TIMEOUT_MS,
-        "generateSummary",
+        "generateSummaryAndFlashcards",
       );
-      console.log(`generate-all[${materialId}]: summary stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points.`);
+      summaryResult = result.summary;
+      flashResult = result.flashcards;
+      flashFailed = flashResult.length === 0;
+      console.log(`generate-all[${materialId}]: summary+flashcards stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points, ${flashResult.length} cards.`);
     } catch (err) {
       summaryFailed = true;
-      logger.error({ err, materialId }, "generate-all: summary generation failed, using fallback");
+      flashFailed = true;
+      logger.error({ err, materialId }, "generate-all: summary+flashcards generation failed, using fallback");
       summaryResult = {
         content: userFacingAIErrorMessage(err, "לא ניתן היה ליצור סיכום עבור מסמך זה. אנא נסה שוב."),
         keyPoints: [],
       };
     }
 
-    // Stage 2/3: flashcards -- also top priority, thorough coverage of the
-    // document (dynamic cap based on content length). A failure leaves an
-    // empty deck rather than aborting.
-    console.log(`generate-all[${materialId}]: stage 2/3 -- generating flashcards (up to ${maxFlashcards})...`);
-    let flashResult: Awaited<ReturnType<typeof generateFlashcardsAI>> = [];
-    let flashFailed = false;
-    try {
-      flashResult = await withTimeout(
-        generateFlashcardsAI({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          cardCount: maxFlashcards,
-          cardTypes: ["definition", "qa", "formula", "concept"],
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateFlashcardsAI",
-      );
-      console.log(`generate-all[${materialId}]: flashcards stage done -- ${flashResult.length} cards.`);
-    } catch (err) {
-      flashFailed = true;
-      logger.warn({ err, materialId }, "generate-all: flashcard generation failed, continuing without it");
-    }
-
-    // Stage 3/3: practice questions -- fixed at PRACTICE_QUESTION_COUNT
+    // Stage 2/2: practice questions -- fixed at PRACTICE_QUESTION_COUNT
     // (one quiz's worth per run; re-run for a fresh set), excluding any
     // question already generated for this material in a previous run/exam
-    // so repeated runs don't just hand back the same quiz.
-    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
+    // so repeated runs don't just hand back the same quiz. Generated from
+    // the summary just assembled above (small) rather than the raw document,
+    // so this stage never re-chunks the material a third time.
+    console.log(`generate-all[${materialId}]: stage 2/2 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
     let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
     let questionFailed = false;
     try {
@@ -154,6 +145,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           questionTypes: ["multiple_choice", "true_false"],
           difficulty: "mixed",
           excludeQuestions,
+          precomputedContent: summaryFailed ? undefined : summaryResult.content,
         }),
         AI_TASK_TIMEOUT_MS,
         "generateQuestionsAI",

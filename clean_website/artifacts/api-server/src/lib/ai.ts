@@ -616,6 +616,235 @@ function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boole
     : `\n\nQuestions already generated previously for this material — do not repeat these or close variations, create new and different questions:\n${list}\n`;
 }
 
+// Strict chunk-by-chunk pipeline used by generate-all.ts for large
+// documents. Previously, generateSummary/generateFlashcardsAI/
+// generateQuestionsAI each independently re-chunked and re-summarized the
+// SAME raw document via their own buildAggregatedContent call -- on an
+// 84-page document that tripled the number of Gemini calls a single run
+// made, and the final flashcard/exam/question call still got the entire
+// (now large) aggregated content in one shot, risking the truncation and
+// 503s reported against that document. This collapses summary + flashcard
+// generation into ONE pass: each ~15,000-char sub-chunk (roughly 5-8 pages)
+// gets exactly one isolated Gemini call producing both its factual summary
+// and its flashcards together, so no single call's input or output payload
+// ever approaches the sizes that were triggering failures.
+const SUBCHUNK_CHAR_LIMIT = 15000;
+const CHUNK_COMBINED_MAX_OUTPUT_TOKENS = 3000;
+const MAX_CARDS_PER_CHUNK = 6;
+
+async function processSummaryAndFlashcardsChunk(
+  chunk: string,
+  materialTitle: string,
+  isHe: boolean,
+  index: number,
+  total: number,
+  cardsForChunk: number,
+): Promise<{ summary: string; cards: Array<{ front: string; back: string; difficulty: string; cardType: string }> }> {
+  const prompt = isHe
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
+
+${chunk}
+
+---
+בצע שתי משימות על הקטע הזה בלבד -- אל תתייחס לחלקים אחרים של החומר:
+1. summary: סכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע, כרשימת נקודות עובדתיות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף מידע שלא מופיע בקטע.
+2. cards: צור עד ${cardsForChunk} כרטיסיות לימוד ייחודיות, מבוססות רק על עובדות מהקטע הזה. אם אין מספיק עובדות שונות -- צור פחות כרטיסיות, אסור לחזור על מושג.
+
+החזר JSON בלבד במבנה הבא:
+{"summary": "...", "cards": [{"front": "שאלה", "back": "תשובה", "difficulty": "medium", "cardType": "definition"}]}`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"
+
+${chunk}
+
+---
+Do two tasks on this part only -- do not reference other parts:
+1. summary: thoroughly and precisely summarize all facts, concepts, and important points in this part as a factual bullet list, no headings or preamble. Omit nothing substantive, add nothing not in this part.
+2. cards: create up to ${cardsForChunk} unique flashcards based only on facts in this part. Create fewer if there aren't enough distinct facts -- never repeat a concept.
+
+Return ONLY JSON matching this structure:
+{"summary": "...", "cards": [{"front": "question", "back": "answer", "difficulty": "medium", "cardType": "definition"}]}`;
+
+  return callGeminiJsonWithValidation(
+    {
+      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      temperature: 0.3,
+      jsonMode: true,
+      maxOutputTokens: CHUNK_COMBINED_MAX_OUTPUT_TOKENS,
+    },
+    (text) => {
+      const parsed = safeJsonParse(text);
+      const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+      const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
+      if (!summary && cards.length === 0) throw new Error("empty summary and cards");
+      return { summary, cards };
+    },
+    `processSummaryAndFlashcardsChunk(${index}/${total})`,
+  );
+}
+
+/**
+ * Strict MapReduce pipeline for large documents: splits the raw material
+ * into ~15,000-char sub-chunks and makes exactly one isolated Gemini call
+ * per chunk for both its summary and its flashcards (see
+ * processSummaryAndFlashcardsChunk above), processed strictly sequentially
+ * with the same inter-chunk cooldown buildAggregatedContent uses. A chunk
+ * that fails after every retry is replaced with a placeholder summary and
+ * simply contributes no cards, instead of aborting the whole document --
+ * the same "fail one part, not the run" guarantee buildAggregatedContent
+ * already gives the rest of the pipeline. A confirmed rate-limit exhaustion
+ * still aborts immediately rather than burning the rest of the budget on
+ * chunks that would also fail.
+ *
+ * Short/unchunked documents fall through to the existing single-call
+ * generateSummary/generateFlashcardsAI implementations unchanged, since
+ * those already work reliably at that size.
+ */
+export async function generateSummaryAndFlashcards(
+  opts: AIGenerationOptions & { summaryType: string; maxFlashcards: number; cardTypes: string[] }
+): Promise<{
+  summary: { content: string; keyPoints: string[] };
+  flashcards: Array<{ front: string; back: string; difficulty: string; cardType: string }>;
+}> {
+  const { language, materialContent, materialTitle, materialId, maxFlashcards } = opts;
+  const isHe = language === "he";
+
+  checkCircuitBreaker();
+
+  try {
+    if (materialContent.length <= CHUNK_TRIGGER_CHAR_LENGTH) {
+      const [summary, flashcards] = await Promise.all([
+        generateSummary(opts),
+        generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
+      ]);
+      return { summary, flashcards };
+    }
+
+    const chunks = splitTextIntoChunks(materialContent, SUBCHUNK_CHAR_LIMIT);
+    if (chunks.length <= 1) {
+      const [summary, flashcards] = await Promise.all([
+        generateSummary(opts),
+        generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
+      ]);
+      return { summary, flashcards };
+    }
+
+    const cardsPerChunk = Math.max(1, Math.min(MAX_CARDS_PER_CHUNK, Math.ceil(maxFlashcards / chunks.length)));
+    const chapterParts: string[] = new Array(chunks.length);
+    const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const { summary, cards } = await processSummaryAndFlashcardsChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length, cardsPerChunk);
+        chapterParts[i] = summary || (isHe
+          ? "[לא נמצאו עובדות נוספות בחלק זה]"
+          : "[No additional facts found in this part]");
+        allCards.push(...cards);
+      } catch (err) {
+        if (err instanceof RateLimitExhaustedError) throw err;
+        console.error(`generateSummaryAndFlashcards: chunk ${i + 1}/${chunks.length} failed after retries:`, err);
+        chapterParts[i] = isHe
+          ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
+          : "[This part of the material could not be processed due to a temporary error]";
+      }
+
+      const completed = i + 1;
+      const percentage = Math.round((completed / chunks.length) * 100);
+      console.log(`generateSummaryAndFlashcards: processed ${completed}/${chunks.length} chunks (${percentage}%), ${allCards.length} cards so far.`);
+      if (materialId !== undefined) {
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage, stage: "chunking" });
+      }
+      if (completed < chunks.length) {
+        await sleep(INTER_CHUNK_COOLDOWN_MS);
+      }
+    }
+
+    const seenFronts = new Set<string>();
+    const flashcards = allCards
+      .filter((c) => {
+        const norm = normalizeQuestionText(c.front || "");
+        if (!norm || seenFronts.has(norm)) return false;
+        seenFronts.add(norm);
+        return true;
+      })
+      .slice(0, maxFlashcards);
+
+    const chapterBody = chapterParts
+      .map((p, i) => (isHe ? `## פרק ${i + 1}\n${p}` : `## Chapter ${i + 1}\n${p}`))
+      .join("\n\n");
+
+    // Only the keyPoints + a short executive wrap-up come from one more,
+    // lightweight, bounded-output Gemini call on top of the already-assembled
+    // chapter body -- never the full chapter text fed through a second large
+    // synthesis call. A failure here degrades to no keyPoints/executiveSummary
+    // rather than losing the (already-assembled, much bigger) chapter body.
+    let keyPoints: string[] = [];
+    let executiveSummary = "";
+    try {
+      const synthPrompt = isHe
+        ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
+
+${contentSlice(chapterBody)}
+
+---
+המשימה שלך: קרא את כל הפרקים מעלה וצור:
+1. keyPoints — מערך של 5–8 משפטים קצרים, הכי חשובים מכל החומר (מה שהייתה רוצה לדעת לפני הבחינה).
+2. executiveSummary — פסקת "סיכום מנהלים" חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור", המכסה את כל הפרקים.
+
+החזר JSON בלבד במבנה הבא:
+{
+  "keyPoints": ["נקודה 1", "נקודה 2", "נקודה 3", "נקודה 4", "נקודה 5"],
+  "executiveSummary": "פסקת סיכום מנהלים כאן"
+}`
+        : `## Chapter-by-chapter summary of study material "${materialTitle}":
+
+${contentSlice(chapterBody)}
+
+---
+Your task: read every chapter above and produce:
+1. keyPoints — an array of 5-8 short sentences, the most important things from the whole material (what you'd want to know before the exam).
+2. executiveSummary — a warm 3-5 sentence "executive summary" wrap-up, written like you're telling a friend "here's what actually matters", covering all the chapters.
+
+Return ONLY JSON matching this structure:
+{
+  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
+  "executiveSummary": "Executive summary paragraph here"
+}`;
+
+      const result = await callGeminiJsonWithValidation(
+        {
+          systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+          contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
+          temperature: 0.4,
+          jsonMode: true,
+          maxOutputTokens: 2000,
+        },
+        (text) => {
+          const parsed = safeJsonParse(text);
+          const kp = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
+          const exec = typeof parsed.executiveSummary === "string" ? parsed.executiveSummary : "";
+          if (kp.length === 0 && !exec) throw new Error("empty keyPoints and executiveSummary");
+          return { keyPoints: kp, executiveSummary: exec };
+        },
+        "generateSummaryAndFlashcards(keyPoints)",
+      );
+      keyPoints = result.keyPoints;
+      executiveSummary = result.executiveSummary;
+    } catch (err) {
+      console.error("generateSummaryAndFlashcards: keyPoints/executiveSummary synthesis failed, continuing without it:", err);
+    }
+
+    const execHeading = isHe ? "## סיכום מנהלים" : "## Executive Summary";
+    const content = executiveSummary ? `${chapterBody}\n\n${execHeading}\n${executiveSummary}` : chapterBody;
+
+    console.log(`generateSummaryAndFlashcards: assembled ${chapterParts.length}-chapter summary (${content.length} chars, ${keyPoints.length} key points) and ${flashcards.length} flashcards for material ${materialId ?? "?"}.`);
+
+    return { summary: { content, keyPoints }, flashcards };
+  } finally {
+    if (materialId !== undefined) clearGenerationProgress(materialId);
+  }
+}
+
 export async function generateSummary(
   opts: AIGenerationOptions & { summaryType: string; topic?: string }
 ): Promise<{ content: string; keyPoints: string[] }> {
@@ -877,12 +1106,20 @@ Return ONLY JSON matching this structure:
 }
 
 export async function generateQuestionsAI(
-  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedContent?: string }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedContent } = opts;
   const isHe = language === "he";
   try {
-  const { content: aggregatedContent } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  // generate-all.ts passes the already-assembled summary (small) here
+  // instead of the raw document, so the question stage doesn't redundantly
+  // re-chunk and re-summarize the same material a third time -- see
+  // generateSummaryAndFlashcards above. Other callers (the standalone
+  // practice-questions and exam routes) don't pass this, so they keep
+  // chunking the raw material themselves as before.
+  const { content: aggregatedContent } = precomputedContent !== undefined
+    ? { content: precomputedContent }
+    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
   const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
 
   const userPrompt = isHe

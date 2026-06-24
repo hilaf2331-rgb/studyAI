@@ -25,6 +25,7 @@ import {
   Sparkles, Zap, CheckCircle2, AlertCircle, Eye, Plus
 } from "lucide-react";
 import { Link } from "wouter";
+import { StudyTipsCarousel } from "@/components/study-tips-carousel";
 
 function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
@@ -375,8 +376,25 @@ export const MaterialDetailPage: React.FC = () => {
           )}
           {kitLoading && (
             <div className="space-y-4">
-              <p className="font-semibold text-sm">{progressSteps[progressStep]}</p>
-              <Progress value={progressValue} className="h-2" />
+              {generationProgress && generationProgress.totalChunks > 0 ? (
+                <>
+                  <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
+                    <span className="font-semibold">
+                      {isRTL
+                        ? `מעבד חלק ${generationProgress.currentChunk} מ-${generationProgress.totalChunks}...`
+                        : `Processing chunk ${generationProgress.currentChunk} of ${generationProgress.totalChunks}...`}
+                    </span>
+                    <span className="text-muted-foreground">{generationProgress.percentage}%</span>
+                  </div>
+                  <Progress value={generationProgress.percentage} className="h-2" />
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-sm">{progressSteps[progressStep]}</p>
+                  <Progress value={progressValue} className="h-2" />
+                </>
+              )}
+              <StudyTipsCarousel isRTL={isRTL} />
             </div>
           )}
           {kitResult && !kitLoading && (

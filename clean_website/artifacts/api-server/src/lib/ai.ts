@@ -14,7 +14,11 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // gemini-1.5-flash was fully retired by Google on 2025-09-24 -- every call
 // to it now 404s immediately (not retryable), which is why failures here
 // surface in seconds rather than after the full retry budget is exhausted.
-const TEXT_MODEL = "gemini-3.5-flash";
+// gemini-3.5-flash (the current stable GA default) is hitting sustained 503
+// "high demand" capacity errors even with the widened retry budget below --
+// falling back to gemini-2.5-flash, which is still fully supported until
+// its scheduled retirement on 2026-10-16.
+const TEXT_MODEL = "gemini-2.5-flash";
 // Audio transcription (Whisper) stays on Groq — see extractor.ts, which
 // reads GROQ_API_KEY directly via a raw fetch call. This constant is kept
 // here only because extractor.ts imports it alongside other AI helpers.

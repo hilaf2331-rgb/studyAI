@@ -31,6 +31,16 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
+// Mobile share sheets hand out youtu.be links with a `?si=...` tracking
+// param attached (and users paste embed/shorts URLs too) -- once the 11-char
+// ID is reliably extracted above, every downstream call (oEmbed existence
+// check, Gemini's native video fetch) uses this canonical watch URL instead
+// of whatever shape the user actually pasted, so neither has to guess how to
+// handle a tracking param or short-link format it wasn't built to expect.
+function canonicalYouTubeUrl(videoId: string): string {
+  return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
 // Thrown when YouTube's own oEmbed endpoint confirms the video doesn't
 // exist, was removed, or is private -- a clean, specific error (rather than
 // a generic Error) so callers (see materials.ts) can recognize it and skip
@@ -76,6 +86,7 @@ export async function extractYouTube(
 ): Promise<ExtractedContent> {
   const videoId = getYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube URL");
+  const canonicalUrl = canonicalYouTubeUrl(videoId);
 
   onProgress?.(10);
 
@@ -88,7 +99,7 @@ export async function extractYouTube(
   // as if validation was never run.
   let metadata: { title: string; author?: string } | undefined;
   try {
-    metadata = await fetchYouTubeOEmbed(url);
+    metadata = await fetchYouTubeOEmbed(canonicalUrl);
   } catch (error) {
     if (error instanceof YouTubeVideoNotFoundError) throw error;
     console.warn(
@@ -118,7 +129,7 @@ export async function extractYouTube(
   onProgress?.(50);
 
   try {
-    const text = await generateContentFromYouTubeVideo(url, language);
+    const text = await generateContentFromYouTubeVideo(canonicalUrl, language);
     if (text && text.trim()) {
       onProgress?.(100);
       return { text: sanitizeExtractedText(text) };
@@ -126,7 +137,7 @@ export async function extractYouTube(
   } catch (error) {
     if (error instanceof RateLimitExhaustedError || error instanceof SystemBlockedError) throw error;
     console.warn(
-      `extractYouTube: Gemini native video analysis failed for ${url}, falling back to metadata-only summary:`,
+      `extractYouTube: Gemini native video analysis failed for ${canonicalUrl}, falling back to metadata-only summary:`,
       error instanceof Error ? error.message : error,
     );
   }
@@ -137,8 +148,8 @@ export async function extractYouTube(
   // unless that call itself failed for a non-404/401 (flaky) reason -- in
   // that case it's worth one more attempt here since this is the last
   // fallback before giving up entirely.
-  const finalMetadata = metadata ?? (await fetchYouTubeOEmbed(url));
-  const text = await generateContentFromVideoMetadata(finalMetadata, url, language);
+  const finalMetadata = metadata ?? (await fetchYouTubeOEmbed(canonicalUrl));
+  const text = await generateContentFromVideoMetadata(finalMetadata, canonicalUrl, language);
 
   onProgress?.(100);
   return { text: sanitizeExtractedText(text) };

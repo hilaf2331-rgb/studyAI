@@ -4,7 +4,7 @@ import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTabl
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError } from "../lib/tokens";
 import { mediaTooLargeMessage } from "../lib/validation";
 
 const router = Router();
@@ -67,6 +67,18 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return res.status(413).json({ error: mediaTooLargeMessage("he"), code: "RECORDING_TOO_LONG" });
   }
 
+  // Beta-only hard cap on total processing actions -- a live recording is a
+  // processing action just like a material upload, checked before
+  // transcription starts.
+  try {
+    await requireActionsRemaining(userId);
+  } catch (err: any) {
+    if (err instanceof BetaActionLimitError) {
+      return res.status(403).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
   const audioData = req.file.buffer.toString("base64");
 
   let extractedText = "";
@@ -90,6 +102,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     extractedText,
     duration: durationSeconds,
   }).returning();
+  await incrementActionsUsed(userId);
 
   // Save recording row immediately so we can return something useful
   const [recording] = await db.insert(recordingsTable).values({

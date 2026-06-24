@@ -1,5 +1,5 @@
 import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
 
 // Admin/dev accounts that bypass token-balance checks entirely -- so testing
@@ -59,4 +59,51 @@ export async function deductTokensForGeneration(userId: number, inputText: strin
   if (!balance) return;
   const next = Math.max(0, balance.tokensRemaining - used);
   await db.update(usersTable).set({ tokensRemaining: next }).where(eq(usersTable.id, userId));
+}
+
+// Beta-only hard cap on total processing actions (material uploads +
+// recordings) per user, independent of the token budget above -- the token
+// budget limits AI generation cost, this caps upload volume itself so a
+// single beta tester can't create unlimited materials. One flat number for
+// the whole beta period, not a daily/monthly rate.
+export const MAX_BETA_ACTIONS = 10;
+
+// Thrown before a material/recording is processed once a user has used up
+// all MAX_BETA_ACTIONS. Callers should check this before any
+// extraction/transcription work starts, same fail-fast pattern as
+// requireTokenBalance().
+export class BetaActionLimitError extends Error {
+  readonly code = "BETA_LIMIT_REACHED";
+  constructor() {
+    super("הגעת למגבלת הבטא החינמית! תודה שעזרת לנו לבדוק את האתר 🙏");
+  }
+}
+
+export async function getActionsStatus(userId: number): Promise<{ actionsUsed: number; maxBetaActions: number } | null> {
+  const [user] = await db.select({ actionsUsed: usersTable.actionsUsed }).from(usersTable).where(eq(usersTable.id, userId));
+  return user ? { actionsUsed: user.actionsUsed, maxBetaActions: MAX_BETA_ACTIONS } : null;
+}
+
+// Call right before a material/recording is processed. Throws
+// BetaActionLimitError if the user is already at (or past) the cap, so a
+// request never starts extraction/transcription work it isn't allowed to
+// finish. Admin accounts (see ADMIN_EMAILS above) always pass.
+export async function requireActionsRemaining(userId: number): Promise<void> {
+  if (await isAdminUser(userId)) return;
+  const status = await getActionsStatus(userId);
+  if (!status || status.actionsUsed >= status.maxBetaActions) {
+    throw new BetaActionLimitError();
+  }
+}
+
+// Call once a material/recording row has actually been created, regardless
+// of whether extraction/transcription itself succeeded -- the processing
+// slot was spent either way. Uses an atomic SQL increment (not read-modify-
+// write) so concurrent requests from the same user can't both read a stale
+// count and slip past the cap.
+export async function incrementActionsUsed(userId: number): Promise<void> {
+  if (await isAdminUser(userId)) return;
+  await db.update(usersTable)
+    .set({ actionsUsed: sql`${usersTable.actionsUsed} + 1` })
+    .where(eq(usersTable.id, userId));
 }

@@ -14,6 +14,11 @@ export const usersTable = pgTable("users", {
   name: text("name"),
   tokensRemaining: integer("tokens_remaining").notNull().default(DEFAULT_MONTHLY_TOKEN_QUOTA),
   monthlyTokenQuota: integer("monthly_token_quota").notNull().default(DEFAULT_MONTHLY_TOKEN_QUOTA),
+  // Beta-only hard cap on total processing actions (material uploads +
+  // recordings) -- separate from the token budget above, which limits AI
+  // generation cost. This caps upload volume itself so one user can't
+  // create unlimited materials while the app is in free beta.
+  actionsUsed: integer("actions_used").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -82,6 +83,7 @@ export const RecorderPage: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState("");
   const [autoStopped, setAutoStopped] = useState(false);
+  const [betaLimitOpen, setBetaLimitOpen] = useState(false);
 
   // Save progress
   const [saveStep, setSaveStep] = useState(0);
@@ -224,8 +226,19 @@ export const RecorderPage: React.FC = () => {
 
       clearInterval(stepInterval);
       clearInterval(barInterval);
-      setSaveProgress(100);
 
+      if (!res.ok) {
+        if (data.code === "BETA_LIMIT_REACHED") {
+          setBetaLimitOpen(true);
+          setRecState("stopped");
+          return;
+        }
+        setError(data.error || "שמירת ההקלטה נכשלה. נסה שנית.");
+        setRecState("error");
+        return;
+      }
+
+      setSaveProgress(100);
       if (data.kit) {
         setKitResult(data.kit);
       }
@@ -626,6 +639,8 @@ export const RecorderPage: React.FC = () => {
 
       {/* hidden audio element for history playback */}
       <audio ref={audioRef} className="hidden" />
+
+      <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
     </div>
   );
 };

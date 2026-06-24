@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, CheckCircle2, AlertCircle, Camera, Image as ImageIcon } from "lucide-react";
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
+import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 
 type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "video";
 
@@ -128,6 +129,7 @@ export const MaterialNewPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [uploadId, setUploadId] = useState<string | null>(null);
+  const [betaLimitOpen, setBetaLimitOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -250,6 +252,10 @@ export const MaterialNewPage: React.FC = () => {
 
       if (!response.ok) {
         const data = await response.json();
+        if (data.code === "BETA_LIMIT_REACHED") {
+          setBetaLimitOpen(true);
+          return;
+        }
         throw new Error(data.error || "Failed to create material");
       }
 
@@ -548,6 +554,8 @@ export const MaterialNewPage: React.FC = () => {
           </form>
         </CardContent>
       </Card>
+
+      <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
     </div>
   );
 };

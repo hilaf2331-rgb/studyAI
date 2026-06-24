@@ -8,6 +8,7 @@ import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessag
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
+import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError } from "../lib/tokens";
 
 const router = Router();
 
@@ -139,6 +140,18 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     return res.status(413).json({ error: fileTooLargeMessage(contentType, language), code: "FILE_TOO_LARGE" });
   }
 
+  // Beta-only hard cap on total processing actions -- checked before any
+  // extraction work starts, same fail-fast spot as the file-size check above.
+  try {
+    await requireActionsRemaining(userId);
+  } catch (err: any) {
+    if (uploadId) clearGenerationProgress(uploadId);
+    if (err instanceof BetaActionLimitError) {
+      return res.status(403).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
   const reportProgress = uploadId
     ? (percentage: number) => setGenerationProgress(uploadId, {
         currentChunk: 0,
@@ -248,6 +261,7 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     description: `Uploaded "${material.title}"`,
     materialTitle: material.title,
   });
+  await incrementActionsUsed(userId);
 
   if (processingError) {
     return res.status(201).json({

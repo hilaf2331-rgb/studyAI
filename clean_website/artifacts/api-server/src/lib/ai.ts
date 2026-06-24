@@ -64,7 +64,10 @@ export interface AIGenerationOptions {
 // פונקציית עזר חסינת תקלות משופרת לחילוץ ופענוח JSON מה-AI
 function safeJsonParse(rawText: string): any {
   if (!rawText) return {};
-  const cleaned = rawText.trim();
+  // Strip ```json / ``` fences first -- jsonMode's responseMimeType should
+  // already prevent these, but some Gemini responses still wrap output in
+  // markdown fences regardless of the requested mime type.
+  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch (e) {
@@ -76,7 +79,11 @@ function safeJsonParse(rawText: string): any {
         return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
       }
     } catch (innerError) {
-      console.error("Failed to parse AI JSON response:", rawText);
+      // Truncated rather than the full text -- this is most often hit when
+      // the model's JSON got cut off mid-output (see thinkingBudget: 0
+      // below), so the interesting part is the END of the string, not a
+      // multi-KB dump of content that parsed fine up to that point.
+      console.error("Failed to parse AI JSON response. Last 500 chars:", cleaned.slice(-500));
     }
     return {};
   }
@@ -277,10 +284,23 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
             temperature: params.temperature,
             maxOutputTokens: params.maxOutputTokens,
             responseMimeType: params.jsonMode ? "application/json" : undefined,
+            // gemini-2.5-flash thinks by default, and that thinking draws from
+            // the same output token budget as the actual response -- on a
+            // long/complex prompt it can burn through the whole budget before
+            // ever emitting the answer, producing a silently truncated (or
+            // empty) result with no error. None of our calls need multi-step
+            // reasoning, just direct extraction/formatting of the supplied
+            // text, so thinking is switched off entirely to guarantee the full
+            // budget goes to the actual output.
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
         ATTEMPT_TIMEOUT_MS,
       );
+      const finishReason = response.candidates?.[0]?.finishReason;
+      if (finishReason && finishReason !== "STOP") {
+        console.warn(`callGeminiWithRetry: response finished with reason "${finishReason}" (not STOP) -- output may be truncated.`);
+      }
       const text = response.text;
       if (!text) throw new Error("Gemini returned an empty response.");
       return text;
@@ -513,6 +533,9 @@ Return ONLY JSON matching this structure:
   });
 
   const parsed = safeJsonParse(text);
+  if (!parsed.content) {
+    console.warn("generateSummary: parsed JSON had no content field. Raw response (last 500 chars):", text.slice(-500));
+  }
   return {
     content: parsed.content || "",
     keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],

@@ -312,6 +312,7 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
       // "request failed after all retries" line, with none of the SDK's own
       // diagnostic detail.
       console.error("callGeminiWithRetry: raw error from genAI.models.generateContent:", {
+        model: TEXT_MODEL,
         name: error?.name,
         status: error?.status ?? error?.response?.status,
         message: error?.message,
@@ -340,7 +341,7 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   // app-wide catch-all error handler should only ever see a clear,
   // user-facing message here, not a raw SDK error shape.
   console.error(
-    `callGeminiWithRetry: request failed after all retries. status=${lastError?.status ?? "?"} message=${lastError?.message ?? lastError}`,
+    `callGeminiWithRetry: request failed after all retries. model=${TEXT_MODEL} status=${lastError?.status ?? "?"} message=${lastError?.message ?? lastError}`,
   );
   throw new AIServiceError();
 }

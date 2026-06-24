@@ -646,6 +646,7 @@ ${contentSlice(aggregatedContent)}
 כללים חשובים:
 - multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
 - מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים: כל אפשרות שגויה צריכה להיות סבירה לחלוטין, מבוססת על טעות מושגית נפוצה או על בלבול בין מונחים קרובים מהחומר עצמו. אסור מסיחים מגוחכים, לא רלוונטיים, או כאלה שניתן לפסול מבלי לדעת את התוכן (כמו אורך שונה באופן בולט, או ניסוח שמסגיר את עצמו). תלמיד שלא הבין את החומר לעומק צריך להיות מסוגל לטעות.
+- דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית, תקנית ומובנת. אסור בהחלט להשתמש במילים מומצאות, צירופי אותיות חסרי משמעות, או "גיבריש". לפני שמחזירים את ה-JSON, בדקו פנימית שכל מילה בכל אפשרות קיימת בשפה העברית והגיונית בהקשר השאלה. אם אינכם בטוחים שמונח מסוים הוא מילה עברית תקנית ונפוצה — אל תשתמשו בו; העדיפו ניסוח פשוט וברור על פני ניסוח מורכב או נדיר.
 - true_false: options = ["נכון", "לא נכון"]. correctIndex = 0 (נכון) או 1 (לא נכון).
 - open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית — מנוסחת היטב, ברמה שתלמיד היה רוצה לכתוב במבחן, שמכסה את כל הנקודות החשובות מהחומר.
 - כל שאלה חייבת להיות על תוכן אמיתי מהחומר — אסור להמציא.
@@ -678,6 +679,7 @@ Difficulty: ${difficulty}
 Important rules:
 - multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index (0-3) of the correct option.
 - Distractors must be realistic and challenging: every wrong option should be genuinely plausible, based on a common misconception or confusion between closely related terms/concepts from the material itself. No throwaway, irrelevant, or self-revealing distractors (e.g. obviously shorter/longer phrasing, or wording that gives away the answer). A student who only half-understood the material should be able to plausibly pick a wrong one.
+- Linguistic accuracy (mandatory): every word in every answer option — correct and incorrect alike — must be a real, grammatically correct, commonly understood word or phrase in the target language. Never use made-up words, gibberish, or nonsensical letter combinations. Before returning the JSON, internally verify that every word in every option is a real word and makes sense in context. If you are unsure whether a term is valid and commonly understood, do not use it — prefer simple, clear phrasing over complex or obscure wording.
 - true_false: options = ["True", "False"]. correctIndex = 0 (True) or 1 (False).
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer — well-written, the kind a strong student would aim to write on an exam, covering all the key points from the material.
 - All questions must be based on actual content — no fabrication.
@@ -752,6 +754,7 @@ ${contentSlice(aggregatedContent)}
 כללי JSON:
 - multiple_choice: 4 אפשרויות, correctIndex = אינדקס 0-3 של הנכונה.
 - מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים: כל אפשרות שגויה צריכה להיות סבירה לחלוטין, מבוססת על טעות מושגית נפוצה או בלבול בין מונחים קרובים מהחומר. אסור מסיחים מגוחכים או כאלה שניתן לפסול בלי לדעת את התוכן. ככל שרמת הקושי גבוהה יותר, כך המסיחים צריכים להיות דקים ומתוחכמים יותר.
+- דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית, תקנית ומובנת. אסור בהחלט להשתמש במילים מומצאות, צירופי אותיות חסרי משמעות, או "גיבריש". לפני שמחזירים את ה-JSON, בדקו פנימית שכל מילה בכל אפשרות קיימת בשפה העברית והגיונית בהקשר השאלה. אם אינכם בטוחים שמונח מסוים הוא מילה עברית תקנית ונפוצה — אל תשתמשו בו; העדיפו ניסוח פשוט וברור על פני ניסוח מורכב או נדיר.
 - true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
 - open: options = [], correctIndex = 0. "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית, ברמת תשובת מבחן מצוינת, המכסה את כל הנקודות החשובות.
 - "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — בטון חם ותומך, לא רק ציטוט מהטקסט.
@@ -784,6 +787,7 @@ Mix question types: multiple_choice (70%), true_false (15%), open (15%).
 JSON rules:
 - multiple_choice: 4 options, correctIndex = 0-based index of the correct one.
 - Distractors must be realistic and challenging: every wrong option should be genuinely plausible, based on a common misconception or confusion between closely related terms/concepts from the material. No throwaway distractors that can be ruled out without knowing the content. The higher the difficulty, the more subtle and sophisticated the distractors should be.
+- Linguistic accuracy (mandatory): every word in every answer option — correct and incorrect alike — must be a real, grammatically correct, commonly understood word or phrase in the target language. Never use made-up words, gibberish, or nonsensical letter combinations. Before returning the JSON, internally verify that every word in every option is a real word and makes sense in context. If you are unsure whether a term is valid and commonly understood, do not use it — prefer simple, clear phrasing over complex or obscure wording.
 - true_false: options = ["True", "False"], correctIndex = 0 or 1.
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer at the level of an excellent exam response, covering all the key points.
 - "explanation": a brief, clear, encouraging explanation of why the correct answer is right — warm and supportive in tone, not just a quote from the text.

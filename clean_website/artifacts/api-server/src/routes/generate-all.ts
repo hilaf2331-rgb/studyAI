@@ -35,6 +35,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// All three calls hit Gemini's free-tier per-minute request quota
+// simultaneously when fired at once, which reads back as a generic
+// "network or service issue" once retries are exhausted. Staggering the
+// start times spreads them out within the same RPM window instead of
+// bursting all three at t=0.
+const TASK_STAGGER_MS = 2_500;
+
+function startStaggered<T>(promiseFactory: () => Promise<T>, delayMs: number): Promise<T> {
+  return delayMs === 0 ? promiseFactory() : sleep(delayMs).then(promiseFactory);
+}
+
 type MaterialRow = typeof materialsTable.$inferSelect;
 
 // The actual Gemini + DB-insert pipeline, run after the 202 has already gone
@@ -51,38 +66,50 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
     const { maxFlashcards, maxQuestions } = getDynamicGenerationLimits(content.length);
 
     const [summarySettled, flashSettled, questionSettled] = await Promise.allSettled([
-      withTimeout(
-        generateSummary({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          summaryType: "detailed",
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateSummary",
+      startStaggered(
+        () =>
+          withTimeout(
+            generateSummary({
+              language,
+              materialContent: content,
+              materialTitle: material.title,
+              summaryType: "detailed",
+            }),
+            AI_TASK_TIMEOUT_MS,
+            "generateSummary",
+          ),
+        0,
       ),
-      withTimeout(
-        generateFlashcardsAI({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          cardCount: maxFlashcards,
-          cardTypes: ["definition", "qa", "formula", "concept"],
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateFlashcardsAI",
+      startStaggered(
+        () =>
+          withTimeout(
+            generateFlashcardsAI({
+              language,
+              materialContent: content,
+              materialTitle: material.title,
+              cardCount: maxFlashcards,
+              cardTypes: ["definition", "qa", "formula", "concept"],
+            }),
+            AI_TASK_TIMEOUT_MS,
+            "generateFlashcardsAI",
+          ),
+        TASK_STAGGER_MS,
       ),
-      withTimeout(
-        generateQuestionsAI({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          questionCount: maxQuestions,
-          questionTypes: ["multiple_choice", "true_false"],
-          difficulty: "mixed",
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateQuestionsAI",
+      startStaggered(
+        () =>
+          withTimeout(
+            generateQuestionsAI({
+              language,
+              materialContent: content,
+              materialTitle: material.title,
+              questionCount: maxQuestions,
+              questionTypes: ["multiple_choice", "true_false"],
+              difficulty: "mixed",
+            }),
+            AI_TASK_TIMEOUT_MS,
+            "generateQuestionsAI",
+          ),
+        TASK_STAGGER_MS * 2,
       ),
     ]);
 

@@ -2,14 +2,28 @@ import { GoogleGenAI, type Content } from "@google/genai";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
 
-// SECURITY: the Gemini API key must only ever come from the environment —
-// never hardcode it here or anywhere else in source. Render (and local
-// .env files) are expected to provide GEMINI_API_KEY at runtime.
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY environment variable is required but was not provided.");
-}
+// SECURITY: Gemini API keys must only ever come from the environment —
+// never hardcode them here or anywhere else in source, and never log a full
+// key value. Render (and local .env files) are expected to provide either
+// GEMINI_API_KEYS (a comma-separated pool, for key rotation under load) or
+// the single-key GEMINI_API_KEY at runtime.
+//
+// Key rotation: Gemini's per-minute rate limit is per-key, not per-project,
+// so spreading chunk calls across several keys multiplies real throughput
+// instead of just retrying the same choked key. With a single configured
+// key (the common case) every function below degenerates to exactly the
+// old single-client behavior — there is no separate "small document" code
+// path needed for that.
+const apiKeys: string[] = (() => {
+  const pool = process.env.GEMINI_API_KEYS?.split(",").map((k) => k.trim()).filter(Boolean) ?? [];
+  if (pool.length > 0) return pool;
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY (or GEMINI_API_KEYS) environment variable is required but was not provided.");
+  }
+  return [process.env.GEMINI_API_KEY];
+})();
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const genAIClients = apiKeys.map((apiKey) => new GoogleGenAI({ apiKey }));
 
 // gemini-1.5-flash was fully retired by Google on 2025-09-24 -- every call
 // to it now 404s immediately (not retryable), which is why failures here
@@ -166,34 +180,62 @@ function isRateLimitError(error: any): boolean {
   return (error?.status ?? error?.response?.status) === 429;
 }
 
-// Thrown after a 429 survives every retry attempt, so callers stop instead
-// of silently hammering an already-exhausted rate-limit window. Carries a
-// user-facing message so app.ts's catch-all handler can surface it as-is.
+// Thrown when a 429 survives every key in the pool (each one tried and
+// blocked in turn — see callGeminiWithRetry's failover loop), so callers
+// stop instead of silently hammering an already-exhausted rate-limit
+// window. Carries a user-facing message so app.ts's catch-all handler can
+// surface it as-is.
 export class RateLimitExhaustedError extends Error {
   constructor(public readonly retryAfterSeconds: number) {
     super("System is currently at maximum capacity. Please try again in a few minutes.");
     this.name = "RateLimitExhaustedError";
-    tripCircuitBreaker(retryAfterSeconds);
+    // Every key in the pool just failed over and is blocked too at this
+    // point -- trip them all so checkCircuitBreaker() fails fast on the
+    // next call instead of letting a request slip onto an exhausted pool.
+    for (let i = 0; i < apiKeys.length; i++) tripKeyCircuitBreaker(i, retryAfterSeconds);
   }
 }
 
-// Circuit breaker: once a hard rate limit is confirmed (see
-// RateLimitExhaustedError above), every subsequent Gemini call across the
-// whole process is blocked until the cool-down passes — instead of letting
-// a stray click or a new request slip through and extend the penalty.
-// Module-level state is sufficient here: this is a single-process API
-// server, and the goal is just to stop hammering the API, not to coordinate
-// across instances.
+// Per-key circuit breaker: once a given key gets a confirmed 429, it's
+// blocked until its own cool-down passes, independent of the other keys in
+// the pool — instead of letting a stray click or a new request slip through
+// on that same choked key and extend the penalty. Module-level state is
+// sufficient here: this is a single-process API server, and the goal is
+// just to stop hammering a rate-limited key, not to coordinate across
+// instances.
 const CIRCUIT_BREAKER_MAX_COOLDOWN_MS = 60 * 60 * 1000;
-let circuitBreakerBlockedUntil: number | null = null;
+const keyBlockedUntil: (number | null)[] = apiKeys.map(() => null);
+// Round-robin cursor shared across every call -- incremented (mod pool
+// size) each time a key is selected, so distinct chunk/section calls spread
+// across the whole pool instead of all landing on key 0.
+let keyRotationCursor = 0;
 
-function tripCircuitBreaker(retryAfterSeconds: number): void {
+function tripKeyCircuitBreaker(keyIndex: number, retryAfterSeconds: number): void {
   const cooldownMs = Math.min(Math.max(retryAfterSeconds, 1) * 1000, CIRCUIT_BREAKER_MAX_COOLDOWN_MS);
   const until = Date.now() + cooldownMs;
-  if (!circuitBreakerBlockedUntil || until > circuitBreakerBlockedUntil) {
-    circuitBreakerBlockedUntil = until;
+  if (!keyBlockedUntil[keyIndex] || until > keyBlockedUntil[keyIndex]!) {
+    keyBlockedUntil[keyIndex] = until;
   }
-  console.error(`Circuit breaker tripped: blocking all Gemini calls until ${new Date(circuitBreakerBlockedUntil).toISOString()}.`);
+  console.error(`Circuit breaker tripped for Gemini key #${keyIndex + 1}/${apiKeys.length}: blocked until ${new Date(keyBlockedUntil[keyIndex]!).toISOString()}.`);
+}
+
+// Picks the next key in round-robin order that isn't currently in its 429
+// cool-down, or null if every key in the pool is blocked. With a single
+// configured key this always returns 0 once it's unblocked -- the "small
+// document just uses the default key" behavior the rotation pool is meant
+// to add falls out naturally rather than needing its own branch.
+function pickNextAvailableKeyIndex(): number | null {
+  const now = Date.now();
+  for (let i = 0; i < apiKeys.length; i++) {
+    const idx = keyRotationCursor++ % apiKeys.length;
+    const blockedUntil = keyBlockedUntil[idx];
+    if (blockedUntil === null) return idx;
+    if (blockedUntil <= now) {
+      keyBlockedUntil[idx] = null;
+      return idx;
+    }
+  }
+  return null;
 }
 
 export class SystemBlockedError extends Error {
@@ -218,14 +260,22 @@ export class AIServiceError extends Error {
 // Must be called as the first step before any Gemini call (and explicitly
 // before any aggregation/chunking work begins) so an already-confirmed hard
 // limit fails instantly without burning more budget or wasted chunking work.
+// Only blocks the request when EVERY key in the pool is still cooling down;
+// if even one key is free, the call is allowed through to use it.
 function checkCircuitBreaker(): void {
-  if (circuitBreakerBlockedUntil === null) return;
-  const remainingMs = circuitBreakerBlockedUntil - Date.now();
-  if (remainingMs <= 0) {
-    circuitBreakerBlockedUntil = null;
-    return;
+  const now = Date.now();
+  let minRemainingMs = Infinity;
+  for (let i = 0; i < keyBlockedUntil.length; i++) {
+    const blockedUntil = keyBlockedUntil[i];
+    if (blockedUntil === null) return;
+    const remainingMs = blockedUntil - now;
+    if (remainingMs <= 0) {
+      keyBlockedUntil[i] = null;
+      return;
+    }
+    minRemainingMs = Math.min(minRemainingMs, remainingMs);
   }
-  throw new SystemBlockedError(Math.ceil(remainingMs / 60000));
+  throw new SystemBlockedError(Math.ceil(minRemainingMs / 60000));
 }
 
 // Used when a 429 survives all retries -- Gemini's error shape doesn't
@@ -277,17 +327,24 @@ interface GeminiCallParams {
 
 /**
  * Wraps a Gemini generateContent call with exponential backoff retry for
- * rate limits (429) and transient errors, so a single flaky request doesn't
- * take down the whole pipeline (and, in turn, the HTTP response) with it.
+ * transient errors, plus immediate key failover on rate limits (429): on a
+ * 429, the key that just got throttled is blocked and the very next attempt
+ * goes out on a different key from the pool instead of waiting out a
+ * backoff on the same choked key. So a single flaky request -- or a single
+ * choked key -- doesn't take down the whole pipeline (and, in turn, the HTTP
+ * response) with it.
  */
 async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   checkCircuitBreaker();
+
+  let keyIndex = pickNextAvailableKeyIndex();
+  if (keyIndex === null) throw new SystemBlockedError(1);
 
   let lastError: any;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
       const response = await withAttemptTimeout(
-        genAI.models.generateContent({
+        genAIClients[keyIndex].models.generateContent({
           model: TEXT_MODEL,
           contents: params.contents,
           config: {
@@ -324,6 +381,7 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
       // diagnostic detail.
       console.error("callGeminiWithRetry: raw error from genAI.models.generateContent:", {
         model: TEXT_MODEL,
+        key: `${keyIndex + 1}/${apiKeys.length}`,
         name: error?.name,
         status: error?.status ?? error?.response?.status,
         message: error?.message,
@@ -331,10 +389,25 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
         errorDetails: error?.error ?? error?.response?.error,
         raw: safeStringifyError(error),
       });
-      if (isRateLimitError(error) && attempt === MAX_RETRY_ATTEMPTS) {
-        console.error("callGeminiWithRetry: rate limit survived all retries, failing fast.");
-        throw new RateLimitExhaustedError(RATE_LIMIT_COOLDOWN_SECONDS);
+
+      if (isRateLimitError(error)) {
+        // Block this key and fail over to the next available one in the
+        // pool for the very next attempt -- no backoff wait, since the
+        // problem is specific to this key, not a transient blip the whole
+        // pool needs to wait out. With only one key configured, this just
+        // blocks it (same as the pre-rotation behavior) and falls through
+        // below since no other key is available.
+        tripKeyCircuitBreaker(keyIndex, RATE_LIMIT_COOLDOWN_SECONDS);
+        const nextKeyIndex = pickNextAvailableKeyIndex();
+        if (nextKeyIndex === null) {
+          console.error("callGeminiWithRetry: rate limit hit on every key in the pool, failing fast.");
+          break;
+        }
+        console.warn(`Gemini key #${keyIndex + 1} rate-limited; failing over to key #${nextKeyIndex + 1}/${apiKeys.length}.`);
+        keyIndex = nextKeyIndex;
+        continue;
       }
+
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
         break;
       }
@@ -354,8 +427,13 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
       await sleep(delay);
     }
   }
+
+  if (isRateLimitError(lastError)) {
+    console.error("callGeminiWithRetry: rate limit survived every key in the pool, failing fast.");
+    throw new RateLimitExhaustedError(RATE_LIMIT_COOLDOWN_SECONDS);
+  }
   // Every attempt is exhausted (and it wasn't a confirmed rate limit, which
-  // throws earlier as RateLimitExhaustedError) -- this is a network outage,
+  // throws above as RateLimitExhaustedError) -- this is a network outage,
   // an invalid request, or some other unexpected SDK failure. Log the raw
   // error for debugging, but never leak it to the client: callers and the
   // app-wide catch-all error handler should only ever see a clear,

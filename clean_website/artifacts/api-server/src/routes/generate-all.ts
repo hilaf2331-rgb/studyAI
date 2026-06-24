@@ -96,6 +96,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
     console.log(`generate-all[${materialId}]: stage 1/2 -- generating summary + flashcards (up to ${maxFlashcards} cards)...`);
     let summaryResult: { content: string; keyPoints: string[] };
     let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+    let cleanSummaryContent = "";
     let summaryFailed = false;
     let flashFailed = false;
     try {
@@ -113,6 +114,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       );
       summaryResult = result.summary;
       flashResult = result.flashcards;
+      cleanSummaryContent = result.cleanContent;
       flashFailed = flashResult.length === 0;
       console.log(`generate-all[${materialId}]: summary+flashcards stage done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points, ${flashResult.length} cards.`);
     } catch (err) {
@@ -145,7 +147,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           questionTypes: ["multiple_choice", "true_false"],
           difficulty: "mixed",
           excludeQuestions,
-          precomputedContent: summaryFailed ? undefined : summaryResult.content,
+          precomputedContent: summaryFailed ? undefined : cleanSummaryContent,
         }),
         AI_TASK_TIMEOUT_MS,
         "generateQuestionsAI",

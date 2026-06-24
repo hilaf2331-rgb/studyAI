@@ -705,6 +705,11 @@ export async function generateSummaryAndFlashcards(
 ): Promise<{
   summary: { content: string; keyPoints: string[] };
   flashcards: Array<{ front: string; back: string; difficulty: string; cardType: string }>;
+  // Genuinely-summarized content only (no failure placeholders) -- the safe
+  // input for any further AI call (e.g. question generation) made on top of
+  // this result. Falls back to `summary.content` on the non-chunked path,
+  // where there are no placeholders to begin with.
+  cleanContent: string;
 }> {
   const { language, materialContent, materialTitle, materialId, maxFlashcards } = opts;
   const isHe = language === "he";
@@ -717,7 +722,7 @@ export async function generateSummaryAndFlashcards(
         generateSummary(opts),
         generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
       ]);
-      return { summary, flashcards };
+      return { summary, flashcards, cleanContent: summary.content };
     }
 
     const chunks = splitTextIntoChunks(materialContent, SUBCHUNK_CHAR_LIMIT);
@@ -726,23 +731,31 @@ export async function generateSummaryAndFlashcards(
         generateSummary(opts),
         generateFlashcardsAI({ ...opts, cardCount: maxFlashcards }),
       ]);
-      return { summary, flashcards };
+      return { summary, flashcards, cleanContent: summary.content };
     }
 
     const cardsPerChunk = Math.max(1, Math.min(MAX_CARDS_PER_CHUNK, Math.ceil(maxFlashcards / chunks.length)));
     const chapterParts: string[] = new Array(chunks.length);
+    // Only genuinely-generated summaries -- never placeholder failure text --
+    // so downstream synthesis (keyPoints/executiveSummary) and question
+    // generation are never fed back a description of our own failure.
+    const successfulParts: string[] = [];
     const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+    let failedChunkCount = 0;
 
     for (let i = 0; i < chunks.length; i++) {
       try {
         const { summary, cards } = await processSummaryAndFlashcardsChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length, cardsPerChunk);
-        chapterParts[i] = summary || (isHe
+        const resolvedSummary = summary || (isHe
           ? "[לא נמצאו עובדות נוספות בחלק זה]"
           : "[No additional facts found in this part]");
+        chapterParts[i] = resolvedSummary;
+        if (summary) successfulParts.push(summary);
         allCards.push(...cards);
       } catch (err) {
         if (err instanceof RateLimitExhaustedError) throw err;
         console.error(`generateSummaryAndFlashcards: chunk ${i + 1}/${chunks.length} failed after retries:`, err);
+        failedChunkCount++;
         chapterParts[i] = isHe
           ? "[לא ניתן היה לעבד חלק זה של החומר עקב תקלה זמנית]"
           : "[This part of the material could not be processed due to a temporary error]";
@@ -759,6 +772,15 @@ export async function generateSummaryAndFlashcards(
       }
     }
 
+    // If every single chunk failed, there is nothing real to summarize or
+    // quiz on -- surface a clear failure instead of silently returning a
+    // "successful" result made entirely of failure-placeholder text (which
+    // would otherwise get fed straight into question generation as source
+    // material, producing quiz questions about our own error message).
+    if (failedChunkCount === chunks.length) {
+      throw new AIServiceError();
+    }
+
     const seenFronts = new Set<string>();
     const flashcards = allCards
       .filter((c) => {
@@ -773,6 +795,13 @@ export async function generateSummaryAndFlashcards(
       .map((p, i) => (isHe ? `## פרק ${i + 1}\n${p}` : `## Chapter ${i + 1}\n${p}`))
       .join("\n\n");
 
+    // Genuinely-summarized chunks only, joined without the failure-chapter
+    // placeholders -- this is what the keyPoints/executiveSummary synthesis
+    // below reads, and what generate-all.ts hands to question generation as
+    // precomputedContent. chapterBody (above) keeps every chapter, including
+    // placeholders, purely for the user-facing displayed summary.
+    const cleanContent = successfulParts.join("\n\n");
+
     // Only the keyPoints + a short executive wrap-up come from one more,
     // lightweight, bounded-output Gemini call on top of the already-assembled
     // chapter body -- never the full chapter text fed through a second large
@@ -784,7 +813,7 @@ export async function generateSummaryAndFlashcards(
       const synthPrompt = isHe
         ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
 
-${contentSlice(chapterBody)}
+${contentSlice(cleanContent)}
 
 ---
 המשימה שלך: קרא את כל הפרקים מעלה וצור:
@@ -798,7 +827,7 @@ ${contentSlice(chapterBody)}
 }`
         : `## Chapter-by-chapter summary of study material "${materialTitle}":
 
-${contentSlice(chapterBody)}
+${contentSlice(cleanContent)}
 
 ---
 Your task: read every chapter above and produce:
@@ -839,7 +868,7 @@ Return ONLY JSON matching this structure:
 
     console.log(`generateSummaryAndFlashcards: assembled ${chapterParts.length}-chapter summary (${content.length} chars, ${keyPoints.length} key points) and ${flashcards.length} flashcards for material ${materialId ?? "?"}.`);
 
-    return { summary: { content, keyPoints }, flashcards };
+    return { summary: { content, keyPoints }, flashcards, cleanContent };
   } finally {
     if (materialId !== undefined) clearGenerationProgress(materialId);
   }

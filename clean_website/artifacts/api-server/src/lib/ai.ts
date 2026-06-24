@@ -73,6 +73,51 @@ export async function extractTextFromImage(buffer: Buffer, mimeType: string): Pr
   }
 }
 
+// YouTube transcript scraping (youtube-transcript, see extractor.ts) gets
+// blocked from hosted server IPs (Render, etc.) far more often than from a
+// residential IP -- even on videos that do have captions, the request
+// itself gets refused before it ever reaches the actual transcript data.
+// Gemini's native multimodal video understanding can watch a public YouTube
+// URL directly without scraping anything, so it's used as the first
+// fallback when the transcript fetch fails for any reason.
+export async function generateContentFromYouTubeVideo(url: string, language: "he" | "en"): Promise<string> {
+  const prompt = language === "he"
+    ? "צפה בסרטון הזה במלואו וכתוב תמליל/סיכום מפורט ומדויק של כל התוכן המדובר והמוצג בו (נקודות מרכזיות, הסברים, דוגמאות ונתונים), כך שניתן יהיה להשתמש בו כחומר לימוד מלא. כתוב טקסט רגיל בלבד, בלי הערות, כותרות או דברי הקדמה."
+    : "Watch this video in full and write a detailed, accurate transcript/summary of everything spoken and shown in it (key points, explanations, examples, and data), so it can be used as complete study material. Output plain text only -- no commentary, headings, or preamble.";
+
+  return callGeminiWithRetry({
+    contents: [
+      {
+        role: "user",
+        parts: [{ fileData: { fileUri: url } }, { text: prompt }],
+      },
+    ],
+    temperature: 0.2,
+    maxOutputTokens: 4000,
+  });
+}
+
+// Last-resort fallback when Gemini can't access the video itself either
+// (e.g. private/region-locked/unsupported video) -- YouTube's public oEmbed
+// endpoint (no API key needed) still exposes the title/channel, which is
+// enough for Gemini to produce a clearly-labeled best-effort guess instead
+// of leaving the material with no usable content at all.
+export async function generateContentFromVideoMetadata(
+  metadata: { title: string; author?: string },
+  url: string,
+  language: "he" | "en"
+): Promise<string> {
+  const prompt = language === "he"
+    ? `לא ניתן היה לגשת לתמליל או לתוכן הווידאו של הסרטון הזה (${url}). הנה המידע הציבורי היחיד שזמין עליו:\nכותרת: "${metadata.title}"\n${metadata.author ? `יוצר: ${metadata.author}\n` : ""}\nעל בסיס הכותרת בלבד, כתוב פסקה קצרה שמסבירה מה כנראה הנושא הכללי של הסרטון, ומציינת בבירור שזו הערכה כללית מבוססת-כותרת בלבד וכי אין תמליל בפועל של תוכן הסרטון. אל תמציא פרטים ספציפיים שאינם נובעים מהכותרת.`
+    : `The transcript and video content for this video (${url}) could not be accessed. Here is the only public information available about it:\nTitle: "${metadata.title}"\n${metadata.author ? `Channel: ${metadata.author}\n` : ""}\nBased only on the title, write a short paragraph explaining what the video is likely about, and clearly state that this is only a general guess based on the title alone -- there is no actual transcript of the video's content. Do not invent specific details that aren't implied by the title.`;
+
+  return callGeminiWithRetry({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    temperature: 0.3,
+    maxOutputTokens: 800,
+  });
+}
+
 export interface AIGenerationOptions {
   language: "he" | "en";
   materialContent: string;

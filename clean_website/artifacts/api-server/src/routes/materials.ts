@@ -99,7 +99,7 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
 
   try {
     if (contentType === "youtube" && sourceUrl) {
-      const result = await extractYouTube(sourceUrl, reportProgress);
+      const result = await extractYouTube(sourceUrl, reportProgress, language);
       extractedText = result.text;
       duration = result.duration;
     } else if (contentType === "url" && sourceUrl) {

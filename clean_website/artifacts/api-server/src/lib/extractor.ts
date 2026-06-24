@@ -1,5 +1,12 @@
 import { YoutubeTranscript } from "youtube-transcript";
-import { AUDIO_MODEL, extractTextFromImage } from "./ai";
+import {
+  AUDIO_MODEL,
+  extractTextFromImage,
+  generateContentFromYouTubeVideo,
+  generateContentFromVideoMetadata,
+  RateLimitExhaustedError,
+  SystemBlockedError,
+} from "./ai";
 import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
@@ -24,21 +31,76 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
-export async function extractYouTube(url: string, onProgress?: ProgressCallback): Promise<ExtractedContent> {
+// Fetches a video's public title/channel via YouTube's oEmbed endpoint --
+// no API key required, works for any public video. Used only as the
+// metadata-only last resort below, when neither the transcript scraper nor
+// Gemini's direct video access could get at the actual content.
+async function fetchYouTubeOEmbed(url: string): Promise<{ title: string; author?: string }> {
+  const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+  const res = await fetch(oembedUrl);
+  if (!res.ok) throw new Error(`YouTube oEmbed lookup failed: ${res.status}`);
+  const data = (await res.json()) as { title?: string; author_name?: string };
+  if (!data.title) throw new Error("YouTube oEmbed response had no title");
+  return { title: data.title, author: data.author_name };
+}
+
+// YouTube routinely blocks transcript-scraping requests coming from hosted
+// server IPs (Render, etc.) with YoutubeTranscriptDisabledError -- even on
+// videos that do have captions available to a normal browser -- so a thrown
+// error here is never allowed to abort the whole pipeline. Each stage below
+// is strictly more degraded than the last: real transcript -> Gemini
+// watching the video directly -> Gemini reasoning from just the title.
+// Only a genuine rate-limit/system cooldown propagates past this function,
+// since no fallback would help with that either.
+export async function extractYouTube(
+  url: string,
+  onProgress?: ProgressCallback,
+  language: "he" | "en" = "he"
+): Promise<ExtractedContent> {
   const videoId = getYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube URL");
 
   onProgress?.(20);
-  const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-  if (!transcript || transcript.length === 0) {
-    throw new Error("No transcript available for this video");
+
+  try {
+    const transcript = await YoutubeTranscript.fetchTranscript(videoId);
+    if (transcript && transcript.length > 0) {
+      const text = sanitizeExtractedText(transcript.map(t => t.text).join(" "));
+      const duration = transcript.reduce((sum, t) => sum + (t.duration || 0), 0);
+      onProgress?.(100);
+      return { text, duration: Math.round(duration) };
+    }
+    console.warn(`extractYouTube: transcript for ${videoId} came back empty, falling back to Gemini video analysis.`);
+  } catch (error) {
+    console.warn(
+      `extractYouTube: transcript fetch failed for ${videoId}, falling back to Gemini video analysis:`,
+      error instanceof Error ? error.message : error,
+    );
   }
 
-  const text = sanitizeExtractedText(transcript.map(t => t.text).join(" "));
-  const duration = transcript.reduce((sum, t) => sum + (t.duration || 0), 0);
+  onProgress?.(50);
+
+  try {
+    const text = await generateContentFromYouTubeVideo(url, language);
+    if (text && text.trim()) {
+      onProgress?.(100);
+      return { text: sanitizeExtractedText(text) };
+    }
+  } catch (error) {
+    if (error instanceof RateLimitExhaustedError || error instanceof SystemBlockedError) throw error;
+    console.warn(
+      `extractYouTube: Gemini native video analysis failed for ${url}, falling back to metadata-only summary:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+
+  onProgress?.(75);
+
+  const metadata = await fetchYouTubeOEmbed(url);
+  const text = await generateContentFromVideoMetadata(metadata, url, language);
 
   onProgress?.(100);
-  return { text, duration: Math.round(duration) };
+  return { text: sanitizeExtractedText(text) };
 }
 
 export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {

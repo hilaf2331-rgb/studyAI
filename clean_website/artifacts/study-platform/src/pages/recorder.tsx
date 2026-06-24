@@ -330,10 +330,21 @@ export const RecorderPage: React.FC = () => {
                   <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
                   <span className="font-bold text-red-600 text-sm">מקליט...</span>
                 </div>
-                <span className="font-mono text-2xl font-bold tabular-nums text-foreground">
-                  {formatDuration(elapsed)}
+                <span className={`font-mono text-2xl font-bold tabular-nums ${elapsed >= MAX_RECORDING_SECONDS - 60 ? "text-destructive" : "text-foreground"}`}>
+                  {formatDuration(elapsed)} <span className="text-muted-foreground text-base font-normal">/ {formatDuration(MAX_RECORDING_SECONDS)}</span>
                 </span>
               </div>
+
+              {/* Progress toward the 20-minute auto-stop limit */}
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-500 ${elapsed >= MAX_RECORDING_SECONDS - 60 ? "bg-destructive" : "bg-primary"}`}
+                  style={{ width: `${Math.min(100, (elapsed / MAX_RECORDING_SECONDS) * 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-center -mt-1">
+                מקסימום 20 דקות להקלטה — ההקלטה תישמר ותעובד אוטומטית כשמגיעים למגבלה
+              </p>
 
               {/* Waveform visualizer */}
               <div className="flex items-end justify-center gap-0.5 h-16 bg-muted/40 rounded-xl px-3">

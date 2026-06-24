@@ -1,4 +1,7 @@
 {
+  "buildCommand": "pnpm --filter @workspace/study-platform build",
+  "outputDirectory": "artifacts/study-platform/dist/public",
+  "cleanUrls": true,
   "rewrites": [
     {
       "source": "/api/:path*",

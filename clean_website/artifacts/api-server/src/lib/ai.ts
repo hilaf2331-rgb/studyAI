@@ -1,6 +1,14 @@
 import { GoogleGenAI, type Content } from "@google/genai";
+import pLimit from "p-limit";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
+
+// Caps how many heavy, chunked document-generation pipelines (summary,
+// flashcards, questions, exam) can run their Gemini calls concurrently across
+// the whole process. Without this, 2-3 users uploading large PDFs at once can
+// OOM-kill the Render instance. Extra calls queue in-memory rather than
+// running in parallel; fast single-call helpers (chat, grading) bypass it.
+const pipelineLimit = pLimit(2);
 
 // SECURITY: Gemini API keys must only ever come from the environment —
 // never hardcode them here or anywhere else in source, and never log a full
@@ -829,7 +837,18 @@ Output plain Markdown text only -- no JSON, no code fence (\`\`\`), no preamble 
   });
 }
 
-export async function generateSummary(
+export function generateSummary(
+  opts: AIGenerationOptions & { summaryType: string; topic?: string }
+): Promise<{
+  content: string;
+  keyPoints: string[];
+  parts: string[];
+  chunked: boolean;
+}> {
+  return pipelineLimit(() => generateSummaryImpl(opts));
+}
+
+async function generateSummaryImpl(
   opts: AIGenerationOptions & { summaryType: string; topic?: string }
 ): Promise<{
   content: string;
@@ -1108,7 +1127,13 @@ Return ONLY JSON matching this structure:
   );
 }
 
-export async function generateFlashcardsAI(
+export function generateFlashcardsAI(
+  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+  return pipelineLimit(() => generateFlashcardsAIImpl(opts));
+}
+
+async function generateFlashcardsAIImpl(
   opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
   const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts } = opts;
@@ -1314,7 +1339,13 @@ Return ONLY JSON matching this structure:
   );
 }
 
-export async function generateQuestionsAI(
+export function generateQuestionsAI(
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+  return pipelineLimit(() => generateQuestionsAIImpl(opts));
+}
+
+async function generateQuestionsAIImpl(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
   const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts } = opts;
@@ -1561,7 +1592,13 @@ Return ONLY JSON matching this structure:
   );
 }
 
-export async function generateExamAI(
+export function generateExamAI(
+  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+  return pipelineLimit(() => generateExamAIImpl(opts));
+}
+
+async function generateExamAIImpl(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;

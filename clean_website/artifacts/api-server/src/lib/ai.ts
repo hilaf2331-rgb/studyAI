@@ -82,8 +82,8 @@ export async function extractTextFromImage(buffer: Buffer, mimeType: string): Pr
 // fallback when the transcript fetch fails for any reason.
 export async function generateContentFromYouTubeVideo(url: string, language: "he" | "en"): Promise<string> {
   const prompt = language === "he"
-    ? "צפה בסרטון הזה במלואו וכתוב תמליל/סיכום מפורט ומדויק של כל התוכן המדובר והמוצג בו (נקודות מרכזיות, הסברים, דוגמאות ונתונים), כך שניתן יהיה להשתמש בו כחומר לימוד מלא. כתוב טקסט רגיל בלבד, בלי הערות, כותרות או דברי הקדמה."
-    : "Watch this video in full and write a detailed, accurate transcript/summary of everything spoken and shown in it (key points, explanations, examples, and data), so it can be used as complete study material. Output plain text only -- no commentary, headings, or preamble.";
+    ? "צפה בסרטון הזה במלואו וכתוב תמליל/סיכום מפורט ומדויק של כל התוכן המדובר והמוצג בו (נקודות מרכזיות, הסברים, דוגמאות ונתונים), כך שניתן יהיה להשתמש בו כחומר לימוד מלא. הסרטון עצמו עשוי להיות בכל שפה שהיא (אנגלית, ערבית, ספרדית וכו') -- ללא קשר לשפת הדיבור בסרטון, התמליל/סיכום שתכתוב חייב להיות בעברית בלבד, מתורגם ומסונתז באופן טבעי, לא תרגום מילולי. כתוב טקסט רגיל בלבד, בלי הערות, כותרות או דברי הקדמה."
+    : "Watch this video in full and write a detailed, accurate transcript/summary of everything spoken and shown in it (key points, explanations, examples, and data), so it can be used as complete study material. The video itself may be in any spoken language -- regardless of what language is spoken in the video, the transcript/summary you write must be strictly in English, naturally translated and synthesized, not a literal word-for-word translation. Output plain text only -- no commentary, headings, or preamble.";
 
   return callGeminiWithRetry({
     contents: [
@@ -108,8 +108,8 @@ export async function generateContentFromVideoMetadata(
   language: "he" | "en"
 ): Promise<string> {
   const prompt = language === "he"
-    ? `לא ניתן היה לגשת לתמליל או לתוכן הווידאו של הסרטון הזה (${url}). הנה המידע הציבורי היחיד שזמין עליו:\nכותרת: "${metadata.title}"\n${metadata.author ? `יוצר: ${metadata.author}\n` : ""}\nעל בסיס הכותרת בלבד, כתוב פסקה קצרה שמסבירה מה כנראה הנושא הכללי של הסרטון, ומציינת בבירור שזו הערכה כללית מבוססת-כותרת בלבד וכי אין תמליל בפועל של תוכן הסרטון. אל תמציא פרטים ספציפיים שאינם נובעים מהכותרת.`
-    : `The transcript and video content for this video (${url}) could not be accessed. Here is the only public information available about it:\nTitle: "${metadata.title}"\n${metadata.author ? `Channel: ${metadata.author}\n` : ""}\nBased only on the title, write a short paragraph explaining what the video is likely about, and clearly state that this is only a general guess based on the title alone -- there is no actual transcript of the video's content. Do not invent specific details that aren't implied by the title.`;
+    ? `לא ניתן היה לגשת לתמליל או לתוכן הווידאו של הסרטון הזה (${url}). הנה המידע הציבורי היחיד שזמין עליו:\nכותרת: "${metadata.title}"\n${metadata.author ? `יוצר: ${metadata.author}\n` : ""}\nהכותרת עצמה עשויה להיות בכל שפה -- ללא קשר לשפת הכותרת, כתוב את התשובה בעברית בלבד. על בסיס הכותרת בלבד, כתוב פסקה קצרה שמסבירה מה כנראה הנושא הכללי של הסרטון, ומציינת בבירור שזו הערכה כללית מבוססת-כותרת בלבד וכי אין תמליל בפועל של תוכן הסרטון. אל תמציא פרטים ספציפיים שאינם נובעים מהכותרת.`
+    : `The transcript and video content for this video (${url}) could not be accessed. Here is the only public information available about it:\nTitle: "${metadata.title}"\n${metadata.author ? `Channel: ${metadata.author}\n` : ""}\nThe title itself may be in any language -- regardless of the title's language, write your answer strictly in English. Based only on the title, write a short paragraph explaining what the video is likely about, and clearly state that this is only a general guess based on the title alone -- there is no actual transcript of the video's content. Do not invent specific details that aren't implied by the title.`;
 
   return callGeminiWithRetry({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -641,8 +641,8 @@ async function summarizeChunk(
   total: number
 ): Promise<string> {
   const prompt = isHe
-    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.\n\nהפלט הוא טקסט רגיל בלבד -- אסור להחזיר JSON, אסור לעטוף את התשובה בגדר קוד (\`\`\`), ואל תחזור על הכותרת "## חלק ${index}/${total}" שמופיעה למעלה בתחילת התשובה שלך.`
-    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nThoroughly and precisely summarize all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.\n\nOutput plain text only -- do not return JSON, do not wrap the response in a code fence (\`\`\`), and do not repeat the "## Part ${index}/${total}" heading shown above at the start of your answer.`;
+    ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"\n\n${chunk}\n\n---\nסכם בהרחבה ובמדויק את כל העובדות, המושגים והנקודות החשובות שמופיעות בקטע הזה בלבד. כתוב כרשימת נקודות עובדתיות וממוקדות, בלי כותרות ובלי הקדמות. אל תשמיט אף עובדה מהותית, ואל תוסיף שום מידע שלא מופיע בקטע.\n\nהקטע עצמו עשוי להיות כתוב בכל שפה -- ללא קשר לשפת המקור, הסיכום שתכתוב חייב להיות בעברית בלבד.\n\nהפלט הוא טקסט רגיל בלבד -- אסור להחזיר JSON, אסור לעטוף את התשובה בגדר קוד (\`\`\`), ואל תחזור על הכותרת "## חלק ${index}/${total}" שמופיעה למעלה בתחילת התשובה שלך.`
+    : `## Part ${index}/${total} of study material: "${materialTitle}"\n\n${chunk}\n\n---\nThoroughly and precisely summarize all the facts, concepts, and important points that appear in this part only. Write a focused, factual bullet list — no headings, no preamble. Do not omit any substantive fact, and do not add information that isn't in this part.\n\nThis part may itself be written in any language -- regardless of the source language, the summary you write must be strictly in English.\n\nOutput plain text only -- do not return JSON, do not wrap the response in a code fence (\`\`\`), and do not repeat the "## Part ${index}/${total}" heading shown above at the start of your answer.`;
 
   return callGeminiWithRetry({
     systemInstruction: isHe ? SMART_STUDENT_PERSONA_HE : SMART_STUDENT_PERSONA_EN,
@@ -1045,6 +1045,8 @@ ${contentSlice(aggregatedContent)}
 ---
 המשימה שלך: צור ${typeDesc}.
 
+חומר המקור עשוי להיות כתוב או מדובר בכל שפה (לדוגמה אנגלית, ערבית, ספרדית) -- ללא קשר לשפת המקור, הסיכום, כל הכותרות והמטא-דאטה חייבים להיות בעברית בלבד. תרגם וסנתז את התוכן באופן טבעי לעברית, לא תרגום מילולי.
+
 הסיכום יכתב בעברית בפורמט Markdown מסודר וחם עם:
 - כותרת ראשית (##) לכל נושא מרכזי
 - תתי-כותרות (###) לנושאי משנה
@@ -1065,6 +1067,8 @@ ${contentSlice(aggregatedContent)}
 
 ---
 Your task: Create ${typeDesc}.
+
+The source material may be written or spoken in any language (e.g. Hebrew, Arabic, Spanish) -- regardless of the source language, the summary, all headings, and metadata must be strictly in English. Translate and synthesize the content naturally into English, not a literal word-for-word translation.
 
 Write the summary in English using clean, warm Markdown:
 - Main heading (##) for each major topic

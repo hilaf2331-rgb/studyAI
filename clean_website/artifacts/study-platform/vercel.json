@@ -1,4 +1,6 @@
 {
+  "buildCommand": "vite build --config vite.config.ts",
+  "outputDirectory": "dist/public",
   "cleanUrls": true,
   "rewrites": [
     {

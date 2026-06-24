@@ -42,7 +42,7 @@ export function StudyTipsCarousel({ isRTL }: { isRTL: boolean }) {
 
   return (
     <div
-      className="relative h-16 overflow-hidden rounded-lg border bg-muted/40 px-4 py-3"
+      className="relative min-h-16 rounded-lg border bg-muted/40 px-4 py-3"
       dir={isRTL ? "rtl" : "ltr"}
     >
       <AnimatePresence mode="wait">
@@ -55,7 +55,7 @@ export function StudyTipsCarousel({ isRTL }: { isRTL: boolean }) {
           className="flex items-start gap-2 text-sm text-muted-foreground"
         >
           <Lightbulb className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <span>{tips[index]}</span>
+          <span className="leading-relaxed">{tips[index]}</span>
         </motion.div>
       </AnimatePresence>
     </div>

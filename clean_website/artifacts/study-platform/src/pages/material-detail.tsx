@@ -140,6 +140,7 @@ interface KitResult {
   summary: { id: number; keyPointCount: number };
   deck: { id: number; cardCount: number };
   questionSet: { id: number; questionCount: number };
+  partialFailure?: boolean;
 }
 
 export const MaterialDetailPage: React.FC = () => {
@@ -381,16 +382,18 @@ export const MaterialDetailPage: React.FC = () => {
                   <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
                     <span className="font-semibold">
                       {isRTL
-                        ? `מעבד חלק ${generationProgress.currentChunk} מ-${generationProgress.totalChunks}...`
-                        : `Processing chunk ${generationProgress.currentChunk} of ${generationProgress.totalChunks}...`}
+                        ? `עיבוד: ${generationProgress.percentage}% (חלק ${generationProgress.currentChunk} מתוך ${generationProgress.totalChunks})...`
+                        : `Processing: ${generationProgress.percentage}% (chunk ${generationProgress.currentChunk} of ${generationProgress.totalChunks})...`}
                     </span>
-                    <span className="text-muted-foreground">{generationProgress.percentage}%</span>
                   </div>
                   <Progress value={generationProgress.percentage} className="h-2" />
                 </>
               ) : (
                 <>
-                  <p className="font-semibold text-sm">{progressSteps[progressStep]}</p>
+                  <div className={`flex items-center justify-between text-sm ${isRTL ? "flex-row-reverse" : ""}`}>
+                    <span className="font-semibold">{progressSteps[progressStep]}</span>
+                    <span className="text-muted-foreground">{progressValue}%</span>
+                  </div>
                   <Progress value={progressValue} className="h-2" />
                 </>
               )}
@@ -402,6 +405,14 @@ export const MaterialDetailPage: React.FC = () => {
               <div className="text-green-700 font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5" />{isRTL ? "ערכת הלימוד מוכנה!" : "Your study kit is ready!"}
               </div>
+              {(kitResult.partialFailure || (kitResult.deck.cardCount === 0 && kitResult.questionSet.questionCount === 0)) && (
+                <p className="text-amber-700 text-sm flex items-start gap-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  {isRTL
+                    ? "חלק מהחומר לא עובד בהצלחה (לדוגמה עומס זמני על השירות) — חלק מהסיכום, הכרטיסיות או החידון עשויים להיות חסרים. נסו להריץ יצירה מחדש בעוד כמה דקות."
+                    : "Part of the material couldn't be processed (e.g. a temporary service overload) — some of the summary, flashcards, or quiz may be missing. Try generating again in a few minutes."}
+                </p>
+              )}
               <div className={`flex flex-wrap gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
                 <Link href={`/summaries/${kitResult.summary.id}`}>
                   <Button size="sm" variant="secondary" className="gap-1"><Eye className="w-4 h-4" />{isRTL ? "צפה בסיכום" : "View Summary"}</Button>

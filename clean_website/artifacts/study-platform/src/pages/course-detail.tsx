@@ -48,6 +48,7 @@ export const CourseDetailPage: React.FC = () => {
 
   const handleDelete = (e: React.MouseEvent, materialId: number) => {
     e.preventDefault(); e.stopPropagation();
+    if (!window.confirm("האם אתה בטוח שברצונך למחוק את החומר הזה?")) return;
     deleteMaterial.mutate({ id: materialId }, {
       onSuccess: () => qc.invalidateQueries({ queryKey: getListMaterialsQueryKey() }),
     });

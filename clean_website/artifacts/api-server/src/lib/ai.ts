@@ -209,6 +209,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Error objects don't serialize their own properties via JSON.stringify by
+// default (only enumerable own properties do, and most Error subclasses
+// define message/stack as non-enumerable) -- this walks the prototype chain
+// so nothing the SDK attached (status, error body, etc.) gets silently
+// dropped from the logs.
+function safeStringifyError(error: any): string {
+  try {
+    return JSON.stringify(error, Object.getOwnPropertyNames(error ?? {}));
+  } catch {
+    return String(error);
+  }
+}
+
 // @google/genai's own config.httpOptions.timeout does not reliably abort
 // in-flight requests (googleapis/js-genai#1277), so each attempt is bounded
 // here instead via a plain race against a timer.
@@ -263,6 +276,19 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
       return text;
     } catch (error: any) {
       lastError = error;
+      // Logged unconditionally (not just on retry) since a non-retryable
+      // error breaks out below without ever hitting the warn log -- without
+      // this, the only trace of a one-shot failure would be the generic
+      // "request failed after all retries" line, with none of the SDK's own
+      // diagnostic detail.
+      console.error("callGeminiWithRetry: raw error from genAI.models.generateContent:", {
+        name: error?.name,
+        status: error?.status ?? error?.response?.status,
+        message: error?.message,
+        cause: error?.cause,
+        errorDetails: error?.error ?? error?.response?.error,
+        raw: safeStringifyError(error),
+      });
       if (isRateLimitError(error) && attempt === MAX_RETRY_ATTEMPTS) {
         console.error("callGeminiWithRetry: rate limit survived all retries, failing fast.");
         throw new RateLimitExhaustedError(RATE_LIMIT_COOLDOWN_SECONDS);

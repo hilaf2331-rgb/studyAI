@@ -55,7 +55,20 @@ type MaterialRow = typeof materialsTable.$inferSelect;
 // fresh set. Summary and flashcards stay on the dynamic, document-size-aware
 // limits below since those two are the priority: thorough, comprehensive
 // coverage of the whole document.
-const PRACTICE_QUESTION_COUNT = 10;
+//
+// The target itself still scales with the document's actual chunk count
+// (computeQuestionCount below) -- a fixed single number meant an 80-page
+// chunked document and a 2-page one got the same 10-question quiz, even
+// though generateQuestionsAI's chunked branch only asks each chunk for a
+// couple of questions, so a document with many chunks needs a higher target
+// to actually produce a reasonably sized quiz instead of getting trimmed
+// back down to (or undershooting) a number sized for a single-chunk document.
+const PRACTICE_QUESTION_COUNT_MIN = 10;
+const PRACTICE_QUESTION_COUNT_MAX = 20;
+
+function computeQuestionCount(chunkCount: number): number {
+  return Math.max(PRACTICE_QUESTION_COUNT_MIN, Math.min(PRACTICE_QUESTION_COUNT_MAX, chunkCount * 2));
+}
 
 function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
   if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError || err instanceof AIServiceError) {
@@ -191,12 +204,14 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       },
     });
 
-    // Stage 3/3: practice questions -- fixed at PRACTICE_QUESTION_COUNT
-    // (one quiz's worth per run; re-run for a fresh set), excluding any
+    // Stage 3/3: practice questions -- one quiz's worth per run (re-run for a
+    // fresh set), sized to the document's actual chunk count instead of a
+    // single fixed number (see computeQuestionCount above). Excludes any
     // question already generated for this material in a previous run/exam
     // so repeated runs don't just hand back the same quiz. Also reuses
     // summaryResult.parts, same as the flashcards stage above.
-    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${PRACTICE_QUESTION_COUNT} practice questions...`);
+    const practiceQuestionCount = computeQuestionCount(summaryResult.parts.length);
+    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${practiceQuestionCount} practice questions...`);
     let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
     let questionFailed = false;
     try {
@@ -207,7 +222,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           materialContent: content,
           materialTitle: material.title,
           materialId,
-          questionCount: PRACTICE_QUESTION_COUNT,
+          questionCount: practiceQuestionCount,
           questionTypes: ["multiple_choice", "true_false"],
           difficulty: "mixed",
           excludeQuestions,

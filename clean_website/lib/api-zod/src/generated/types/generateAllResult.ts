@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GenerateAllResultDeck } from './generateAllResultDeck';
+import type { GenerateAllResultExam } from './generateAllResultExam';
 import type { GenerateAllResultQuestionSet } from './generateAllResultQuestionSet';
 import type { GenerateAllResultSummary } from './generateAllResultSummary';
 
@@ -13,5 +14,7 @@ export interface GenerateAllResult {
   summary?: GenerateAllResultSummary;
   deck?: GenerateAllResultDeck;
   questionSet?: GenerateAllResultQuestionSet;
+  /** Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism. */
+  exam?: GenerateAllResultExam;
   partialFailure?: boolean;
 }

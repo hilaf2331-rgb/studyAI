@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
-  useGenerateSummary, useGenerateFlashcards, useGenerateQuestions, useGenerateExam,
+  useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
   useGetMaterialProgress,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
@@ -168,6 +168,14 @@ export const MaterialDetailPage: React.FC = () => {
   const [progressStep, setProgressStep] = useState(0);
   const [progressValue, setProgressValue] = useState(0);
 
+  // The exam route used to be a generated synchronous mutation hook
+  // (useGenerateExam, expecting an immediate 201), but a chunked exam
+  // routinely outlived Render's proxy timeout before that response ever
+  // arrived. It's now fire-and-forget like generate-all, so it needs the
+  // same manual-fetch + progress-poll handling instead of a mutation hook.
+  const [examLoading, setExamLoading] = useState(false);
+  const [examError, setExamError] = useState("");
+
   const { data: material, isLoading } = useGetMaterial(id, { query: { enabled: !!id, queryKey: getGetMaterialQueryKey(id) } });
   const { data: summaries } = useListSummaries(id, { query: { enabled: !!id, queryKey: getListSummariesQueryKey(id) } });
   const { data: decks } = useListFlashcardDecks(id, { query: { enabled: !!id, queryKey: getListFlashcardDecksQueryKey(id) } });
@@ -177,13 +185,12 @@ export const MaterialDetailPage: React.FC = () => {
   const genSummary = useGenerateSummary();
   const genFlash = useGenerateFlashcards();
   const genQA = useGenerateQuestions();
-  const genExam = useGenerateExam();
 
   // While any of the four individual generation requests is in flight, poll
   // the backend's "chunk X of Y" tracker so the dialog can show real
   // progress instead of a bare spinner during the (now strictly sequential,
   // multi-minute) chunked processing of large documents.
-  const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || genExam.isPending || kitLoading;
+  const anyGenerating = genSummary.isPending || genFlash.isPending || genQA.isPending || examLoading || kitLoading;
   // Stays enabled even when nothing is generating locally, so a fresh mount
   // (e.g. navigating back to this page) can find out whether the backend's
   // in-memory job tracker still has an active generate-all run for this
@@ -250,6 +257,24 @@ export const MaterialDetailPage: React.FC = () => {
       setKitLoading(false);
     }
   }, [generationProgress, kitLoading, id, qc, isRTL]);
+
+  // Same poll, same "done"/"error" terminal-stage handling as the kit's
+  // effect above, but for the standalone exam job -- it shares the same
+  // backend progress slot (keyed by materialId), so this is gated on
+  // examLoading specifically to avoid stepping on a concurrent kit run's
+  // result handling above.
+  useEffect(() => {
+    if (!examLoading || !generationProgress) return;
+    if (generationProgress.stage === "done" && generationProgress.result?.exam) {
+      qc.invalidateQueries({ queryKey: getListExamsQueryKey(id) });
+      qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
+      setExamOpen(false);
+      setExamLoading(false);
+    } else if (generationProgress.stage === "error") {
+      setExamError(generationProgress.error || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
+      setExamLoading(false);
+    }
+  }, [generationProgress, examLoading, id, qc, isRTL]);
 
   const handleGenerateAll = async () => {
     setKitLoading(true);
@@ -341,17 +366,38 @@ export const MaterialDetailPage: React.FC = () => {
     );
   };
 
-  const handleGenerateExam = () => {
-    genExam.mutate(
-      { id, data: { language: examLang, examType: examType as any, questionCount: 15, difficulty: "mixed" as any } },
-      {
-        onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getListExamsQueryKey(id) });
-          qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
-          setExamOpen(false);
+  const handleGenerateExam = async () => {
+    setExamLoading(true);
+    setExamError("");
+
+    try {
+      const token = getStoredToken();
+      const response = await fetch(apiUrl(`/api/materials/${id}/exams`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token,
         },
+        body: JSON.stringify({ language: examLang, examType, questionCount: 15, difficulty: "mixed" }),
+      });
+
+      const rawBody = await response.text();
+      let payload: any;
+      try {
+        payload = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        throw new Error(response.status >= 500 ? "Generation timed out. The server is working hard, please try again." : "Unexpected response from server.");
       }
-    );
+
+      if (!response.ok) throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
+
+      // 202 just confirms the background job started -- the actual exam (or
+      // failure) shows up via the generationProgress poll effect above once
+      // the background job writes a terminal "done"/"error" entry.
+    } catch (err: any) {
+      setExamError(err.message || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
+      setExamLoading(false);
+    }
   };
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
@@ -647,7 +693,7 @@ export const MaterialDetailPage: React.FC = () => {
         onClose={() => setExamOpen(false)}
         title={isRTL ? "צור מבחן" : "Generate Exam"}
         onGenerate={handleGenerateExam}
-        isGenerating={genExam.isPending}
+        isGenerating={examLoading}
         progress={generationProgress}
         isRTL={isRTL}
       >
@@ -673,7 +719,7 @@ export const MaterialDetailPage: React.FC = () => {
             </SelectContent>
           </Select>
         </div>
-        {generationError(genExam) && <p className="text-destructive text-sm">{generationError(genExam)}</p>}
+        {examError && <p className="text-destructive text-sm">{examError}</p>}
       </GenerateDialog>
     </div>
   );

@@ -40,6 +40,7 @@ export * from './flashcardReview';
 export * from './flashcardReviewResult';
 export * from './generateAllResult';
 export * from './generateAllResultDeck';
+export * from './generateAllResultExam';
 export * from './generateAllResultQuestionSet';
 export * from './generateAllResultSummary';
 export * from './generationProgress';

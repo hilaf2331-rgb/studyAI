@@ -872,6 +872,15 @@ components:
               type: integer
             questionCount:
               type: integer
+        exam:
+          description: Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism.
+          type: object
+          required: [id, questionCount]
+          properties:
+            id:
+              type: integer
+            questionCount:
+              type: integer
         partialFailure:
           type: boolean
 

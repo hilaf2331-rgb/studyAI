@@ -8,14 +8,42 @@ import {
 import { generateExamAI, gradeAnswer } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
-import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
 import { getExistingQuestionTexts } from "../lib/question-history";
+import { setGenerationProgress } from "../lib/progress";
+import { logger } from "../lib/logger";
 
 // Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
 // meant to feel like one real quiz/exam rather than an attempt to exhaust
 // every possible question from the material -- students re-run generation
 // (now steered away from repeating prior questions) for a fresh set.
 const MAX_EXAM_QUESTION_COUNT = 10;
+
+// Same ceiling generate-all.ts uses for its own background stages -- this
+// route used to await generateExamAI synchronously inside the request
+// handler, so a large/chunked exam routinely outlived Render's proxy
+// timeout and got killed mid-generation (the "first attempt throws an
+// error" half of the bug report). Converting to the same fire-and-forget
+// 202 + background job + progress-poll pattern generate-all.ts already
+// uses removes that ceiling entirely; this timeout is just a safety net.
+const AI_TASK_TIMEOUT_MS = 1_800_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 
 const router = Router();
 
@@ -41,73 +69,137 @@ router.get("/materials/:id/exams", async (req, res) => {
   res.json(withQ.filter(Boolean));
 });
 
-router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
-  const userId = req.user!.userId;
-  const { id } = GenerateExamParams.parse({ id: Number(req.params.id) });
-  const body = GenerateExamBody.parse(req.body);
+type MaterialRow = typeof materialsTable.$inferSelect;
+type GenerateExamBodyType = ReturnType<typeof GenerateExamBody.parse>;
 
-  const [material] = await db.select().from(materialsTable)
-    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
-  if (!material) return res.status(404).json({ error: "Not found" });
-
-  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
-
+// The actual Gemini + DB-insert pipeline, run after the 202 has already gone
+// out -- mirrors generate-all.ts's runGenerateAll. Writes a terminal
+// "done"/"error" progress entry on every exit path, since that (via GET
+// /materials/:id/progress) is the only way the frontend learns the exam
+// actually finished; previously this route never wrote one at all, which is
+// what left a retried generation stuck at "100%" forever (the chunked
+// branch only ever wrote intermediate stage:"chunking" entries).
+async function runGenerateExam(material: MaterialRow, userId: number, body: GenerateExamBodyType, questionCount: number): Promise<void> {
+  const materialId = material.id;
   const materialContent = material.extractedText || material.title;
-  const contentLength = materialContent.trim().length;
-  const questionCount = Math.min(
-    clampToContentLength(body.questionCount || 10, contentLength, "questions"),
-    MAX_EXAM_QUESTION_COUNT,
-  );
 
-  await requireTokenBalance(userId);
-
-  const excludeQuestions = await getExistingQuestionTexts(id);
-  const generated = await generateExamAI({
-    language: body.language as "he" | "en",
-    materialContent,
-    materialTitle: material.title,
-    questionCount,
-    examType: body.examType,
-    difficulty: body.difficulty || "mixed",
-    topics: body.topics,
-    materialId: id,
-    excludeQuestions,
-  });
-  await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
-
-  const [exam] = await db.insert(examsTable).values({
-    materialId: id,
-    title: `${material.title} - ${body.examType} Exam`,
-    language: body.language,
-    examType: body.examType,
-    questionCount: generated.length,
-    timeLimitMinutes: body.timeLimitMinutes || null,
-    difficulty: body.difficulty || "mixed",
-  }).returning();
-
-  if (generated.length > 0) {
-    await db.insert(questionsTable).values(
-      generated.map(q => ({
-        examId: exam.id,
-        questionType: q.questionType || "multiple_choice",
-        question: q.question,
-        answer: q.answer,
-        explanation: q.explanation || null,
-        modelAnswer: q.modelAnswer || null,
-        options: q.options || [],
-        difficulty: q.difficulty || "medium",
-      }))
+  try {
+    const excludeQuestions = await getExistingQuestionTexts(materialId);
+    const generated = await withTimeout(
+      generateExamAI({
+        language: body.language as "he" | "en",
+        materialContent,
+        materialTitle: material.title,
+        questionCount,
+        examType: body.examType,
+        difficulty: body.difficulty || "mixed",
+        topics: body.topics,
+        materialId,
+        excludeQuestions,
+      }),
+      AI_TASK_TIMEOUT_MS,
+      "generateExamAI",
     );
+
+    const [exam] = await db.insert(examsTable).values({
+      materialId,
+      title: `${material.title} - ${body.examType} Exam`,
+      language: body.language,
+      examType: body.examType,
+      questionCount: generated.length,
+      timeLimitMinutes: body.timeLimitMinutes || null,
+      difficulty: body.difficulty || "mixed",
+    }).returning();
+
+    if (!exam?.id) {
+      logger.error({ materialId }, "exams: exam insert failed, aborting");
+      setGenerationProgress(materialId, {
+        currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+        error: "Generated content was incomplete. Please try again.",
+      });
+      return;
+    }
+
+    if (generated.length > 0) {
+      await db.insert(questionsTable).values(
+        generated.map(q => ({
+          examId: exam.id,
+          questionType: q.questionType || "multiple_choice",
+          question: q.question,
+          answer: q.answer,
+          explanation: q.explanation || null,
+          modelAnswer: q.modelAnswer || null,
+          options: q.options || [],
+          difficulty: q.difficulty || "medium",
+        }))
+      );
+    }
+
+    await db.insert(activityTable).values({
+      userId,
+      activityType: "exam",
+      description: `Generated ${body.examType} exam for "${material.title}"`,
+      materialTitle: material.title,
+    });
+
+    await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
+
+    setGenerationProgress(materialId, {
+      currentChunk: 0,
+      totalChunks: 0,
+      percentage: 100,
+      stage: "done",
+      result: { exam: { id: exam.id, questionCount: generated.length } },
+    });
+  } catch (err) {
+    logger.error({ err, materialId }, "exams: unhandled background failure");
+    const message = err instanceof InsufficientTokensError
+      ? err.message
+      : "Something went wrong while generating your exam. Please try again.";
+    setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
   }
+}
 
-  await db.insert(activityTable).values({
-    userId,
-    activityType: "exam",
-    description: `Generated ${body.examType} exam for "${material.title}"`,
-    materialTitle: material.title,
-  });
+// Fire-and-forget by design, same rationale as generate-all.ts: a
+// chunked exam's Gemini calls routinely outlive Render's proxy timeout, so
+// only the fast synchronous checks happen before responding -- the actual
+// generation runs after the 202, and the frontend polls GET
+// /materials/:id/progress to find out how it went.
+router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const { id } = GenerateExamParams.parse({ id: Number(req.params.id) });
+    const body = GenerateExamBody.parse(req.body);
 
-  res.status(201).json(await getExamWithQuestions(exam.id));
+    const [material] = await db.select().from(materialsTable)
+      .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
+    if (!material) return res.status(404).json({ error: "Not found" });
+
+    if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
+    const materialContent = material.extractedText || material.title;
+    const contentLength = materialContent.trim().length;
+    const questionCount = Math.min(
+      clampToContentLength(body.questionCount || 10, contentLength, "questions"),
+      MAX_EXAM_QUESTION_COUNT,
+    );
+
+    await requireTokenBalance(userId);
+
+    setGenerationProgress(id, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "running" });
+    res.status(202).json({ materialId: id, status: "running" });
+
+    void runGenerateExam(material, userId, body, questionCount);
+  } catch (err) {
+    logger.error({ err, materialId: req.params.id }, "exams: failed before dispatch");
+    if (!res.headersSent) {
+      if (err instanceof InsufficientTokensError) {
+        res.status(402).json({ error: err.message });
+        return;
+      }
+      res.status(500).json({ error: "Something went wrong while generating your exam. Please try again." });
+    }
+  }
 });
 
 router.get("/exams/:id", async (req, res) => {

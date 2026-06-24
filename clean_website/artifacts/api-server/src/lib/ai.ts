@@ -315,6 +315,35 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// One full per-chunk operation (richifyChapter, summarizeChunk, etc.) gets
+// this many attempts before its caller's "skip this chunk" fallback kicks
+// in. This is deliberately separate from callGeminiWithRetry's own internal
+// retries -- that helper only retries a single raw Gemini HTTP call and
+// gives up immediately on errors it doesn't recognize as retryable (e.g. a
+// one-off empty response), which was enough to burn a whole chapter on one
+// transient blip. Wrapping the entire chunk operation catches every failure
+// mode along that path, not just the ones callGeminiWithRetry already knows
+// about.
+const CHUNK_RETRY_ATTEMPTS = 3;
+const CHUNK_RETRY_BASE_DELAY_MS = 1500;
+
+async function withChunkRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt < CHUNK_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof RateLimitExhaustedError) throw error;
+      lastError = error;
+      if (attempt === CHUNK_RETRY_ATTEMPTS - 1) break;
+      const delay = CHUNK_RETRY_BASE_DELAY_MS * 2 ** attempt;
+      console.warn(`${label}: attempt ${attempt + 1}/${CHUNK_RETRY_ATTEMPTS} failed, retrying in ${Math.round(delay)}ms:`, error instanceof Error ? error.message : error);
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+}
+
 // Error objects don't serialize their own properties via JSON.stringify by
 // default (only enumerable own properties do, and most Error subclasses
 // define message/stack as non-enumerable) -- this walks the prototype chain
@@ -632,7 +661,7 @@ async function buildAggregatedContent(
     );
 
     const settled = await Promise.allSettled(
-      batchIndexes.map((i) => summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length)),
+      batchIndexes.map((i) => withChunkRetry(`summarizeChunk(${i + 1}/${chunks.length})`, () => summarizeChunk(chunks[i], materialTitle, isHe, i + 1, chunks.length))),
     );
 
     const rateLimitFailure = settled.find(
@@ -737,7 +766,11 @@ function buildExcludeQuestionsBlock(existingQuestionTexts: string[], isHe: boole
 // headings, bold terms, examples, tip callouts. Generous relative to
 // CHUNK_COMPLETION_MAX_TOKENS since this call is meant to genuinely deepen
 // and restructure that chunk's content, not just reformat a sentence of it.
-const CHUNK_RICH_CHAPTER_MAX_OUTPUT_TOKENS = 3000;
+// Raised from 3000 -- a dense chunk's structured expansion (headings +
+// bullets + examples + tips) can legitimately need more room than that, and
+// running up against the ceiling is exactly what pushes the model to
+// compress the tail into an unstructured wall of prose to fit.
+const CHUNK_RICH_CHAPTER_MAX_OUTPUT_TOKENS = 4096;
 
 // Turns one chunk's already-extracted facts into a deep, structured Markdown
 // chapter instead of leaving the final "Detailed Summary" as a flat,
@@ -769,6 +802,7 @@ ${factualSummary}
 - בכל מקום שתלמידים נוטים להתבלבל, הוסף שורת "> 💡 **טיפ זהב:** ..." (כציטוט Markdown)
 
 אסור להמציא מידע שלא מופיע בעובדות לעיל. אסור לקצר, לסנן או לדלג על עובדות — המטרה היא להעמיק ולהבנות את התוכן הקיים, לא לסכם אותו מחדש בקיצור.
+חשוב מאוד: שמור על המבנה הזה (כותרות, נקודות, הדגשות, טיפים) בעקביות מההתחלה ועד הסוף הממש של הפלט, גם אם רשימת העובדות ארוכה — אסור בשום אופן שהפלט "יתעייף" וייהפך לקטע פרוזה רציף וארוך בלי כותרות ונקודות, אפילו בחלקים האחרונים של הפרק.
 הפלט הוא טקסט Markdown רגיל בלבד — אסור JSON, אסור גדר קוד (\`\`\`), בלי הקדמות לפני הכותרת.`
     : `## Chapter ${index}/${total} of study material "${materialTitle}" -- facts extracted from this part of the material:
 
@@ -784,6 +818,7 @@ Task: expand the facts above into a detailed, structured, in-depth summary chapt
 - Wherever students commonly get confused, add a "> 💡 **Pro Tip:** ..." line (as a Markdown blockquote)
 
 Do not invent information that isn't in the facts above. Do not shorten, filter, or skip facts -- the goal is to deepen and structure the existing content, not re-summarize it briefly.
+Critical: keep this exact structure (headings, bullets, bold, tips) consistent from the very first line to the very last, no matter how long the fact list is -- never let the output "tire out" partway through and collapse into a long unstructured wall of prose with no headings or bullets, even in the final sections of the chapter.
 Output plain Markdown text only -- no JSON, no code fence (\`\`\`), no preamble before the heading.`;
 
   return callGeminiWithRetry({
@@ -851,7 +886,7 @@ export async function generateSummary(
     const richChapters: string[] = [];
     for (let i = 0; i < parts.length; i++) {
       try {
-        const rich = await richifyChapter(parts[i], materialTitle, isHe, i + 1, parts.length);
+        const rich = await withChunkRetry(`richifyChapter(${i + 1}/${parts.length})`, () => richifyChapter(parts[i], materialTitle, isHe, i + 1, parts.length));
         richChapters.push(rich.trim() || (isHe ? `## פרק ${i + 1}\n${parts[i]}` : `## Chapter ${i + 1}\n${parts[i]}`));
       } catch (err) {
         if (err instanceof RateLimitExhaustedError) throw err;
@@ -1098,7 +1133,7 @@ export async function generateFlashcardsAI(
 
     for (let i = 0; i < parts.length; i++) {
       try {
-        const chunkCards = await generateFlashcardsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, cardsPerChunk, cardTypes);
+        const chunkCards = await withChunkRetry(`generateFlashcardsForChunk(${i + 1}/${parts.length})`, () => generateFlashcardsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, cardsPerChunk, cardTypes));
         allCards.push(...chunkCards);
       } catch (err) {
         if (err instanceof RateLimitExhaustedError) throw err;
@@ -1307,7 +1342,7 @@ export async function generateQuestionsAI(
     for (let i = 0; i < parts.length; i++) {
       const excludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
       try {
-        const chunkQuestions = await generateQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, questionTypes, difficulty, excludeBlock);
+        const chunkQuestions = await withChunkRetry(`generateQuestionsForChunk(${i + 1}/${parts.length})`, () => generateQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, questionTypes, difficulty, excludeBlock));
         const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
         allQuestions.push(...deduped);
         cumulativeExclude.push(...deduped.map((q) => q.question));
@@ -1553,7 +1588,7 @@ export async function generateExamAI(
     for (let i = 0; i < parts.length; i++) {
       const chunkExcludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
       try {
-        const chunkQuestions = await generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock);
+        const chunkQuestions = await withChunkRetry(`generateExamQuestionsForChunk(${i + 1}/${parts.length})`, () => generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock));
         const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
         allQuestions.push(...deduped);
         cumulativeExclude.push(...deduped.map((q) => q.question));

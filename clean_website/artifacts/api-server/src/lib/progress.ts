@@ -7,6 +7,11 @@ export interface GenerateAllResult {
   summary?: { id: number; keyPointCount: number };
   deck?: { id: number; cardCount: number };
   questionSet?: { id: number; questionCount: number };
+  // Populated by the (also background, also-polled) standalone exam
+  // generation job -- reuses this same result shape/progress key rather than
+  // inventing a parallel tracking mechanism for what's otherwise an
+  // identical "long chunked AI job, poll for done" flow.
+  exam?: { id: number; questionCount: number };
   partialFailure?: boolean;
 }
 

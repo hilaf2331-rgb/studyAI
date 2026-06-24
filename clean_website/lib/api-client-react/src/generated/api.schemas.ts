@@ -129,10 +129,20 @@ export type GenerateAllResultQuestionSet = {
   questionCount: number;
 };
 
+/**
+ * Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism.
+ */
+export type GenerateAllResultExam = {
+  id: number;
+  questionCount: number;
+};
+
 export interface GenerateAllResult {
   summary?: GenerateAllResultSummary;
   deck?: GenerateAllResultDeck;
   questionSet?: GenerateAllResultQuestionSet;
+  /** Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism. */
+  exam?: GenerateAllResultExam;
   partialFailure?: boolean;
 }
 

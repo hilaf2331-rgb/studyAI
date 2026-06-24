@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, type Content } from "@google/generative-ai";
+import { GoogleGenAI, type Content } from "@google/genai";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
 
@@ -9,7 +9,7 @@ if (!process.env.GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY environment variable is required but was not provided.");
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // gemini-1.5-flash was fully retired by Google on 2025-09-24 -- every call
 // to it now 404s immediately (not retryable), which is why failures here
@@ -209,6 +209,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// @google/genai's own config.httpOptions.timeout does not reliably abort
+// in-flight requests (googleapis/js-genai#1277), so each attempt is bounded
+// here instead via a plain race against a timer.
+function withAttemptTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err: any = new Error(`Gemini call timed out after ${ms}ms`);
+      err.name = "AbortError";
+      reject(err);
+    }, ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 interface GeminiCallParams {
   systemInstruction?: string;
   contents: Content[];
@@ -224,26 +241,26 @@ interface GeminiCallParams {
  */
 async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   checkCircuitBreaker();
-  const model = genAI.getGenerativeModel(
-    {
-      model: TEXT_MODEL,
-      systemInstruction: params.systemInstruction,
-    },
-    { timeout: ATTEMPT_TIMEOUT_MS },
-  );
 
   let lastError: any;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      const result = await model.generateContent({
-        contents: params.contents,
-        generationConfig: {
-          temperature: params.temperature,
-          maxOutputTokens: params.maxOutputTokens,
-          responseMimeType: params.jsonMode ? "application/json" : undefined,
-        },
-      });
-      return result.response.text();
+      const response = await withAttemptTimeout(
+        genAI.models.generateContent({
+          model: TEXT_MODEL,
+          contents: params.contents,
+          config: {
+            systemInstruction: params.systemInstruction,
+            temperature: params.temperature,
+            maxOutputTokens: params.maxOutputTokens,
+            responseMimeType: params.jsonMode ? "application/json" : undefined,
+          },
+        }),
+        ATTEMPT_TIMEOUT_MS,
+      );
+      const text = response.text;
+      if (!text) throw new Error("Gemini returned an empty response.");
+      return text;
     } catch (error: any) {
       lastError = error;
       if (isRateLimitError(error) && attempt === MAX_RETRY_ATTEMPTS) {

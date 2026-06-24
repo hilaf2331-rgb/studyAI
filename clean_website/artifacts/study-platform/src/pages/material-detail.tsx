@@ -588,10 +588,10 @@ export const MaterialDetailPage: React.FC = () => {
           </div>
         </div>
       ) : !hasContent && (
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
+        <div className="flex items-center gap-2.5 text-sm text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-3 rounded-lg animate-in fade-in slide-in-from-top-1 duration-300">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          {isRTL ? "חומר הלימוד קצר מדי כדי לייצר ממנו תוכן. הוסיפו עוד טקסט." : "This material is too short to generate content from. Please add more text."}
-        </p>
+          <p>{isRTL ? "חומר הלימוד קצר מדי כדי לייצר ממנו תוכן. הוסיפו עוד טקסט." : "This material is too short to generate content from. Please add more text."}</p>
+        </div>
       )}
 
       <div className="grid gap-4">

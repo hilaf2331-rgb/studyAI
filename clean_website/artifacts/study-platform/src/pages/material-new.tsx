@@ -431,8 +431,8 @@ export const MaterialNewPage: React.FC = () => {
                 {contentType === "youtube" && (
                   <p className="text-xs text-muted-foreground">
                     {isRTL
-                      ? "StudyAI יחלץ את הטרנסקריפט ויעבד אותו אוטומטית"
-                      : "StudyAI will extract the transcript and process it automatically"}
+                      ? "FocusStudy יחלץ את הטרנסקריפט ויעבד אותו אוטומטית"
+                      : "FocusStudy will extract the transcript and process it automatically"}
                   </p>
                 )}
               </div>

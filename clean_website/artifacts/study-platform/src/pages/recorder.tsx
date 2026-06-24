@@ -331,7 +331,7 @@ export const RecorderPage: React.FC = () => {
           הקלט הרצאה חיה
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          הקלט ישירות מהדפדפן — StudyAI יתמלל ויצור סיכום, כרטיסיות וחידון אוטומטית
+          הקלט ישירות מהדפדפן — FocusStudy יתמלל ויצור סיכום, כרטיסיות וחידון אוטומטית
         </p>
       </div>
 

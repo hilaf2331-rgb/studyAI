@@ -103,8 +103,8 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
       >
         {/* Logo */}
         <div className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden">
-          <BookOpen className="w-7 h-7 shrink-0" />
-          {open && <span className="truncate">StudyAI</span>}
+          <img src="/logo.png" alt="FocusStudy" className="w-7 h-7 shrink-0 object-contain" />
+          {open && <span className="truncate">FocusStudy</span>}
         </div>
 
         {/* Toggle button */}
@@ -136,8 +136,8 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2 font-bold text-lg tracking-tight text-sidebar-primary">
-            <BookOpen className="w-5 h-5" />
-            <span>StudyAI</span>
+            <img src="/logo.png" alt="FocusStudy" className="w-5 h-5 object-contain" />
+            <span>FocusStudy</span>
           </div>
           <div className="w-9" aria-hidden="true" />
         </div>
@@ -156,8 +156,8 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           className="w-72 p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border"
         >
           <div className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden border-b border-sidebar-border">
-            <BookOpen className="w-7 h-7 shrink-0" />
-            <span className="truncate">StudyAI</span>
+            <img src="/logo.png" alt="FocusStudy" className="w-7 h-7 shrink-0 object-contain" />
+            <span className="truncate">FocusStudy</span>
           </div>
           {renderNav(true, () => setMobileOpen(false))}
           {renderBottomActions(true)}

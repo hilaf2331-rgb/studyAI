@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Loader2, AlertCircle, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react";
 
 interface PasswordRule {
   labelHe: string;
@@ -79,11 +79,9 @@ export const AuthPage: React.FC = () => {
         {/* Logo */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center">
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-              <BookOpen className="w-6 h-6 text-primary-foreground" />
-            </div>
+            <img src="/logo.png" alt="FocusStudy" className="w-14 h-14 object-contain" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight">StudyAI</h1>
+          <h1 className="text-3xl font-black tracking-tight">FocusStudy</h1>
           <p className="text-muted-foreground text-sm">פלטפורמת הלמידה החכמה שלך</p>
         </div>
 

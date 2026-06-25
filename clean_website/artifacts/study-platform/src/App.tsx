@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import { LanguageProvider } from "@/lib/i18n";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
+import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
 import NotFound from "@/pages/not-found";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
@@ -47,15 +48,15 @@ function AppRoutes() {
   // Legal pages must stay reachable with no login required -- the payment
   // gateway's approval process and logged-out visitors both need to read
   // them, so they're checked before the auth gate below.
-  if (location === "/terms") return <TermsPage />;
-  if (location === "/privacy") return <PrivacyPage />;
+  if (location === "/terms") return <PageTransition locationKey={location}><TermsPage /></PageTransition>;
+  if (location === "/privacy") return <PageTransition locationKey={location}><PrivacyPage /></PageTransition>;
 
   if (!user) {
     // Logged-out visitors land on the marketing page at "/"; the login
     // gate itself lives at "/login" (linked from the landing page's nav
     // button and bottom CTA) -- any other path also falls back to it.
-    if (location === "/") return <LandingPage />;
-    return <AuthPage />;
+    if (location === "/") return <PageTransition locationKey={location}><LandingPage /></PageTransition>;
+    return <PageTransition locationKey={location}><AuthPage /></PageTransition>;
   }
 
   return (

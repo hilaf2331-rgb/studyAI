@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useGetExamResult, useGetExam, getGetExamQueryKey, useGenerateTargetedQuestion, TargetedQuestion } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
-import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -14,7 +13,6 @@ import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Wand2, Sparkles } from "lu
 export const ExamResultPage: React.FC = () => {
   const { id: examId, resultId } = useParams<{ id: string; resultId: string }>();
   const { isRTL } = useLanguage();
-  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [rescue, setRescue] = useState<Record<number, TargetedQuestion>>({});
   const [rescueSelected, setRescueSelected] = useState<Record<number, string>>({});
@@ -26,15 +24,11 @@ export const ExamResultPage: React.FC = () => {
 
   const requestRescue = (questionId: number, concept: string, language: "he" | "en") => {
     if (!exam) return;
-    if (!user?.isPremium) {
-      setShowUpsell(true);
-      return;
-    }
     rescueMutation.mutate(
       { id: exam.materialId, data: { language, concept } },
       {
         onSuccess: (data) => setRescue(prev => ({ ...prev, [questionId]: data })),
-        onError: (err: any) => { if (err?.status === 403) setShowUpsell(true); },
+        onError: (err: any) => { if (err?.status === 403 || err?.status === 402) setShowUpsell(true); },
       }
     );
   };
@@ -191,12 +185,12 @@ export const ExamResultPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              {isRTL ? "תכונת פרימיום" : "Premium Feature"}
+              {isRTL ? "נגמרו לך הטוקנים" : "Out of Tokens"}
             </DialogTitle>
             <DialogDescription>
               {isRTL
-                ? "פתח ניתוח נקודות חולשה ושאלות תיקון עם studyAI Premium!"
-                : "Unlock your Weak Spot Analytics and Rescue Questions with studyAI Premium!"}
+                ? "פתח ניתוח נקודות חולשה ושאלות תיקון בעזרת רכישת טוקנים נוספים!"
+                : "Unlock your Weak Spot Analytics and Rescue Questions by purchasing more tokens!"}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -204,7 +198,7 @@ export const ExamResultPage: React.FC = () => {
               {isRTL ? "אולי בהמשך" : "Maybe later"}
             </Button>
             <Button onClick={() => setShowUpsell(false)}>
-              {isRTL ? "שדרג לפרימיום" : "Upgrade to Premium"}
+              {isRTL ? "קנה טוקנים" : "Buy Tokens"}
             </Button>
           </DialogFooter>
         </DialogContent>

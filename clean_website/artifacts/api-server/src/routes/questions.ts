@@ -9,8 +9,7 @@ import {
 import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
-import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
-import { requirePremium } from "../lib/subscription";
+import { requireTokenBalance, deductTokensForGeneration, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
 
 const router = Router();
 
@@ -111,7 +110,7 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
 // item the frontend shows the student on the spot.
 router.post("/materials/:id/targeted-question", generationRateLimiter, async (req, res) => {
   const userId = req.user!.userId;
-  await requirePremium(userId);
+  await requireAndDeductFeatureTokens(userId, FEATURE_TOKEN_COSTS.targetedQuestion);
 
   const { id } = GenerateTargetedQuestionParams.parse({ id: Number(req.params.id) });
   const body = GenerateTargetedQuestionBody.parse(req.body);

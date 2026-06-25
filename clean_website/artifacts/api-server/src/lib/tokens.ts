@@ -14,8 +14,8 @@ const ADMIN_EMAILS = new Set<string>([
 ]);
 
 async function isAdminUser(userId: number): Promise<boolean> {
-  const [user] = await db.select({ email: usersTable.email }).from(usersTable).where(eq(usersTable.id, userId));
-  return !!user && ADMIN_EMAILS.has(user.email.toLowerCase());
+  const [user] = await db.select({ email: usersTable.email, role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId));
+  return !!user && (user.role === "admin" || ADMIN_EMAILS.has(user.email.toLowerCase()));
 }
 
 // Thrown before a generation call when the user has no tokens left. Callers
@@ -105,5 +105,28 @@ export async function incrementActionsUsed(userId: number): Promise<void> {
   if (await isAdminUser(userId)) return;
   await db.update(usersTable)
     .set({ actionsUsed: sql`${usersTable.actionsUsed} + 1` })
+    .where(eq(usersTable.id, userId));
+}
+
+// Flat per-execution token cost for the advanced AI features that sit on
+// top of (not instead of) the dynamic generation-cost accounting above --
+// PAYG features users pay a small fixed amount for regardless of how much
+// the underlying AI call ends up costing. Tune these freely.
+export const FEATURE_TOKEN_COSTS = {
+  targetedQuestion: 50,
+  dailyReviewQueue: 20,
+} as const;
+
+// Call right before running a PAYG-gated feature. Throws InsufficientTokensError
+// if the balance can't cover the flat cost, otherwise atomically deducts it.
+// Admin accounts (see isAdminUser above) always pass and are never deducted.
+export async function requireAndDeductFeatureTokens(userId: number, cost: number): Promise<void> {
+  if (await isAdminUser(userId)) return;
+  const balance = await getTokenBalance(userId);
+  if (!balance || balance.tokensRemaining < cost) {
+    throw new InsufficientTokensError();
+  }
+  await db.update(usersTable)
+    .set({ tokensRemaining: sql`${usersTable.tokensRemaining} - ${cost}` })
     .where(eq(usersTable.id, userId));
 }

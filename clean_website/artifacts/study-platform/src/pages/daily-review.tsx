@@ -22,7 +22,7 @@ export const DailyReviewPage: React.FC = () => {
   const [flipped, setFlipped] = useState(false);
   const [done, setDone] = useState(false);
 
-  const { data, isLoading } = useGetDailyReviewCards({ query: { queryKey: getGetDailyReviewCardsQueryKey() } });
+  const { data, isLoading, error } = useGetDailyReviewCards({ query: { queryKey: getGetDailyReviewCardsQueryKey() } });
   const reviewCard = useReviewFlashcard();
 
   // Snapshot the queue once on load, same rationale as flashcard-study.tsx:
@@ -33,6 +33,13 @@ export const DailyReviewPage: React.FC = () => {
     if (data?.cards && cards === null) setCards(data.cards);
   }, [data, cards]);
 
+  if ((error as any)?.status === 402) {
+    return (
+      <p className="text-muted-foreground">
+        {isRTL ? "נגמרו לך הטוקנים לסקירה היומית. קנה טוקנים נוספים כדי להמשיך." : "You're out of tokens for Today's Review. Buy more tokens to continue."}
+      </p>
+    );
+  }
   if (isLoading || cards === null) return <div className="space-y-4">{[1, 2].map(i => <Skeleton key={i} className="h-48" />)}</div>;
   if (!cards.length) return <p className="text-muted-foreground">{isRTL ? "אין כרטיסיות לסקירה היום" : "No cards due for review today"}</p>;
 

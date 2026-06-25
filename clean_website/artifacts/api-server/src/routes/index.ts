@@ -10,6 +10,7 @@ import chatRouter from "./chat";
 import dashboardRouter from "./dashboard";
 import generateAllRouter from "./generate-all";
 import recordingsRouter from "./recordings";
+import { billingAuthRouter } from "./billing";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(chatRouter);
 router.use(dashboardRouter);
 router.use(generateAllRouter);
 router.use(recordingsRouter);
+router.use(billingAuthRouter);
 
 export default router;

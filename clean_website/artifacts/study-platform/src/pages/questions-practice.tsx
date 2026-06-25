@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useParams } from "wouter";
 import { useGetQuestionSet, useGenerateTargetedQuestion, TargetedQuestion } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
-import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,7 +14,6 @@ export const QuestionsPracticePage: React.FC = () => {
   const { id: idStr } = useParams<{ id: string }>();
   const id = Number(idStr);
   const { isRTL } = useLanguage();
-  const { user } = useAuth();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<Record<number, string>>({});
   const [rescue, setRescue] = useState<Record<number, TargetedQuestion>>({});
@@ -45,15 +43,11 @@ export const QuestionsPracticePage: React.FC = () => {
   };
 
   const requestRescue = (q: typeof questions[number]) => {
-    if (!user?.isPremium) {
-      setShowUpsell(true);
-      return;
-    }
     rescueMutation.mutate(
       { id: qSet.materialId, data: { language: qSet.language, concept: q.concept || q.question } },
       {
         onSuccess: (data) => setRescue(prev => ({ ...prev, [q.id]: data })),
-        onError: (err: any) => { if (err?.status === 403) setShowUpsell(true); },
+        onError: (err: any) => { if (err?.status === 403 || err?.status === 402) setShowUpsell(true); },
       }
     );
   };
@@ -243,12 +237,12 @@ export const QuestionsPracticePage: React.FC = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              {isRTL ? "תכונת פרימיום" : "Premium Feature"}
+              {isRTL ? "נגמרו לך הטוקנים" : "Out of Tokens"}
             </DialogTitle>
             <DialogDescription>
               {isRTL
-                ? "פתח ניתוח נקודות חולשה ושאלות תיקון עם studyAI Premium!"
-                : "Unlock your Weak Spot Analytics and Rescue Questions with studyAI Premium!"}
+                ? "פתח ניתוח נקודות חולשה ושאלות תיקון בעזרת רכישת טוקנים נוספים!"
+                : "Unlock your Weak Spot Analytics and Rescue Questions by purchasing more tokens!"}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -256,7 +250,7 @@ export const QuestionsPracticePage: React.FC = () => {
               {isRTL ? "אולי בהמשך" : "Maybe later"}
             </Button>
             <Button onClick={() => setShowUpsell(false)}>
-              {isRTL ? "שדרג לפרימיום" : "Upgrade to Premium"}
+              {isRTL ? "קנה טוקנים" : "Buy Tokens"}
             </Button>
           </DialogFooter>
         </DialogContent>

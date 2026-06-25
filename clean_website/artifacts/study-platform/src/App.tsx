@@ -43,14 +43,13 @@ const queryClient = new QueryClient({
 });
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
 
   // The authenticated <Switch> below has no "/login" route. Right after a
   // successful login/register, `user` flips truthy on the same render where
-  // `location` is still "/login" -- without this redirect that combination
-  // falls through to <NotFound/> for a frame before anything else navigates
-  // away. Bounce straight to the dashboard instead of ever rendering it.
+  // `location` is still "/login" -- this effect bounces wouter's own
+  // location state to "/" so it catches up with the auth state.
   useEffect(() => {
     if (user && location === "/login") {
       setLocation("/");
@@ -59,9 +58,18 @@ function AppRoutes() {
 
   // Legal pages must stay reachable with no login required -- the payment
   // gateway's approval process and logged-out visitors both need to read
-  // them, so they're checked before the auth gate below.
+  // them, so they're checked before the auth/loading gates below.
   if (location === "/terms") return <PageTransition locationKey={location}><TermsPage /></PageTransition>;
   if (location === "/privacy") return <PageTransition locationKey={location}><PrivacyPage /></PageTransition>;
+
+  // Auth state hasn't resolved yet (a login/register request is in flight).
+  // `user` can flip from null -> truthy on the very next render, so routes
+  // must not be evaluated against a half-resolved auth state -- that's what
+  // let the unauthenticated branch below commit to <AuthPage/>, or the
+  // authenticated <Switch> commit to its <NotFound/> catch-all, for a single
+  // frame before flipping again. Render an empty, same-background frame and
+  // wait instead.
+  if (isLoading) return <div className="min-h-screen bg-background" />;
 
   if (!user) {
     // Logged-out visitors land on the marketing page at "/"; the login
@@ -71,14 +79,18 @@ function AppRoutes() {
     return <PageTransition locationKey={location}><AuthPage /></PageTransition>;
   }
 
-  // Logged in but still sitting on "/login" (the instant after the effect
-  // above fires, before it has navigated away) -- render nothing rather
-  // than letting the authenticated Switch below flash NotFound.
-  if (location === "/login") return null;
+  // `user` is already truthy but the redirect effect above hasn't committed
+  // the "/" URL change yet (it only fires after this render commits).
+  // Returning null for that one frame would unmount <SidebarLayout> and, a
+  // frame later, remount <Dashboard>/<BackgroundGlow> from scratch -- which
+  // is exactly the "glow flashes in then vanishes" symptom. Instead, tell
+  // the <Switch> below to match "/" immediately via wouter's `location`
+  // override prop, so <SidebarLayout> and <Dashboard> never unmount at all.
+  const matchLocation = location === "/login" ? "/" : location;
 
   return (
     <SidebarLayout>
-      <Switch>
+      <Switch location={matchLocation}>
         <Route path="/" component={Dashboard} />
         <Route path="/courses" component={CoursesPage} />
         <Route path="/courses/:id" component={CourseDetailPage} />

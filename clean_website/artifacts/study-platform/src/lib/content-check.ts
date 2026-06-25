@@ -10,8 +10,20 @@ export const NO_CONTENT_MESSAGE_HE =
 export const NO_CONTENT_MESSAGE_EN =
   "Hey, no content was detected in your upload. Please check the file or recording and try again 🙏";
 
+// Distinct from NO_CONTENT_MESSAGE_HE -- this one is specifically for a
+// recording that *exists* but is too quiet/silent to transcribe, so the
+// copy points the user at their mic/volume rather than at the file itself.
+export const SILENT_AUDIO_MESSAGE_HE =
+  "היי... ההקלטה שקטה או בקול חלש מדי לעיבוד. אנא נסו שוב 🎙️✨";
+export const SILENT_AUDIO_MESSAGE_EN =
+  "Hey... the recording is silent or too quiet to process. Please try again 🎙️✨";
+
 export function noContentMessage(isRTL: boolean): string {
   return isRTL ? NO_CONTENT_MESSAGE_HE : NO_CONTENT_MESSAGE_EN;
+}
+
+export function silentAudioMessage(isRTL: boolean): string {
+  return isRTL ? SILENT_AUDIO_MESSAGE_HE : SILENT_AUDIO_MESSAGE_EN;
 }
 
 // Decodes the audio and checks its RMS amplitude against a near-silence
@@ -48,8 +60,11 @@ export async function isAudioSilent(blob: Blob): Promise<boolean> {
 // the size/duration/silence checks). There is no fallback to the title or
 // any other metadata here -- a recording either has real, audible content
 // or performSave (and therefore the API call) never fires.
-export async function validateRecording(blob: Blob | null, durationSeconds: number): Promise<{ ok: true } | { ok: false }> {
-  if (!blob || blob.size === 0 || durationSeconds < 1) return { ok: false };
-  if (await isAudioSilent(blob)) return { ok: false };
+export async function validateRecording(
+  blob: Blob | null,
+  durationSeconds: number,
+): Promise<{ ok: true } | { ok: false; reason: "empty" | "silent" }> {
+  if (!blob || blob.size === 0 || durationSeconds < 1) return { ok: false, reason: "empty" };
+  if (await isAudioSilent(blob)) return { ok: false, reason: "silent" };
   return { ok: true };
 }

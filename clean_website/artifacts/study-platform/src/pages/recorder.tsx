@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
-import { NO_CONTENT_MESSAGE_HE, validateRecording } from "@/lib/content-check";
+import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording } from "@/lib/content-check";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -264,7 +264,7 @@ export const RecorderPage: React.FC = () => {
     // it triggers) never runs.
     const check = await validateRecording(audioBlobRef, elapsed);
     if (!check.ok) {
-      toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+      toast({ description: check.reason === "silent" ? SILENT_AUDIO_MESSAGE_HE : NO_CONTENT_MESSAGE_HE, variant: "destructive" });
       return;
     }
     performSave(audioBlobRef, title.trim());
@@ -282,7 +282,7 @@ export const RecorderPage: React.FC = () => {
     (async () => {
       const check = await validateRecording(audioBlobRef, elapsed);
       if (!check.ok) {
-        toast({ description: NO_CONTENT_MESSAGE_HE, variant: "destructive" });
+        toast({ description: check.reason === "silent" ? SILENT_AUDIO_MESSAGE_HE : NO_CONTENT_MESSAGE_HE, variant: "destructive" });
         return;
       }
       const recTitle = title.trim() || `הקלטה ${new Date().toLocaleDateString("he-IL")} ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;

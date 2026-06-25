@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -43,7 +44,18 @@ const queryClient = new QueryClient({
 
 function AppRoutes() {
   const { user } = useAuth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  // The authenticated <Switch> below has no "/login" route. Right after a
+  // successful login/register, `user` flips truthy on the same render where
+  // `location` is still "/login" -- without this redirect that combination
+  // falls through to <NotFound/> for a frame before anything else navigates
+  // away. Bounce straight to the dashboard instead of ever rendering it.
+  useEffect(() => {
+    if (user && location === "/login") {
+      setLocation("/");
+    }
+  }, [user, location, setLocation]);
 
   // Legal pages must stay reachable with no login required -- the payment
   // gateway's approval process and logged-out visitors both need to read
@@ -58,6 +70,11 @@ function AppRoutes() {
     if (location === "/") return <PageTransition locationKey={location}><LandingPage /></PageTransition>;
     return <PageTransition locationKey={location}><AuthPage /></PageTransition>;
   }
+
+  // Logged in but still sitting on "/login" (the instant after the effect
+  // above fires, before it has navigated away) -- render nothing rather
+  // than letting the authenticated Switch below flash NotFound.
+  if (location === "/login") return null;
 
   return (
     <SidebarLayout>

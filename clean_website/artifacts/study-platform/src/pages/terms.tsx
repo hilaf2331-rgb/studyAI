@@ -10,7 +10,7 @@ import { BackgroundGlow } from "@/components/background-glow";
 export const TermsPage: React.FC = () => {
   return (
     <div className="relative min-h-screen bg-background overflow-hidden" dir="rtl">
-      <BackgroundGlow className="top-0 right-1/4 w-[28rem] h-[28rem] opacity-10" />
+      <BackgroundGlow className="top-0 right-1/4 w-[28rem] h-[28rem] opacity-20" />
 
       <div className="relative z-10 max-w-3xl mx-auto px-4 py-10 space-y-8">
         <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm w-fit">

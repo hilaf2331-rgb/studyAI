@@ -43,7 +43,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="relative space-y-10 animate-in fade-in duration-500">
-      <BackgroundGlow className="-top-10 right-1/3 w-[26rem] h-[26rem] opacity-10" />
+      <BackgroundGlow className="-top-10 right-1/3 w-[26rem] h-[26rem] opacity-20" />
 
       {/* Header */}
       <div className="relative z-10 flex items-start justify-between">

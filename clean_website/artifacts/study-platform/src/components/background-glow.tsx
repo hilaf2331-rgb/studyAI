@@ -9,7 +9,7 @@ export const BackgroundGlow: React.FC<{ className?: string }> = ({ className }) 
   <div
     aria-hidden
     className={cn(
-      "pointer-events-none absolute -z-10 rounded-full bg-gradient-to-r from-blue-400 via-pink-400 to-amber-300 opacity-15 blur-3xl dark:opacity-20",
+      "pointer-events-none absolute -z-10 rounded-full bg-gradient-to-r from-blue-400 via-pink-400 to-amber-300 opacity-30 blur-3xl dark:opacity-20",
       className,
     )}
   />

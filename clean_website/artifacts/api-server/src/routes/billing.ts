@@ -3,9 +3,15 @@ import { db, usersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
+// Credentials for the local Israeli payment gateway (Grow). Read from env so
+// no key/terminal ID is ever hardcoded or committed -- set these in Render
+// (and a local .env, see .env.example) once Grow approves the account.
+const GROW_API_KEY = process.env.GROW_API_KEY;
+const GROW_TERMINAL_ID = process.env.GROW_TERMINAL_ID;
+
 // Token packages available for purchase. Prices are in ILS (cents not used --
-// whole shekels) since the eventual local gateway (PayPlus/Yaad) bills in ILS.
-// Adjust freely; nothing downstream depends on these exact values.
+// whole shekels) since Grow bills in ILS. Adjust freely; nothing downstream
+// depends on these exact values.
 export const TOKEN_PACKAGES = {
   starter: { tokens: 50_000, priceILS: 19 },
   standard: { tokens: 150_000, priceILS: 49 },
@@ -27,14 +33,18 @@ billingAuthRouter.post("/billing/create-checkout-session", async (req, res) => {
   }
 
   // ---- PAYMENT GATEWAY INJECTION POINT ----
-  // This is a stub. When the local Israeli gateway (PayPlus or Yaad) is
-  // wired up, replace the block below with an actual SDK/API call that
-  // creates a real hosted checkout/payment page for `pkg.priceILS` and
-  // passes `userId` + `packageId` (or `pkg.tokens`) through as metadata so
-  // the webhook below can credit the right account once payment clears.
+  // This is a stub. Once Grow approves the account and GROW_API_KEY /
+  // GROW_TERMINAL_ID are set, replace the block below with the real Grow
+  // SDK/API call that creates a hosted checkout/payment page for
+  // `pkg.priceILS`, passing `userId` + `packageId` (or `pkg.tokens`) through
+  // as metadata so the webhook below can credit the right account once
+  // payment clears.
+  if (!GROW_API_KEY || !GROW_TERMINAL_ID) {
+    logger.warn("[billing] GROW_API_KEY/GROW_TERMINAL_ID not set -- running in stub mode");
+  }
   logger.info(
     { userId, packageId, priceILS: pkg.priceILS, tokens: pkg.tokens },
-    "[billing] STUB: would call PayPlus/Yaad checkout-session API here",
+    "[billing] STUB: would call Grow checkout-session API here",
   );
 
   const sessionId = `stub_session_${userId}_${Date.now()}`;
@@ -51,6 +61,11 @@ export default billingAuthRouter;
 export const billingPublicRouter: IRouter = Router();
 
 billingPublicRouter.post("/billing/payment-webhook", async (req, res) => {
+  // ---- WEBHOOK SIGNATURE VERIFICATION INJECTION POINT ----
+  // Grow signs webhook payloads; once GROW_WEBHOOK_SECRET is set, verify the
+  // request's signature header here and reject (401) before touching the DB
+  // if it doesn't match. Skipped in stub mode since there's no real signature
+  // to check yet.
   const userId = Number(req.body?.userId);
   const tokens = Number(req.body?.tokens);
 

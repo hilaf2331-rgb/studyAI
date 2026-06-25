@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
+import { getHebrewGreeting } from "@/lib/greeting";
 import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
 import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/components/icons";
 
@@ -29,6 +31,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
 
 export const Dashboard: React.FC = () => {
   const { t, isRTL } = useLanguage();
+  const { user } = useAuth();
   const { data: stats, isLoading: loadingStats } = useGetDashboardStats();
   const { data: activity, isLoading: loadingActivity } = useGetRecentActivity();
   const { data: streak } = useGetStudyStreak();
@@ -48,7 +51,7 @@ export const Dashboard: React.FC = () => {
         <div>
           <h1 className="text-4xl font-black tracking-tight">{t("dashboard")}</h1>
           <p className="text-muted-foreground mt-1.5 text-lg">
-            {isRTL ? "ברוך הבא בחזרה. הנה ההתקדמות שלך." : "Welcome back. Here's your progress."}
+            {isRTL ? getHebrewGreeting(user?.name, user?.gender ?? "male") : "Welcome back. Here's your progress."}
           </p>
         </div>
         {streak && (

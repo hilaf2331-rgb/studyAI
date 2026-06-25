@@ -3,13 +3,21 @@ import { useGetTokenBalance } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/lib/i18n";
-import { useAuth } from "@/lib/auth";
+import { useAuth, type Gender } from "@/lib/auth";
 import { Coins, FileText, GraduationCap, User } from "lucide-react";
+
+const GENDER_OPTIONS: { value: Gender; label: string }[] = [
+  { value: "male", label: "זכר" },
+  { value: "female", label: "נקבה" },
+  { value: "other", label: "אחר / לא לציין" },
+];
 
 export const ProfilePage: React.FC = () => {
   const { isRTL } = useLanguage();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const { data: balance, isLoading } = useGetTokenBalance();
 
   const usedPercent = balance && balance.monthlyTokenQuota > 0
@@ -34,6 +42,26 @@ export const ProfilePage: React.FC = () => {
             <p className="font-semibold truncate">{user?.name || (isRTL ? "ללא שם" : "No name")}</p>
             <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{isRTL ? "פנייה אישית" : "Personal Greeting"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={user?.gender ?? "male"}
+            onValueChange={(value) => updateUser({ gender: value as Gender })}
+            className="flex flex-wrap gap-4"
+          >
+            {GENDER_OPTIONS.map((option) => (
+              <div key={option.value} className="flex items-center gap-2">
+                <RadioGroupItem value={option.value} id={`gender-${option.value}`} />
+                <Label htmlFor={`gender-${option.value}`}>{option.label}</Label>
+              </div>
+            ))}
+          </RadioGroup>
         </CardContent>
       </Card>
 

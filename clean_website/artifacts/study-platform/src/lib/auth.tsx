@@ -4,6 +4,8 @@ import { apiUrl } from "./api-base";
 const TOKEN_KEY = "studyai_token";
 const USER_KEY = "studyai_user";
 
+export type Gender = "male" | "female" | "other";
+
 export interface AuthUser {
   id: number;
   email: string;
@@ -11,6 +13,7 @@ export interface AuthUser {
   role?: string;
   subscriptionTier?: string;
   isPremium?: boolean;
+  gender?: Gender;
 }
 
 interface AuthContextValue {
@@ -20,6 +23,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
+  updateUser: (updates: Partial<Pick<AuthUser, "name" | "gender">>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -80,8 +84,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = clearAuth;
 
+  const updateUser = useCallback((updates: Partial<Pick<AuthUser, "name" | "gender">>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...updates };
+      localStorage.setItem(USER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

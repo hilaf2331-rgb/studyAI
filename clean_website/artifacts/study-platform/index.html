@@ -2,6 +2,21 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("theme");
+          var resolved =
+            theme === "light" || theme === "dark"
+              ? theme
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          if (resolved === "dark") document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>FocusStudy — פלטפורמת הלמידה החכמה</title>
     <meta name="description" content="FocusStudy — פלטפורמת למידה חכמה מבוססת AI." />

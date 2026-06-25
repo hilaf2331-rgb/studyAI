@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { ArrowRight } from "lucide-react";
+import { BackgroundGlow } from "@/components/background-glow";
 
 // Public legal page — must render with NO auth dependency (see App.tsx,
 // where /terms is routed before the login gate) since the payment gateway's
@@ -8,15 +9,17 @@ import { ArrowRight } from "lucide-react";
 // account.
 export const TermsPage: React.FC = () => {
   return (
-    <div className="min-h-screen bg-background" dir="rtl">
-      <div className="max-w-3xl mx-auto px-4 py-10 space-y-8">
+    <div className="relative min-h-screen bg-background overflow-hidden" dir="rtl">
+      <BackgroundGlow className="top-0 right-1/4 w-[28rem] h-[28rem] opacity-10" />
+
+      <div className="relative z-10 max-w-3xl mx-auto px-4 py-10 space-y-8">
         <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm w-fit">
           <ArrowRight className="w-4 h-4" />
           חזרה ל-FocusStudy
         </Link>
 
         <header className="space-y-2">
-          <h1 className="text-3xl font-black">תקנון ותנאי שימוש</h1>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight">תקנון ותנאי שימוש</h1>
           <p className="text-sm text-muted-foreground">עודכן לאחרונה: יוני 2026</p>
         </header>
 

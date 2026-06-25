@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { BackgroundGlow } from "@/components/background-glow";
 import { Loader2, AlertCircle, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react";
 
 interface PasswordRule {
@@ -78,8 +79,10 @@ export const AuthPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4" dir="rtl">
-      <div className="w-full max-w-md space-y-6">
+    <div className="relative min-h-screen bg-background flex items-center justify-center p-4 overflow-hidden" dir="rtl">
+      <BackgroundGlow className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[32rem] h-[32rem]" />
+
+      <div className="relative z-10 w-full max-w-md space-y-7">
         {/* Logo */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center">
@@ -89,7 +92,7 @@ export const AuthPage: React.FC = () => {
           <p className="text-muted-foreground text-sm">פלטפורמת הלמידה החכמה שלך</p>
         </div>
 
-        <Card>
+        <Card className="border-border/80 shadow-lg">
           <CardHeader className="pb-4">
             <CardTitle>
               {mode === "login" ? "התחבר לחשבונך" : "צור חשבון חדש"}

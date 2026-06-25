@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/lib/i18n";
+import { BackgroundGlow } from "@/components/background-glow";
 import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Target, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
@@ -41,12 +42,14 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="relative space-y-10 animate-in fade-in duration-500">
+      <BackgroundGlow className="-top-10 right-1/3 w-[26rem] h-[26rem] opacity-10" />
+
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="relative z-10 flex items-start justify-between">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">{t("dashboard")}</h1>
-          <p className="text-muted-foreground mt-1 text-lg">
+          <h1 className="text-4xl font-black tracking-tight">{t("dashboard")}</h1>
+          <p className="text-muted-foreground mt-1.5 text-lg">
             {isRTL ? "ברוך הבא בחזרה. הנה ההתקדמות שלך." : "Welcome back. Here's your progress."}
           </p>
         </div>
@@ -82,9 +85,9 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(s => (
-          <Card key={s.label} className={`border-s-4 ${s.border} shadow-sm hover:shadow-md transition-shadow`}>
+          <Card key={s.label} className={`border-s-4 ${s.border} shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200`}>
             <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-5">
               <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</CardTitle>
               <s.icon className={`w-4 h-4 ${s.color}`} />
@@ -135,7 +138,7 @@ export const Dashboard: React.FC = () => {
             { href: "/materials", label: isRTL ? "תרגל עכשיו" : "Practice Now", icon: Sparkles, color: "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20" },
           ].map(a => (
             <Link key={a.href + a.label} href={a.href}>
-              <div className={`p-4 rounded-xl border cursor-pointer transition-all ${a.color}`}>
+              <div className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${a.color}`}>
                 <a.icon className="w-5 h-5 mb-2" />
                 <p className="text-sm font-semibold">{a.label}</p>
               </div>

@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -26,6 +26,8 @@ import { ChatPage } from "@/pages/chat";
 import { AuthPage } from "@/pages/auth";
 import { RecorderPage } from "@/pages/recorder";
 import { ProfilePage } from "@/pages/profile";
+import { TermsPage } from "@/pages/terms";
+import { PrivacyPage } from "@/pages/privacy";
 
 import { getStoredToken } from "@/lib/auth";
 
@@ -39,6 +41,13 @@ const queryClient = new QueryClient({
 
 function AppRoutes() {
   const { user } = useAuth();
+  const [location] = useLocation();
+
+  // Legal pages must stay reachable with no login required -- the payment
+  // gateway's approval process and logged-out visitors both need to read
+  // them, so they're checked before the auth gate below.
+  if (location === "/terms") return <TermsPage />;
+  if (location === "/privacy") return <PrivacyPage />;
 
   if (!user) {
     return <AuthPage />;

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -195,6 +196,12 @@ export const AuthPage: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        <footer className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
+          <Link href="/terms" className="hover:text-foreground hover:underline">תקנון ותנאי שימוש</Link>
+          <span>•</span>
+          <Link href="/privacy" className="hover:text-foreground hover:underline">מדיניות פרטיות</Link>
+        </footer>
       </div>
     </div>
   );

@@ -87,6 +87,13 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
         <LogOut className="w-5 h-5 shrink-0" />
         {showLabels && <span className="text-sm">התנתק</span>}
       </button>
+      {showLabels && (
+        <div className="flex items-center justify-center gap-2 px-3 pt-2 text-[11px] text-sidebar-foreground/40">
+          <Link href="/terms" className="hover:text-sidebar-foreground/70 hover:underline">תקנון</Link>
+          <span>•</span>
+          <Link href="/privacy" className="hover:text-sidebar-foreground/70 hover:underline">פרטיות</Link>
+        </div>
+      )}
     </div>
   );
 

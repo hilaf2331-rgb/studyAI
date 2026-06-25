@@ -1,7 +1,12 @@
 import { Router } from "express";
-import { db, coursesTable, materialsTable, flashcardsTable, examResultsTable, activityTable } from "@workspace/db";
-import { count, avg, desc, eq, and } from "drizzle-orm";
+import { db, coursesTable, materialsTable, flashcardsTable, flashcardDecksTable, examResultsTable, activityTable, usersTable } from "@workspace/db";
+import { count, avg, desc, eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
 import { getTokenBalance } from "../lib/tokens";
+
+// Today's Review queue is capped at this many cards across ALL of the
+// user's materials -- a daily review session should feel doable in one
+// sitting, not turn into "every overdue card you've ever skipped."
+const DAILY_REVIEW_CAP = 15;
 
 // Rough estimated token cost of one generation of each kind, used only to
 // turn a raw token balance into a friendly "enough for ~X" estimate on the
@@ -53,18 +58,79 @@ router.get("/dashboard/recent-activity", async (req, res) => {
 
 router.get("/dashboard/study-streak", async (req, res) => {
   const userId = req.user!.userId;
-  const recent = await db.select().from(activityTable)
-    .where(eq(activityTable.userId, userId))
-    .orderBy(desc(activityTable.createdAt))
-    .limit(1);
-  const lastStudyDate = recent[0]?.createdAt?.toISOString().split("T")[0] || null;
+  const [user] = await db.select({
+    lastStudyDate: usersTable.lastStudyDate,
+    currentStreak: usersTable.currentStreak,
+    longestStreak: usersTable.longestStreak,
+  }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) return res.status(404).json({ error: "Not found" });
+
   const today = new Date().toISOString().split("T")[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+  const lastStudyDateStr = user.lastStudyDate ? user.lastStudyDate.toISOString().split("T")[0] : null;
+
+  // currentStreak is only advanced lazily (on the next study action), so a
+  // student who studied two days ago still has a stale nonzero value sitting
+  // in the column -- decay it to 0 on read once a day has actually been
+  // missed, rather than waiting for their next study session to notice.
+  const isActive = lastStudyDateStr === today || lastStudyDateStr === yesterday;
+  const currentStreak = isActive ? user.currentStreak : 0;
+
   res.json({
-    currentStreak: lastStudyDate ? 1 : 0,
-    longestStreak: 1,
-    lastStudyDate,
-    todayStudied: lastStudyDate === today,
+    currentStreak,
+    longestStreak: user.longestStreak,
+    lastStudyDate: lastStudyDateStr,
+    todayStudied: lastStudyDateStr === today,
   });
+});
+
+router.get("/dashboard/daily-review-count", async (req, res) => {
+  const userId = req.user!.userId;
+  const now = new Date();
+
+  const [{ value }] = await db.select({ value: count() })
+    .from(flashcardsTable)
+    .innerJoin(flashcardDecksTable, eq(flashcardsTable.deckId, flashcardDecksTable.id))
+    .innerJoin(materialsTable, eq(flashcardDecksTable.materialId, materialsTable.id))
+    .where(and(
+      eq(materialsTable.userId, userId),
+      or(isNull(flashcardsTable.nextReviewAt), lte(flashcardsTable.nextReviewAt, now))
+    ));
+
+  res.json({ count: Number(value) });
+});
+
+router.get("/dashboard/daily-review-cards", async (req, res) => {
+  const userId = req.user!.userId;
+  const now = new Date();
+
+  const cards = await db.select({
+    id: flashcardsTable.id,
+    deckId: flashcardsTable.deckId,
+    front: flashcardsTable.front,
+    back: flashcardsTable.back,
+    difficulty: flashcardsTable.difficulty,
+    cardType: flashcardsTable.cardType,
+    concept: flashcardsTable.concept,
+    reviewCount: flashcardsTable.reviewCount,
+    nextReviewAt: flashcardsTable.nextReviewAt,
+    createdAt: flashcardsTable.createdAt,
+    materialId: materialsTable.id,
+    materialTitle: materialsTable.title,
+  })
+    .from(flashcardsTable)
+    .innerJoin(flashcardDecksTable, eq(flashcardsTable.deckId, flashcardDecksTable.id))
+    .innerJoin(materialsTable, eq(flashcardDecksTable.materialId, materialsTable.id))
+    .where(and(
+      eq(materialsTable.userId, userId),
+      or(isNull(flashcardsTable.nextReviewAt), lte(flashcardsTable.nextReviewAt, now))
+    ))
+    // Never-reviewed cards (nextReviewAt is null) are the most overdue by
+    // definition, so they sort first; the rest follow oldest-due-first.
+    .orderBy(sql`${flashcardsTable.nextReviewAt} asc nulls first`, asc(flashcardsTable.id))
+    .limit(DAILY_REVIEW_CAP);
+
+  res.json({ cards });
 });
 
 router.get("/dashboard/tokens", async (req, res) => {

@@ -19,6 +19,13 @@ export const usersTable = pgTable("users", {
   // generation cost. This caps upload volume itself so one user can't
   // create unlimited materials while the app is in free beta.
   actionsUsed: integer("actions_used").notNull().default(0),
+  // Real engagement streak, advanced by recordStudyActivity() whenever the
+  // user reviews a flashcard or submits a quiz/exam -- not derived from
+  // activityTable on read, since that would conflate generation actions
+  // (uploading a material, generating flashcards) with actual studying.
+  lastStudyDate: timestamp("last_study_date", { withTimezone: true }),
+  currentStreak: integer("current_streak").notNull().default(0),
+  longestStreak: integer("longest_streak").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

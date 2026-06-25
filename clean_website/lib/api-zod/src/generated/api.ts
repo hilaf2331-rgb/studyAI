@@ -787,6 +787,37 @@ export const GetStudyStreakResponse = zod.object({
 
 
 /**
+ * @summary Count of flashcards due for review across all materials
+ */
+export const GetDailyReviewCountResponse = zod.object({
+  "count": zod.number()
+})
+
+
+/**
+ * @summary Flashcards due for review across all materials, capped at 15
+ */
+export const DailyReviewCardSchema = zod.object({
+  "id": zod.number(),
+  "deckId": zod.number(),
+  "front": zod.string(),
+  "back": zod.string(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']),
+  "cardType": zod.enum(['qa', 'definition', 'formula', 'concept']).optional(),
+  "concept": zod.string().nullish(),
+  "reviewCount": zod.number().optional(),
+  "nextReviewAt": zod.coerce.date().nullish(),
+  "materialId": zod.number(),
+  "materialTitle": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+export const GetDailyReviewCardsResponse = zod.object({
+  "cards": zod.array(DailyReviewCardSchema)
+})
+
+
+/**
  * @summary Get the current user's token balance
  */
 export const GetTokenBalanceResponse = zod.object({

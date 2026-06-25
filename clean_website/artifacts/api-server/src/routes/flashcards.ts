@@ -9,6 +9,7 @@ import { generateFlashcardsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { recordStudyActivity } from "../lib/streaks";
 
 const router = Router();
 
@@ -124,14 +125,46 @@ router.post("/flashcards/:id/review", async (req, res) => {
   const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.id, card.deckId));
   if (!deck || !await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
 
-  const intervalMap: Record<string, number> = { again: 1, hard: 3, good: 7, easy: 14 };
   const difficultyMap: Record<string, string> = { again: "hard", hard: "hard", good: "medium", easy: "easy" };
-  const nextReviewAt = new Date(Date.now() + (intervalMap[body.result] || 7) * 86400000);
+
+  // SM-2 spaced-repetition scheduling. "result" maps onto the standard 0-5
+  // recall-quality scale: again=0 (blackout), hard=3 (recalled with serious
+  // difficulty), good=4 (recalled correctly), easy=5 (recalled effortlessly).
+  // easeFactor is persisted as an integer x100 (250 = EF 2.50) since the
+  // column type is integer; interval is whole days.
+  const qualityMap: Record<string, number> = { again: 0, hard: 3, good: 4, easy: 5 };
+  const q = qualityMap[body.result] ?? 4;
+
+  const prevEf = card.easeFactor / 100;
+  const nextEf = Math.max(1.3, prevEf + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+
+  let nextInterval: number;
+  if (q < 3) {
+    // Failed recall: SM-2 resets repetitions to 0 and restarts the spacing
+    // ladder from day 1. We don't persist a separate "repetitions" counter --
+    // an interval of 1 day doubles as "no successful streak built up yet",
+    // which is exactly the state a fresh card is in too.
+    nextInterval = 1;
+  } else if (card.interval <= 1) {
+    nextInterval = 6;
+  } else {
+    nextInterval = Math.round(card.interval * nextEf);
+  }
+
+  const nextReviewAt = new Date(Date.now() + nextInterval * 86400000);
 
   const [updated] = await db.update(flashcardsTable)
-    .set({ reviewCount: card.reviewCount + 1, difficulty: difficultyMap[body.result] || card.difficulty, nextReviewAt })
+    .set({
+      reviewCount: card.reviewCount + 1,
+      difficulty: difficultyMap[body.result] || card.difficulty,
+      nextReviewAt,
+      interval: nextInterval,
+      easeFactor: Math.round(nextEf * 100),
+    })
     .where(eq(flashcardsTable.id, id))
     .returning();
+
+  await recordStudyActivity(userId);
 
   res.json(updated);
 });

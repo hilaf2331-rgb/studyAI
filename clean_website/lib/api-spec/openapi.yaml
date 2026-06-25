@@ -749,6 +749,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/StudyStreak"
 
+  /dashboard/daily-review-count:
+    get:
+      operationId: getDailyReviewCount
+      tags: [dashboard]
+      summary: Count of flashcards due for review across all materials
+      responses:
+        "200":
+          description: Due count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyReviewCount"
+
+  /dashboard/daily-review-cards:
+    get:
+      operationId: getDailyReviewCards
+      tags: [dashboard]
+      summary: Flashcards due for review across all materials, capped at 15
+      responses:
+        "200":
+          description: Due cards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyReviewCards"
+
   /dashboard/tokens:
     get:
       operationId: getTokenBalance
@@ -1404,6 +1430,55 @@ components:
           format: date
         todayStudied:
           type: boolean
+
+    DailyReviewCount:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+
+    DailyReviewCard:
+      type: object
+      required: [id, deckId, front, back, difficulty, materialId, materialTitle, createdAt]
+      properties:
+        id:
+          type: integer
+        deckId:
+          type: integer
+        front:
+          type: string
+        back:
+          type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        cardType:
+          type: string
+          enum: [qa, definition, formula, concept]
+        concept:
+          type: ["string", "null"]
+        reviewCount:
+          type: integer
+        nextReviewAt:
+          type: ["string", "null"]
+          format: date-time
+        materialId:
+          type: integer
+        materialTitle:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    DailyReviewCards:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyReviewCard"
 
     TokenBalance:
       type: object

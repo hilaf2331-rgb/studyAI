@@ -12,6 +12,7 @@ import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError
 import { getExistingQuestionTexts } from "../lib/question-history";
 import { setGenerationProgress } from "../lib/progress";
 import { logger } from "../lib/logger";
+import { recordStudyActivity } from "../lib/streaks";
 
 // Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
 // meant to feel like one real quiz/exam rather than an attempt to exhaust
@@ -294,6 +295,8 @@ router.post("/exams/:id/submit", generationRateLimiter, async (req, res) => {
     materialTitle: null,
     score,
   });
+
+  await recordStudyActivity(userId);
 
   res.json({ ...result, feedback: valid });
 });

@@ -96,7 +96,7 @@ function ContentSection({
   return (
     <Card>
       <CardContent className="p-5 space-y-3">
-        <div className={`flex items-center justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
+        <div className="flex items-center justify-between">
           <div className={`flex items-center gap-2 font-semibold ${isRTL ? "flex-row-reverse" : ""}`}>
             {icon}
             <span>{label}</span>
@@ -603,6 +603,8 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setSummaryOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר סיכום לחומר זה" : "No summary generated for this material yet"}
+          disabled={material.tooShortForGeneration}
+          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר סיכום" : "The text is too short to generate a summary"}
         />
         <ContentSection
           icon={<BrainCircuit className="w-5 h-5 text-primary" />}

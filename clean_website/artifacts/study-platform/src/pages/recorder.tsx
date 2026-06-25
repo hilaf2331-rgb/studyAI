@@ -328,7 +328,7 @@ export const RecorderPage: React.FC = () => {
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
           <Mic className="w-8 h-8 text-primary" />
-          הקלט הרצאה חיה
+          הקלטת הרצאה
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           הקלט ישירות מהדפדפן — FocusStudy יתמלל ויצור סיכום, כרטיסיות וחידון אוטומטית

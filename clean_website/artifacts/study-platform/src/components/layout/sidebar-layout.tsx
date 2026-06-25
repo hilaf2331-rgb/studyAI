@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { BackgroundGlow } from "@/components/background-glow";
 import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -98,7 +99,13 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   return (
-    <div className={`flex min-h-[100dvh] w-full bg-background ${isRTL ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={`relative flex min-h-[100dvh] w-full bg-background ${isRTL ? "flex-row-reverse" : "flex-row"}`}>
+      {/* Ambient app-wide glow, pinned to the viewport so it stays vivid and
+          visible behind every authenticated page regardless of scroll
+          position or the main panel's overflow clipping. */}
+      <BackgroundGlow className="fixed -top-24 right-1/4 w-[40rem] h-[40rem]" />
+      <BackgroundGlow className="fixed bottom-0 -left-24 w-[26rem] h-[26rem] opacity-70" />
+
       {/* Desktop sidebar — hidden below lg so the main layout takes 100% of the viewport on mobile */}
       <div
         className={`

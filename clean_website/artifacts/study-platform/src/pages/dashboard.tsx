@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/lib/i18n";
-import { BackgroundGlow } from "@/components/background-glow";
 import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
 import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/components/icons";
 
@@ -44,9 +43,6 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="relative space-y-10 animate-in fade-in duration-500">
-      <BackgroundGlow className="-top-16 right-1/3 w-[34rem] h-[34rem]" />
-      <BackgroundGlow className="top-1/3 -left-20 w-[22rem] h-[22rem] opacity-50" />
-
       {/* Header */}
       <div className="relative z-10 flex items-start justify-between">
         <div>

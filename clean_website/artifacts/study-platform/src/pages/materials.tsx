@@ -102,11 +102,11 @@ export const MaterialsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{t("materials")}</h1>
-          <p className="text-muted-foreground mt-1">{isRTL ? "כל חומרי הלימוד שלך" : "All your study materials"}</p>
+          <p className="text-muted-foreground mt-1.5">{isRTL ? "כל חומרי הלימוד שלך" : "All your study materials"}</p>
         </div>
         <div className="flex items-center gap-2">
           {filtered.length > 0 && (
@@ -157,14 +157,14 @@ export const MaterialsPage: React.FC = () => {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3 pb-20">
+        <div className="space-y-4 pb-24">
           {filtered.map(m => {
             const selected = selectedIds.has(m.id);
 
             const cardBody = (
               <Card className={`cursor-pointer hover:shadow-md transition-all group ${selected ? "ring-2 ring-primary" : ""}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+                <CardContent className="p-5 sm:p-6">
+                  <div className="flex items-start sm:items-center gap-4 sm:gap-5">
                     {selectionMode ? (
                       <Checkbox
                         checked={selected}
@@ -177,14 +177,12 @@ export const MaterialsPage: React.FC = () => {
                         <FileText className="w-5 h-5" />
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold break-words">{m.title}</span>
                         <StatusBadge status={m.status} isRTL={isRTL} />
-                        <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
-                        <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
                       </div>
-                      <div className="flex gap-3 sm:gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                      <div className="flex gap-3 sm:gap-4 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{m.summaryCount} {isRTL ? "סיכומים" : "summaries"}</span>
                         <span className="flex items-center gap-1"><BrainCircuit className="w-3 h-3" />{m.flashcardCount} {isRTL ? "כרטיסיות" : "cards"}</span>
                         <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" />{m.questionCount} {isRTL ? "שאלות" : "questions"}</span>
@@ -193,7 +191,7 @@ export const MaterialsPage: React.FC = () => {
                     </div>
                     {!selectionMode && (
                       <button onClick={(e) => handleDelete(e, m.id)}
-                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-all shrink-0">
+                        className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-opacity shrink-0">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -229,11 +227,11 @@ export const MaterialsPage: React.FC = () => {
       )}
 
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full border border-border/60 bg-background/80 backdrop-blur-md shadow-lg p-1.5">
           <Button
             variant="destructive"
             size="lg"
-            className="gap-2 shadow-lg"
+            className="gap-2 rounded-full"
             onClick={handleBulkDelete}
             disabled={bulkDeleteMaterials.isPending}
           >

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { BackgroundGlow } from "@/components/background-glow";
+import { FocusAura } from "@/components/focus-aura";
 import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -38,7 +38,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
   // Shared nav + bottom-actions markup, reused by both the desktop sidebar
   // and the mobile drawer so behavior stays in sync between breakpoints.
   const renderNav = (showLabels: boolean, onNavigate?: () => void) => (
-    <nav className="flex-1 px-2 space-y-1 mt-2">
+    <nav className="flex-1 px-3 space-y-2 mt-4">
       {navItems.map((item) => {
         const isActive = isItemActive(item.href);
         const label = t(item.label);
@@ -100,11 +100,10 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <div className={`relative flex min-h-[100dvh] w-full bg-background ${isRTL ? "flex-row-reverse" : "flex-row"}`}>
-      {/* Ambient app-wide glow, pinned to the viewport so it stays vivid and
-          visible behind every authenticated page regardless of scroll
-          position or the main panel's overflow clipping. */}
-      <BackgroundGlow className="fixed -top-24 right-1/4 w-[40rem] h-[40rem]" />
-      <BackgroundGlow className="fixed bottom-0 -left-24 w-[26rem] h-[26rem] opacity-70" />
+      {/* Faint focus spotlight, pinned to the viewport behind the workspace
+          -- stays put regardless of scroll position or the main panel's
+          overflow clipping, and never competes with the content on top. */}
+      <FocusAura />
 
       {/* Desktop sidebar — hidden below lg so the main layout takes 100% of the viewport on mobile */}
       <div
@@ -141,7 +140,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden w-full">
         {/* Mobile top bar with burger menu — only shown below lg */}
-        <div className="lg:hidden flex items-center justify-between h-14 px-4 border-b border-border shrink-0 bg-background">
+        <div className="lg:hidden sticky top-0 z-10 flex items-center justify-between h-14 px-4 border-b border-border/60 shrink-0 bg-background/70 backdrop-blur-md">
           <button
             onClick={() => setMobileOpen(true)}
             aria-label={isRTL ? "פתח תפריט" : "Open menu"}
@@ -156,7 +155,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           <div className="w-9" aria-hidden="true" />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 lg:p-12">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>

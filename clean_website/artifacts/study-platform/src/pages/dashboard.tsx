@@ -27,6 +27,24 @@ const ACTIVITY_COLORS: Record<string, string> = {
   chat: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
 };
 
+// The backend's `description` field is a raw, system-generated sentence
+// (e.g. `Generated full exam kit for "study_material_test"`) meant for
+// logs, not students. This maps it to a short, human action label so the
+// activity feed can show "ערכת לימוד מלאה: <material>" instead of the
+// full sentence -- the material's own title carries the specifics.
+function getActivityLabel(description: string, isRTL: boolean): string {
+  if (/full exam kit/i.test(description)) return isRTL ? "ערכת לימוד מלאה" : "Full study kit";
+  if (/^Completed exam/i.test(description)) return isRTL ? "מבחן הושלם" : "Exam completed";
+  if (/exam/i.test(description)) return isRTL ? "מבחן" : "Exam";
+  if (/flashcards/i.test(description)) return isRTL ? "כרטיסיות לימוד" : "Flashcards";
+  if (/questions/i.test(description)) return isRTL ? "שאלות תרגול" : "Practice quiz";
+  if (/summary/i.test(description)) return isRTL ? "סיכום" : "Summary";
+  if (/^Uploaded/i.test(description)) return isRTL ? "חומר הועלה" : "Material uploaded";
+  if (/^Chatted/i.test(description)) return isRTL ? "שיחה עם המורה" : "Chat with tutor";
+  if (/הקלטה/.test(description)) return isRTL ? "הקלטה ועיבוד" : "Recording processed";
+  return description;
+}
+
 export const Dashboard: React.FC = () => {
   const { t, isRTL } = useLanguage();
   const { data: stats, isLoading: loadingStats } = useGetDashboardStats();
@@ -42,7 +60,7 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="relative space-y-10 animate-in fade-in duration-500">
+    <div className="relative space-y-12 animate-in fade-in duration-500">
       {/* Header */}
       <div className="relative z-10 flex items-start justify-between">
         <div>
@@ -158,28 +176,31 @@ export const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {activity.slice(0, 8).map(item => (
-              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                <div className="flex items-start sm:items-center gap-3 min-w-0">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ACTIVITY_COLORS[item.activityType] || "bg-muted"}`}>
-                    {ACTIVITY_ICONS[item.activityType] || <BookOpen className="w-4 h-4" />}
+          <div className="space-y-3">
+            {activity.slice(0, 8).map(item => {
+              const label = getActivityLabel(item.description, isRTL);
+              const title = item.materialTitle ? `${label}: ${item.materialTitle}` : label;
+              return (
+                <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-4 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ACTIVITY_COLORS[item.activityType] || "bg-muted"}`}>
+                      {ACTIVITY_ICONS[item.activityType] || <BookOpen className="w-4 h-4" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold break-words sm:truncate">{title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{new Date(item.createdAt).toLocaleDateString()}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium break-words sm:truncate">{item.description}</p>
-                    {item.materialTitle && <p className="text-xs text-muted-foreground break-words sm:truncate">{item.materialTitle}</p>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 ps-11 sm:ps-0 sm:ms-auto">
                   {item.score !== null && item.score !== undefined && (
-                    <Badge variant={item.score >= 60 ? "outline" : "secondary"} className={`text-xs shrink-0 ${item.score >= 60 ? "text-green-600 border-green-300" : ""}`}>
-                      {item.score}%
-                    </Badge>
+                    <div className="shrink-0 ps-11 sm:ps-0 sm:ms-auto">
+                      <Badge variant={item.score >= 60 ? "outline" : "secondary"} className={`text-xs ${item.score >= 60 ? "text-green-600 border-green-300" : ""}`}>
+                        {item.score}%
+                      </Badge>
+                    </div>
                   )}
-                  <p className="text-xs text-muted-foreground shrink-0">{new Date(item.createdAt).toLocaleDateString()}</p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -126,10 +126,10 @@ export const TermsPage: React.FC = () => {
           <h2 className="text-xl font-bold mt-8">9. סמכות שיפוט ודין חל ופרטי התקשרות</h2>
           <p>
             על תקנון זה ועל כל הנובע ממנו יחולו דיני מדינת ישראל בלבד, וסמכות השיפוט הבלעדית
-            בכל עניין הנוגע לשירות ולתקנון זה תהא לבתי המשפט המוסמכים במחוז מרכז/תל אביב,
-            ישראל. לכל שאלה, בקשה או תלונה ניתן לפנות אל מפעיל השירות בכתובת הדוא"ל:{" "}
-            <a href="mailto:support@focusstudy.app" dir="ltr" className="text-primary font-medium hover:underline">
-              support@focusstudy.app
+            בכל עניין הנוגע לשירות ולתקנון זה תהא לבתי המשפט המוסמכים במחוז מרכז, ישראל.
+            לכל שאלה, בקשה או תלונה ניתן לפנות אל מפעיל השירות בכתובת הדוא"ל:{" "}
+            <a href="mailto:focusstudy.net@gmail.com" dir="ltr" className="text-primary font-medium hover:underline">
+              focusstudy.net@gmail.com
             </a>.
           </p>
         </article>

@@ -103,8 +103,8 @@ export const PrivacyPage: React.FC = () => {
           <p>
             מדיניות זו עשויה להתעדכן מעת לעת; הגרסה התקפה היא זו המתפרסמת בעמוד זה. לכל שאלה
             או בקשה הנוגעת לפרטיותך ניתן לפנות אלינו בדוא"ל:{" "}
-            <a href="mailto:support@focusstudy.app" dir="ltr" className="text-primary font-medium hover:underline">
-              support@focusstudy.app
+            <a href="mailto:focusstudy.net@gmail.com" dir="ltr" className="text-primary font-medium hover:underline">
+              focusstudy.net@gmail.com
             </a>.
           </p>
         </article>

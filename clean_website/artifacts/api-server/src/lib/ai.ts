@@ -804,7 +804,22 @@ type GeneratedQuestion = {
   questionType: string;
   difficulty: string;
   modelAnswer?: string;
+  concept?: string;
 };
+
+// Instruction forcing every generated item to carry a short "concept" tag --
+// the specific sub-topic/principle it's actually testing (e.g. "Krebs cycle
+// - ATP yield"), not the chapter title. This is the foundation for weak-spot
+// tracking: without a stable tag per item, there's no way to aggregate "the
+// student keeps missing X" across separate flashcards/questions/exams that
+// happen to test the same underlying idea. The model is told to reuse
+// identical wording across items testing the same concept so aggregation by
+// exact string match works downstream.
+function conceptTagRule(isHe: boolean): string {
+  return isHe
+    ? `תיוג מושג (concept) -- חובה: לכל פריט הוסיפו שדה "concept" -- תיאור קצר (2-6 מילים) של המושג/תת-הנושא הספציפי שהפריט בודק, בעברית. אם כמה פריטים בודקים את אותו מושג בדיוק -- תייגו אותם באותה מילולית בדיוק (כדי שניתן יהיה לצבור לפי מושג בהמשך). לדוגמה: "מחזור קרבס - תפוקת ATP" או "דיני חוזים - הצעה וקיבול". אל תשתמשו בכותרת הפרק הכללית כ-concept -- הוא צריך להיות ממוקד וספציפי.`
+    : `Concept tagging -- mandatory: add a "concept" field to every item -- a short (2-6 word) label for the specific sub-topic/principle the item tests. If several items test the exact same concept, tag them with the exact same wording (so they can be aggregated later). For example: "Krebs cycle - ATP yield" or "Contract law - offer and acceptance". Do not use the chapter's general title as the concept -- it must be specific and narrow.`;
+}
 
 // One malformed entry (missing/wrong-typed field, often from the model's
 // JSON getting truncated mid-array) used to sink the whole response via a
@@ -1152,7 +1167,7 @@ async function generateFlashcardsForChunk(
   total: number,
   cardsForChunk: number,
   cardTypes: string[],
-): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
   const typeGuide = flashcardTypeGuide(isHe);
   const lengthRule = flashcardLengthRule(isHe);
   const userPrompt = isHe
@@ -1169,8 +1184,10 @@ ${typeGuide}
 
 ${lengthRule}
 
+${conceptTagRule(true)}
+
 החזר JSON במבנה הבא בלבד:
-{"cards": [{"front": "שאלה ייחודית", "back": "תשובה קצרה ותכליתית", "difficulty": "medium", "cardType": "definition"}]}`
+{"cards": [{"front": "שאלה ייחודית", "back": "תשובה קצרה ותכליתית", "difficulty": "medium", "cardType": "definition", "concept": "המושג הספציפי שהכרטיסייה בודקת"}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1184,8 +1201,10 @@ Strict rules: never repeat a concept. Create fewer cards if this part doesn't ha
 
 ${lengthRule}
 
+${conceptTagRule(false)}
+
 Return ONLY JSON matching this structure:
-{"cards": [{"front": "question", "back": "short, to-the-point answer", "difficulty": "medium", "cardType": "definition"}]}`;
+{"cards": [{"front": "question", "back": "short, to-the-point answer", "difficulty": "medium", "cardType": "definition", "concept": "the specific concept this card tests"}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1207,13 +1226,13 @@ Return ONLY JSON matching this structure:
 
 export function generateFlashcardsAI(
   opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
-): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
   return pipelineLimit(() => generateFlashcardsAIImpl(opts));
 }
 
 async function generateFlashcardsAIImpl(
   opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
-): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string }>> {
+): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
   const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts } = opts;
   const isHe = language === "he";
   try {
@@ -1232,7 +1251,7 @@ async function generateFlashcardsAIImpl(
   // FLASHCARDS_MAX_OUTPUT_TOKENS was the root cause, not just a speed issue.
   if (chunked) {
     const cardsPerChunk = Math.max(2, Math.min(CARDS_PER_CHUNK_CAP, Math.ceil(cardCount / parts.length)));
-    const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+    const allCards: Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }> = [];
 
     for (let i = 0; i < parts.length; i++) {
       try {
@@ -1286,12 +1305,13 @@ ${typeGuide}
 2. אם כבר שאלת על "פרווה", הנושא הזה חסום! עבור לעובדה הבאה (למשל: צבע העור, תזונה, יכולת שחייה, עובי השומן).
 3. אם נגמרו העובדות השונות בטקסט, עצור מיד ואל תייצר כרטיסיות נוספות. עדיף 4 כרטיסיות שונות לחלוטין מאשר 6 שחוזרות על עצמן.
 4. ${lengthRule}
+5. ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא בלבד:
 {
   "cards": [
-    {"front": "שאלה ייחודית 1", "back": "תשובה קצרה 1", "difficulty": "medium", "cardType": "definition"},
-    {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה קצרה 2", "difficulty": "medium", "cardType": "concept"}
+    {"front": "שאלה ייחודית 1", "back": "תשובה קצרה 1", "difficulty": "medium", "cardType": "definition", "concept": "המושג הספציפי שכרטיסייה 1 בודקת"},
+    {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה קצרה 2", "difficulty": "medium", "cardType": "concept", "concept": "המושג הספציפי שכרטיסייה 2 בודקת"}
   ]
 }`
     : `## Study Material: "${materialTitle}"
@@ -1310,11 +1330,12 @@ Strict rules to avoid duplication:
 4. Front = short, sharp question. Back = short, accurate answer based strictly on the text.
 5. Difficulty: easy, medium, hard.
 6. ${lengthRule}
+7. ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
 {
   "cards": [
-    {"front": "question", "back": "short answer", "difficulty": "medium", "cardType": "definition"}
+    {"front": "question", "back": "short answer", "difficulty": "medium", "cardType": "definition", "concept": "the specific concept this card tests"}
   ]
 }`;
 
@@ -1396,9 +1417,10 @@ ${scenarioMcRules(true)}
 - open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה, ו-"modelAnswer" הוא תשובת מודל מקיפה.
 - כל שאלה חייבת להיות על תוכן אמיתי מהחלק הזה — אסור להמציא. אם אין מספיק תוכן ייחודי, צור פחות שאלות.
 - "explanation": הסבר קצר, ברור ומעודד -- כתוב גם הוא בהקשר התרחיש (אם השאלה מצבית), לא רק ציטוט מהטקסט.
+- ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת"}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1416,9 +1438,10 @@ ${scenarioMcRules(false)}
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, "modelAnswer" is a comprehensive model answer.
 - All questions must be based on real content from this part -- no fabrication. Create fewer questions if there isn't enough unique content.
 - "explanation": a brief, clear, encouraging explanation -- written in context of the scenario itself (if the question is situational), not just a quote from the text.
+- ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
+{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests"}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1442,13 +1465,13 @@ Return ONLY JSON matching this structure:
 
 export function generateQuestionsAI(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
   return pipelineLimit(() => generateQuestionsAIImpl(opts));
 }
 
 async function generateQuestionsAIImpl(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
   const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts } = opts;
   const isHe = language === "he";
   try {
@@ -1521,6 +1544,7 @@ ${scenarioMcRules(true)}
 - open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית — מנוסחת היטב, ברמה שתלמיד היה רוצה לכתוב במבחן, שמכסה את כל הנקודות החשובות מהחומר.
 - כל שאלה חייבת להיות על תוכן אמיתי מהחומר — אסור להמציא.
 - "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — כתוב בטון חם ותומך (כמו חבר שמסביר, לא שופט), בהקשר התרחיש עצמו (אם השאלה מצבית), ולא רק "כי זה מה שכתוב בטקסט".
+- ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא:
 {
@@ -1533,7 +1557,8 @@ ${scenarioMcRules(true)}
       "correctIndex": 2,
       "questionType": "multiple_choice",
       "difficulty": "medium",
-      "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)"
+      "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)",
+      "concept": "המושג הספציפי שהשאלה בודקת"
     }
   ]
 }`
@@ -1554,6 +1579,7 @@ ${scenarioMcRules(false)}
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer — well-written, the kind a strong student would aim to write on an exam, covering all the key points from the material.
 - All questions must be based on actual content — no fabrication.
 - "explanation": a brief, clear, encouraging explanation of why the correct answer is right — written in a warm, supportive tone (like a friend explaining, not a judge), in context of the scenario itself (if the question is situational), not just "because the text says so."
+- ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
 {
@@ -1566,7 +1592,8 @@ Return ONLY JSON matching this structure:
       "correctIndex": 2,
       "questionType": "multiple_choice",
       "difficulty": "medium",
-      "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)"
+      "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)",
+      "concept": "the specific concept this question tests"
     }
   ]
 }`;
@@ -1652,9 +1679,10 @@ ${scenarioMcRules(true)}
 - open: options = [], correctIndex = 0. "answer" תשובה קצרה, "modelAnswer" תשובת מודל מקיפה.
 - אם אין מספיק תוכן ייחודי בחלק הזה, צור פחות שאלות.
 - "explanation": הסבר קצר, ברור ומעודד -- בהקשר התרחיש עצמו אם השאלה מצבית.
+- ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא בלבד:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת"}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
@@ -1673,9 +1701,10 @@ ${scenarioMcRules(false)}
 - open: options = [], correctIndex = 0. "answer" short reference answer, "modelAnswer" comprehensive model answer.
 - Create fewer questions if there isn't enough unique content in this part.
 - "explanation": a brief, clear, encouraging explanation -- in context of the scenario itself if the question is situational.
+- ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
+{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests"}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1699,13 +1728,13 @@ Return ONLY JSON matching this structure:
 
 export function generateExamAI(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
   return pipelineLimit(() => generateExamAIImpl(opts));
 }
 
 async function generateExamAIImpl(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;
   const isHe = language === "he";
   try {
@@ -1776,6 +1805,7 @@ ${scenarioMcRules(true)}
 - true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
 - open: options = [], correctIndex = 0. "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית, ברמת תשובת מבחן מצוינת, המכסה את כל הנקודות החשובות.
 - "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — בטון חם ותומך, בהקשר התרחיש עצמו אם השאלה מצבית, לא רק ציטוט מהטקסט.
+- ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא בלבד:
 {
@@ -1788,7 +1818,8 @@ ${scenarioMcRules(true)}
       "correctIndex": 1,
       "questionType": "multiple_choice",
       "difficulty": "medium",
-      "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)"
+      "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)",
+      "concept": "המושג הספציפי שהשאלה בודקת"
     }
   ]
 }`
@@ -1809,6 +1840,7 @@ ${scenarioMcRules(false)}
 - true_false: options = ["True", "False"], correctIndex = 0 or 1.
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer at the level of an excellent exam response, covering all the key points.
 - "explanation": a brief, clear, encouraging explanation of why the correct answer is right — warm and supportive in tone, in context of the scenario itself if the question is situational, not just a quote from the text.
+- ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
 {
@@ -1821,7 +1853,8 @@ Return ONLY JSON matching this structure:
       "correctIndex": 1,
       "questionType": "multiple_choice",
       "difficulty": "medium",
-      "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)"
+      "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)",
+      "concept": "the specific concept this question tests"
     }
   ]
 }`;

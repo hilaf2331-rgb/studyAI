@@ -1111,6 +1111,10 @@ components:
           enum: [easy, medium, hard]
         concept:
           type: ["string", "null"]
+        optionExplanations:
+          type: ["array", "null"]
+          items:
+            type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

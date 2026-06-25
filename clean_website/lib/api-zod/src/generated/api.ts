@@ -462,6 +462,7 @@ export const ListQuestionSetsResponseItem = zod.object({
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
   "createdAt": zod.coerce.date()
@@ -508,6 +509,7 @@ export const GetQuestionSetResponse = zod.object({
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
   "createdAt": zod.coerce.date()
@@ -549,6 +551,7 @@ export const ListExamsResponseItem = zod.object({
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
   "createdAt": zod.coerce.date()
@@ -600,6 +603,7 @@ export const GetExamResponse = zod.object({
   "options": zod.array(zod.string()).optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
   "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
   "createdAt": zod.coerce.date()

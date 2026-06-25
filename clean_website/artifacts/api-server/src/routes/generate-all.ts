@@ -255,6 +255,9 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           options: q.options || [],
           difficulty: q.difficulty || "medium",
           concept: q.concept || null,
+          optionExplanations: Array.isArray(q.optionExplanations)
+            ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null))
+            : null,
         }))
       );
     }

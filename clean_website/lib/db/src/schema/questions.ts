@@ -23,6 +23,7 @@ export const questionsTable = pgTable("questions", {
   options: text("options").array().notNull().default([]),
   difficulty: text("difficulty").notNull().default("medium"),
   concept: text("concept"),
+  optionExplanations: text("option_explanations").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

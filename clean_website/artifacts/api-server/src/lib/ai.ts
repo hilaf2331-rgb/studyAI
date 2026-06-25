@@ -805,6 +805,7 @@ type GeneratedQuestion = {
   difficulty: string;
   modelAnswer?: string;
   concept?: string;
+  optionExplanations?: (string | null)[];
 };
 
 // Instruction forcing every generated item to carry a short "concept" tag --
@@ -1380,12 +1381,14 @@ function scenarioMcRules(isHe: boolean): string {
 - איזון 50/50: מתוך כל שאלות ה-multiple_choice שתיצרו כאן, מחצית (50%) חייבות להיות שאלות ידע/שליפה ישירה (מבוססות ישירות על עובדה או הגדרה מהטקסט), והמחצית השנייה (50%) חייבות להיות שאלות מצביות/יישומיות/מקרה-בוחן.
 - שאלות מצביות: עטפו את העובדה או העיקרון מהטקסט בתוך תרחיש קצר, דילמה מהחיים האמיתיים, או מקרה מקצועי -- כדי לענות, הסטודנט/ית חייב/ת להבין את העיקרון ולהפעיל אותו על הסיפור, לא רק לשלוף משפט מהטקסט. לדוגמה: במקום "האם בננה שחורה מתוקה?" שאלו "יוסי רצה להכין קינוח מתוק מאוד בלי להוסיף סוכר -- מה עליו לקנות?"
 - התאמה לתחום: זהו אוטומטית את התחום של הטקסט (רפואה, משפטים, הנדסה, עסקים, פסיכולוגיה, חיים יומיומיים וכו') והתאימו את התרחיש אליו: טקסט רפואי -> תרחיש רופא-מטופל; טקסט משפטי -> תרחיש עו"ד-לקוח; טקסט כללי -> מצב מחיי היומיום.
-- מסיחים איכותיים: כל אפשרות שגויה חייבת להיות סבירה ומאתגרת באמת -- מבוססת על טעות מושגית נפוצה או על מונח/עובדה אחרת שמופיעה בטקסט, כך שתלמיד שלא הבין לעומק יוכל בקלות לבחור בה בטעות. אסור מסיחים מגוחכים שניתן לפסול בלי לדעת את התוכן.`
+- מסיחים איכותיים: כל אפשרות שגויה חייבת להיות סבירה ומאתגרת באמת -- מבוססת על טעות מושגית נפוצה או על מונח/עובדה אחרת שמופיעה בטקסט, כך שתלמיד שלא הבין לעומק יוכל בקלות לבחור בה בטעות. אסור מסיחים מגוחכים שניתן לפסול בלי לדעת את התוכן.
+- הסברי מסיחים (חובה): הוסיפו שדה "optionExplanations" -- מערך באותו אורך ובאותו סדר כמו "options". בכל אינדקס שאינו ה-correctIndex, כתבו הסבר קצר (משפט-שניים) שמסביר את התפיסה השגויה הספציפית שמובילה לבחירה באפשרות הזו -- לדוגמה: "אם בחרת באפשרות הזו, כנראה בלבלת בין X ל-Y כי...". באינדקס הנכון עצמו שימו null. אסור הסבר גנרי כמו "זו תשובה שגויה" -- ההסבר חייב לנקוב במושג הספציפי שגרם לבלבול.`
     : `Quality rules for multiple_choice questions -- all of these are mandatory:
 - 50/50 balance: of all the multiple_choice questions you generate here, exactly half (50%) must be direct recall/knowledge questions (based directly on a fact or definition from the text), and the other half (50%) must be situational/application/case-study questions.
 - Situational questions: wrap the fact or principle from the text inside a short real-life scenario, dilemma, or professional case -- to answer, the student must understand the underlying principle and apply it to the story, not just recall a sentence from the text. For example, instead of "Is a black banana sweet?" ask "Yossi wants to make a very sweet dessert without adding sugar -- what should he buy?"
 - Domain adaptation: automatically detect the subject of the text (medicine, law, engineering, business, psychology, everyday life, etc.) and tailor the scenario to it: medical text -> doctor-patient scenario; legal text -> lawyer-client scenario; general text -> everyday-life situation.
-- Quality distractors: every wrong option must be genuinely plausible and challenging -- based on a common misconception or another fact/term that actually appears in the text, so a student who didn't deeply understand the material could easily pick it by mistake. No throwaway distractors that can be ruled out without knowing the content.`;
+- Quality distractors: every wrong option must be genuinely plausible and challenging -- based on a common misconception or another fact/term that actually appears in the text, so a student who didn't deeply understand the material could easily pick it by mistake. No throwaway distractors that can be ruled out without knowing the content.
+- Distractor explanations (mandatory): add an "optionExplanations" field -- an array the same length and order as "options". At every index except the correctIndex, write a short (1-2 sentence) explanation of the specific misconception that leads a student to pick that option -- e.g. "If you chose this, you likely confused X with Y because...". At the correct index itself, use null. Never write a generic explanation like "this is wrong" -- it must name the specific misconception.`;
 }
 
 async function generateQuestionsForChunk(
@@ -1420,7 +1423,7 @@ ${scenarioMcRules(true)}
 - ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת"}]}`
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": [null, "הסבר התפיסה השגויה לבחירה ב'ב'", "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1441,7 +1444,7 @@ ${scenarioMcRules(false)}
 - ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests"}]}`;
+{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": [null, "misconception explanation for option B", "misconception explanation for option C", "misconception explanation for option D"]}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1465,13 +1468,13 @@ Return ONLY JSON matching this structure:
 
 export function generateQuestionsAI(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   return pipelineLimit(() => generateQuestionsAIImpl(opts));
 }
 
 async function generateQuestionsAIImpl(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts } = opts;
   const isHe = language === "he";
   try {
@@ -1558,7 +1561,8 @@ ${scenarioMcRules(true)}
       "questionType": "multiple_choice",
       "difficulty": "medium",
       "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)",
-      "concept": "המושג הספציפי שהשאלה בודקת"
+      "concept": "המושג הספציפי שהשאלה בודקת",
+      "optionExplanations": ["הסבר התפיסה השגויה לבחירה ב'אפשרות א'", "הסבר התפיסה השגויה לבחירה ב'אפשרות ב'", null, "הסבר התפיסה השגויה לבחירה ב'אפשרות ד'"]
     }
   ]
 }`
@@ -1593,7 +1597,8 @@ Return ONLY JSON matching this structure:
       "questionType": "multiple_choice",
       "difficulty": "medium",
       "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)",
-      "concept": "the specific concept this question tests"
+      "concept": "the specific concept this question tests",
+      "optionExplanations": ["misconception explanation for option A", "misconception explanation for option B", null, "misconception explanation for option D"]
     }
   ]
 }`;
@@ -1682,7 +1687,7 @@ ${scenarioMcRules(true)}
 - ${conceptTagRule(true)}
 
 החזר JSON במבנה הבא בלבד:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת"}]}`
+{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": ["הסבר התפיסה השגויה לבחירה ב'א'", null, "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
@@ -1704,7 +1709,7 @@ ${scenarioMcRules(false)}
 - ${conceptTagRule(false)}
 
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests"}]}`;
+{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": ["misconception explanation for option A", null, "misconception explanation for option C", "misconception explanation for option D"]}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1728,13 +1733,13 @@ Return ONLY JSON matching this structure:
 
 export function generateExamAI(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   return pipelineLimit(() => generateExamAIImpl(opts));
 }
 
 async function generateExamAIImpl(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
-): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string }>> {
+): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;
   const isHe = language === "he";
   try {
@@ -1819,7 +1824,8 @@ ${scenarioMcRules(true)}
       "questionType": "multiple_choice",
       "difficulty": "medium",
       "modelAnswer": "תשובת מודל מלאה (רק לשאלות open, אחרת השמיט שדה זה)",
-      "concept": "המושג הספציפי שהשאלה בודקת"
+      "concept": "המושג הספציפי שהשאלה בודקת",
+      "optionExplanations": ["הסבר התפיסה השגויה לבחירה ב'א'", null, "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]
     }
   ]
 }`
@@ -1854,7 +1860,8 @@ Return ONLY JSON matching this structure:
       "questionType": "multiple_choice",
       "difficulty": "medium",
       "modelAnswer": "Full model answer (only for open questions, omit this field otherwise)",
-      "concept": "the specific concept this question tests"
+      "concept": "the specific concept this question tests",
+      "optionExplanations": ["misconception explanation for option A", null, "misconception explanation for option C", "misconception explanation for option D"]
     }
   ]
 }`;

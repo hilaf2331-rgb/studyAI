@@ -25,6 +25,7 @@ export async function runStartupMigrations(): Promise<void> {
 
   await pool.query(`
     ALTER TABLE questions
-      ADD COLUMN IF NOT EXISTS concept text;
+      ADD COLUMN IF NOT EXISTS concept text,
+      ADD COLUMN IF NOT EXISTS option_explanations text[];
   `);
 }

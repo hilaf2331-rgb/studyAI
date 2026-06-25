@@ -171,8 +171,8 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     ]);
 
     await Promise.all([
-      flashResult.length > 0 ? db.insert(flashcardsTable).values(flashResult.map(c => ({ deckId: deck.id, front: c.front, back: c.back, difficulty: c.difficulty || "medium", cardType: c.cardType || "qa" }))) : Promise.resolve(),
-      questionResult.length > 0 ? db.insert(questionsTable).values(questionResult.map(q => ({ setId: qSet.id, questionType: q.questionType || "multiple_choice", question: q.question, answer: q.answer, explanation: q.explanation || null, options: q.options || [], difficulty: q.difficulty || "medium" }))) : Promise.resolve(),
+      flashResult.length > 0 ? db.insert(flashcardsTable).values(flashResult.map(c => ({ deckId: deck.id, front: c.front, back: c.back, difficulty: c.difficulty || "medium", cardType: c.cardType || "qa", concept: c.concept || null }))) : Promise.resolve(),
+      questionResult.length > 0 ? db.insert(questionsTable).values(questionResult.map(q => ({ setId: qSet.id, questionType: q.questionType || "multiple_choice", question: q.question, answer: q.answer, explanation: q.explanation || null, options: q.options || [], difficulty: q.difficulty || "medium", concept: q.concept || null, optionExplanations: Array.isArray(q.optionExplanations) ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null)) : null }))) : Promise.resolve(),
       db.update(recordingsTable).set({ summaryId: summary.id, deckId: deck.id, questionSetId: qSet.id }).where(eq(recordingsTable.id, recording.id)),
       db.insert(activityTable).values({ userId, activityType: "summary", description: `הקלטה ועיבוד: "${title}"`, materialTitle: title }),
     ]);

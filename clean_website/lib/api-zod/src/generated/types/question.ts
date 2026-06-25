@@ -22,5 +22,7 @@ export interface Question {
   difficulty?: QuestionDifficulty;
   /** @nullable */
   concept?: string | null;
+  /** @nullable */
+  optionExplanations?: (string | null)[] | null;
   createdAt: Date;
 }

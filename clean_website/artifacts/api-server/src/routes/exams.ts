@@ -122,6 +122,9 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
         options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === "string") : [],
         difficulty: typeof q.difficulty === "string" ? q.difficulty : "medium",
         concept: typeof q.concept === "string" ? q.concept : null,
+        optionExplanations: Array.isArray(q.optionExplanations)
+          ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null))
+          : null,
       }));
 
     const [exam] = await db.insert(examsTable).values({

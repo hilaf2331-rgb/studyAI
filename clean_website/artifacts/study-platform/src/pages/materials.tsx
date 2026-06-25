@@ -160,50 +160,68 @@ export const MaterialsPage: React.FC = () => {
         <div className="space-y-3 pb-20">
           {filtered.map(m => {
             const selected = selectedIds.has(m.id);
-            return (
-              <Link
-                key={m.id}
-                href={`/materials/${m.id}`}
-                onClick={(e) => { if (selectionMode) { e.preventDefault(); toggleSelected(m.id); } }}
-              >
-                <Card className={`cursor-pointer hover:shadow-md transition-all group ${selected ? "ring-2 ring-primary" : ""}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start sm:items-center gap-3 sm:gap-4">
-                      {selectionMode ? (
-                        <Checkbox
-                          checked={selected}
-                          onCheckedChange={() => toggleSelected(m.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold break-words">{m.title}</span>
-                          <StatusBadge status={m.status} isRTL={isRTL} />
-                          <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
-                          <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
-                        </div>
-                        <div className="flex gap-3 sm:gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
-                          <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{m.summaryCount} {isRTL ? "סיכומים" : "summaries"}</span>
-                          <span className="flex items-center gap-1"><BrainCircuit className="w-3 h-3" />{m.flashcardCount} {isRTL ? "כרטיסיות" : "cards"}</span>
-                          <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" />{m.questionCount} {isRTL ? "שאלות" : "questions"}</span>
-                          <span className="flex items-center gap-1"><FileQuestion className="w-3 h-3" />{m.examCount} {isRTL ? "מבחנים" : "exams"}</span>
-                        </div>
+
+            const cardBody = (
+              <Card className={`cursor-pointer hover:shadow-md transition-all group ${selected ? "ring-2 ring-primary" : ""}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+                    {selectionMode ? (
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={() => toggleSelected(m.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+                        <FileText className="w-5 h-5" />
                       </div>
-                      {!selectionMode && (
-                        <button onClick={(e) => handleDelete(e, m.id)}
-                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-all shrink-0">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold break-words">{m.title}</span>
+                        <StatusBadge status={m.status} isRTL={isRTL} />
+                        <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
+                        <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
+                      </div>
+                      <div className="flex gap-3 sm:gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{m.summaryCount} {isRTL ? "סיכומים" : "summaries"}</span>
+                        <span className="flex items-center gap-1"><BrainCircuit className="w-3 h-3" />{m.flashcardCount} {isRTL ? "כרטיסיות" : "cards"}</span>
+                        <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" />{m.questionCount} {isRTL ? "שאלות" : "questions"}</span>
+                        <span className="flex items-center gap-1"><FileQuestion className="w-3 h-3" />{m.examCount} {isRTL ? "מבחנים" : "exams"}</span>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
+                    {!selectionMode && (
+                      <button onClick={(e) => handleDelete(e, m.id)}
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 rounded-md hover:bg-destructive/10 hover:text-destructive transition-all shrink-0">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+
+            // While selection mode is active, the card is rendered as a plain
+            // div (no wouter Link / anchor in the DOM at all) so a tap can
+            // ONLY toggle selection -- there is no navigable element for a
+            // click to fall through to, regardless of event propagation.
+            if (selectionMode) {
+              return (
+                <div
+                  key={m.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelected(m.id); }}
+                >
+                  {cardBody}
+                </div>
+              );
+            }
+
+            return (
+              <Link key={m.id} href={`/materials/${m.id}`}>
+                {cardBody}
               </Link>
             );
           })}

@@ -186,6 +186,21 @@
   transform: rotateY(180deg);
 }
 
+@keyframes glow-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+.animate-glow-pulse {
+  animation: glow-pulse 7s ease-in-out infinite;
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
 @keyframes progress-shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }

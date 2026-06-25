@@ -80,7 +80,8 @@ export const AuthPage: React.FC = () => {
 
   return (
     <div className="relative min-h-screen bg-background flex items-center justify-center p-4 overflow-hidden" dir="rtl">
-      <BackgroundGlow className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[32rem] h-[32rem]" />
+      <BackgroundGlow className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40rem] h-[40rem]" />
+      <BackgroundGlow className="-bottom-24 -left-24 w-[22rem] h-[22rem] opacity-60" />
 
       <div className="relative z-10 w-full max-w-md space-y-7">
         {/* Logo */}
@@ -88,11 +89,11 @@ export const AuthPage: React.FC = () => {
           <div className="flex items-center justify-center">
             <img src="/logo.png" alt="FocusStudy" className="w-14 h-14 object-contain" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight">FocusStudy</h1>
+          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-l from-indigo-500 via-fuchsia-500 to-amber-500 bg-clip-text text-transparent">FocusStudy</h1>
           <p className="text-muted-foreground text-sm">פלטפורמת הלמידה החכמה שלך</p>
         </div>
 
-        <Card className="border-border/80 shadow-lg">
+        <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/45 backdrop-blur-md shadow-2xl shadow-indigo-500/10">
           <CardHeader className="pb-4">
             <CardTitle>
               {mode === "login" ? "התחבר לחשבונך" : "צור חשבון חדש"}
@@ -197,7 +198,7 @@ export const AuthPage: React.FC = () => {
 
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300"
                 disabled={isLoading || (mode === "register" && pwTouched && !allRulesPassed) || (mode === "register" && !agreedToTerms)}
               >
                 {isLoading

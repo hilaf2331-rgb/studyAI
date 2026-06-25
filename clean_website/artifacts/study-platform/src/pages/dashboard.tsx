@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/lib/i18n";
 import { BackgroundGlow } from "@/components/background-glow";
-import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Target, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
+import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
+import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/components/icons";
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   upload: <Upload className="w-4 h-4" />,
@@ -35,15 +36,16 @@ export const Dashboard: React.FC = () => {
   const { data: dailyReview } = useGetDailyReviewCount();
 
   const statCards = [
-    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: BookOpen, color: "text-blue-500", border: "border-s-blue-500" },
-    { label: t("totalMaterials"), value: stats?.totalMaterials ?? 0, icon: GraduationCap, color: "text-purple-500", border: "border-s-purple-500" },
-    { label: t("totalFlashcards"), value: stats?.totalFlashcards ?? 0, icon: BrainCircuit, color: "text-amber-500", border: "border-s-amber-500" },
-    { label: t("averageScore"), value: `${stats?.averageScore ?? 0}%`, icon: Target, color: "text-green-500", border: "border-s-green-500" },
+    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: CourseGlyph, glow: "hover:shadow-indigo-500/25 hover:border-indigo-400/50" },
+    { label: t("totalMaterials"), value: stats?.totalMaterials ?? 0, icon: MaterialsGlyph, glow: "hover:shadow-sky-500/25 hover:border-sky-400/50" },
+    { label: t("totalFlashcards"), value: stats?.totalFlashcards ?? 0, icon: FlashcardGlyph, glow: "hover:shadow-amber-500/25 hover:border-amber-400/50" },
+    { label: t("averageScore"), value: `${stats?.averageScore ?? 0}%`, icon: GradeGlyph, glow: "hover:shadow-emerald-500/25 hover:border-emerald-400/50" },
   ];
 
   return (
     <div className="relative space-y-10 animate-in fade-in duration-500">
-      <BackgroundGlow className="-top-10 right-1/3 w-[26rem] h-[26rem] opacity-20" />
+      <BackgroundGlow className="-top-16 right-1/3 w-[34rem] h-[34rem]" />
+      <BackgroundGlow className="top-1/3 -left-20 w-[22rem] h-[22rem] opacity-50" />
 
       {/* Header */}
       <div className="relative z-10 flex items-start justify-between">
@@ -65,9 +67,9 @@ export const Dashboard: React.FC = () => {
       {/* Today's Review Queue */}
       {!!dailyReview?.count && (
         <Link href="/review">
-          <div className="flex items-center justify-between gap-4 p-5 rounded-xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
+          <div className="group flex items-center justify-between gap-4 p-5 rounded-xl border border-primary/30 bg-primary/5 backdrop-blur-md hover:bg-primary/10 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/20 transition-all duration-300 cursor-pointer">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
                 <BrainCircuit className="w-5 h-5 text-primary" />
               </div>
               <div>
@@ -87,10 +89,10 @@ export const Dashboard: React.FC = () => {
       {/* Stat Cards */}
       <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(s => (
-          <Card key={s.label} className={`border-s-4 ${s.border} shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200`}>
+          <Card key={s.label} className={`group border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${s.glow}`}>
             <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-5">
               <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</CardTitle>
-              <s.icon className={`w-4 h-4 ${s.color}`} />
+              <s.icon className="w-8 h-8 shrink-0 transition-transform duration-300 group-hover:scale-110" />
             </CardHeader>
             <CardContent className="pb-4 px-5">
               {loadingStats ? <Skeleton className="h-8 w-16" /> : <div className="text-3xl font-black">{s.value}</div>}
@@ -102,7 +104,7 @@ export const Dashboard: React.FC = () => {
       {/* Exam Readiness + Study Minutes */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
+          <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/40">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold">{isRTL ? "מוכנות למבחן" : "Exam Readiness"}</p>
@@ -114,7 +116,7 @@ export const Dashboard: React.FC = () => {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/20 hover:border-sky-400/40">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold">{t("studyMinutes")}</p>
@@ -129,18 +131,18 @@ export const Dashboard: React.FC = () => {
 
       {/* Quick Actions */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">{isRTL ? "פעולות מהירות" : "Quick Actions"}</h2>
+        <h2 className="text-lg font-black tracking-tight mb-3">{isRTL ? "פעולות מהירות" : "Quick Actions"}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { href: "/materials/new", label: isRTL ? "הוסף חומר" : "Add Material", icon: Upload, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20" },
-            { href: "/courses", label: isRTL ? "הקורסים שלי" : "My Courses", icon: BookOpen, color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20" },
-            { href: "/materials", label: isRTL ? "כל החומרים" : "All Materials", icon: GraduationCap, color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20" },
-            { href: "/materials", label: isRTL ? "תרגל עכשיו" : "Practice Now", icon: Sparkles, color: "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20" },
+            { href: "/materials/new", label: isRTL ? "הוסף חומר" : "Add Material", icon: Upload, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", glow: "hover:shadow-blue-500/25 hover:border-blue-400/50" },
+            { href: "/courses", label: isRTL ? "הקורסים שלי" : "My Courses", icon: BookOpen, color: "bg-purple-500/10 text-purple-600 dark:text-purple-400", glow: "hover:shadow-purple-500/25 hover:border-purple-400/50" },
+            { href: "/materials", label: isRTL ? "כל החומרים" : "All Materials", icon: GraduationCap, color: "bg-amber-500/10 text-amber-600 dark:text-amber-400", glow: "hover:shadow-amber-500/25 hover:border-amber-400/50" },
+            { href: "/materials", label: isRTL ? "תרגל עכשיו" : "Practice Now", icon: Sparkles, color: "bg-green-500/10 text-green-600 dark:text-green-400", glow: "hover:shadow-green-500/25 hover:border-green-400/50" },
           ].map(a => (
             <Link key={a.href + a.label} href={a.href}>
-              <div className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${a.color}`}>
-                <a.icon className="w-5 h-5 mb-2" />
-                <p className="text-sm font-semibold">{a.label}</p>
+              <div className={`group p-4 rounded-xl border border-white/30 dark:border-white/10 backdrop-blur-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${a.color} ${a.glow}`}>
+                <a.icon className="w-5 h-5 mb-2 transition-transform duration-300 group-hover:scale-110" />
+                <p className="text-sm font-bold tracking-wide">{a.label}</p>
               </div>
             </Link>
           ))}
@@ -149,7 +151,7 @@ export const Dashboard: React.FC = () => {
 
       {/* Recent Activity */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">{t("recentActivity")}</h2>
+        <h2 className="text-lg font-black tracking-tight mb-3">{t("recentActivity")}</h2>
         {loadingActivity ? (
           <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
         ) : !activity?.length ? (

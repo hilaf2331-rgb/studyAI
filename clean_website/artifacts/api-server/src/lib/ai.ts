@@ -1347,6 +1347,26 @@ Return ONLY JSON matching this structure:
 const CHUNK_QUESTIONS_MAX_OUTPUT_TOKENS = 2500;
 const QUESTIONS_PER_CHUNK_CAP = 4;
 
+// Shared quality bar for every multiple_choice question generated anywhere
+// in the app (practice questions and exams, chunked and whole-document).
+// Plain recall questions ("Is a black banana sweet?") test memorization, not
+// understanding -- this forces half the multiple_choice questions into a
+// short scenario/case-study wrapper instead, so the student has to apply the
+// underlying principle rather than just spot a sentence they already read.
+function scenarioMcRules(isHe: boolean): string {
+  return isHe
+    ? `כללי איכות לשאלות אמריקאיות (multiple_choice) -- חובה להקפיד על כולם:
+- איזון 50/50: מתוך כל שאלות ה-multiple_choice שתיצרו כאן, מחצית (50%) חייבות להיות שאלות ידע/שליפה ישירה (מבוססות ישירות על עובדה או הגדרה מהטקסט), והמחצית השנייה (50%) חייבות להיות שאלות מצביות/יישומיות/מקרה-בוחן.
+- שאלות מצביות: עטפו את העובדה או העיקרון מהטקסט בתוך תרחיש קצר, דילמה מהחיים האמיתיים, או מקרה מקצועי -- כדי לענות, הסטודנט/ית חייב/ת להבין את העיקרון ולהפעיל אותו על הסיפור, לא רק לשלוף משפט מהטקסט. לדוגמה: במקום "האם בננה שחורה מתוקה?" שאלו "יוסי רצה להכין קינוח מתוק מאוד בלי להוסיף סוכר -- מה עליו לקנות?"
+- התאמה לתחום: זהו אוטומטית את התחום של הטקסט (רפואה, משפטים, הנדסה, עסקים, פסיכולוגיה, חיים יומיומיים וכו') והתאימו את התרחיש אליו: טקסט רפואי -> תרחיש רופא-מטופל; טקסט משפטי -> תרחיש עו"ד-לקוח; טקסט כללי -> מצב מחיי היומיום.
+- מסיחים איכותיים: כל אפשרות שגויה חייבת להיות סבירה ומאתגרת באמת -- מבוססת על טעות מושגית נפוצה או על מונח/עובדה אחרת שמופיעה בטקסט, כך שתלמיד שלא הבין לעומק יוכל בקלות לבחור בה בטעות. אסור מסיחים מגוחכים שניתן לפסול בלי לדעת את התוכן.`
+    : `Quality rules for multiple_choice questions -- all of these are mandatory:
+- 50/50 balance: of all the multiple_choice questions you generate here, exactly half (50%) must be direct recall/knowledge questions (based directly on a fact or definition from the text), and the other half (50%) must be situational/application/case-study questions.
+- Situational questions: wrap the fact or principle from the text inside a short real-life scenario, dilemma, or professional case -- to answer, the student must understand the underlying principle and apply it to the story, not just recall a sentence from the text. For example, instead of "Is a black banana sweet?" ask "Yossi wants to make a very sweet dessert without adding sugar -- what should he buy?"
+- Domain adaptation: automatically detect the subject of the text (medicine, law, engineering, business, psychology, everyday life, etc.) and tailor the scenario to it: medical text -> doctor-patient scenario; legal text -> lawyer-client scenario; general text -> everyday-life situation.
+- Quality distractors: every wrong option must be genuinely plausible and challenging -- based on a common misconception or another fact/term that actually appears in the text, so a student who didn't deeply understand the material could easily pick it by mistake. No throwaway distractors that can be ruled out without knowing the content.`;
+}
+
 async function generateQuestionsForChunk(
   chunk: string,
   materialTitle: string,
@@ -1370,12 +1390,12 @@ ${excludeBlock}
 
 כללים חשובים:
 - multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
-- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים, מבוססים על טעות מושגית נפוצה או בלבול בין מונחים קרובים מהחלק הזה. אסור מסיחים מגוחכים או כאלה שניתן לפסול בלי לדעת את התוכן.
+${scenarioMcRules(true)}
 - דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית ותקנית. אסור מילים מומצאות או "גיבריש".
 - true_false: options = ["נכון", "לא נכון"]. correctIndex = 0 (נכון) או 1 (לא נכון).
 - open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה, ו-"modelAnswer" הוא תשובת מודל מקיפה.
 - כל שאלה חייבת להיות על תוכן אמיתי מהחלק הזה — אסור להמציא. אם אין מספיק תוכן ייחודי, צור פחות שאלות.
-- "explanation": הסבר קצר, ברור ומעודד.
+- "explanation": הסבר קצר, ברור ומעודד -- כתוב גם הוא בהקשר התרחיש (אם השאלה מצבית), לא רק ציטוט מהטקסט.
 
 החזר JSON במבנה הבא:
 {"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`
@@ -1390,12 +1410,12 @@ Difficulty: ${difficulty}
 
 Important rules:
 - multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index.
-- Distractors must be realistic and challenging, based on a common misconception or confusion between closely related terms from this part. No throwaway distractors.
+${scenarioMcRules(false)}
 - Linguistic accuracy (mandatory): every word in every option must be a real, grammatically correct word in the target language. Never use made-up words or gibberish.
 - true_false: options = ["True", "False"]. correctIndex = 0 (True) or 1 (False).
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, "modelAnswer" is a comprehensive model answer.
 - All questions must be based on real content from this part -- no fabrication. Create fewer questions if there isn't enough unique content.
-- "explanation": a brief, clear, encouraging explanation.
+- "explanation": a brief, clear, encouraging explanation -- written in context of the scenario itself (if the question is situational), not just a quote from the text.
 
 Return ONLY JSON matching this structure:
 {"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
@@ -1495,12 +1515,12 @@ ${excludeBlock}
 
 כללים חשובים:
 - multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
-- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים: כל אפשרות שגויה צריכה להיות סבירה לחלוטין, מבוססת על טעות מושגית נפוצה או על בלבול בין מונחים קרובים מהחומר עצמו. אסור מסיחים מגוחכים, לא רלוונטיים, או כאלה שניתן לפסול מבלי לדעת את התוכן (כמו אורך שונה באופן בולט, או ניסוח שמסגיר את עצמו). תלמיד שלא הבין את החומר לעומק צריך להיות מסוגל לטעות.
+${scenarioMcRules(true)}
 - דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית, תקנית ומובנת. אסור בהחלט להשתמש במילים מומצאות, צירופי אותיות חסרי משמעות, או "גיבריש". לפני שמחזירים את ה-JSON, בדקו פנימית שכל מילה בכל אפשרות קיימת בשפה העברית והגיונית בהקשר השאלה. אם אינכם בטוחים שמונח מסוים הוא מילה עברית תקנית ונפוצה — אל תשתמשו בו; העדיפו ניסוח פשוט וברור על פני ניסוח מורכב או נדיר.
 - true_false: options = ["נכון", "לא נכון"]. correctIndex = 0 (נכון) או 1 (לא נכון).
 - open: options = [], correctIndex = 0, "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית — מנוסחת היטב, ברמה שתלמיד היה רוצה לכתוב במבחן, שמכסה את כל הנקודות החשובות מהחומר.
 - כל שאלה חייבת להיות על תוכן אמיתי מהחומר — אסור להמציא.
-- "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — כתוב בטון חם ותומך (כמו חבר שמסביר, לא שופט), ולא רק "כי זה מה שכתוב בטקסט".
+- "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — כתוב בטון חם ותומך (כמו חבר שמסביר, לא שופט), בהקשר התרחיש עצמו (אם השאלה מצבית), ולא רק "כי זה מה שכתוב בטקסט".
 
 החזר JSON במבנה הבא:
 {
@@ -1528,12 +1548,12 @@ Difficulty: ${difficulty}
 
 Important rules:
 - multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index (0-3) of the correct option.
-- Distractors must be realistic and challenging: every wrong option should be genuinely plausible, based on a common misconception or confusion between closely related terms/concepts from the material itself. No throwaway, irrelevant, or self-revealing distractors (e.g. obviously shorter/longer phrasing, or wording that gives away the answer). A student who only half-understood the material should be able to plausibly pick a wrong one.
+${scenarioMcRules(false)}
 - Linguistic accuracy (mandatory): every word in every answer option — correct and incorrect alike — must be a real, grammatically correct, commonly understood word or phrase in the target language. Never use made-up words, gibberish, or nonsensical letter combinations. Before returning the JSON, internally verify that every word in every option is a real word and makes sense in context. If you are unsure whether a term is valid and commonly understood, do not use it — prefer simple, clear phrasing over complex or obscure wording.
 - true_false: options = ["True", "False"]. correctIndex = 0 (True) or 1 (False).
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer — well-written, the kind a strong student would aim to write on an exam, covering all the key points from the material.
 - All questions must be based on actual content — no fabrication.
-- "explanation": a brief, clear, encouraging explanation of why the correct answer is right — written in a warm, supportive tone (like a friend explaining, not a judge), not just "because the text says so."
+- "explanation": a brief, clear, encouraging explanation of why the correct answer is right — written in a warm, supportive tone (like a friend explaining, not a judge), in context of the scenario itself (if the question is situational), not just "because the text says so."
 
 Return ONLY JSON matching this structure:
 {
@@ -1626,12 +1646,12 @@ ${excludeBlock}
 
 כללי JSON:
 - multiple_choice: 4 אפשרויות, correctIndex = אינדקס 0-3 של הנכונה.
-- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים, מבוססים על טעות מושגית נפוצה מהחלק הזה. אסור מסיחים מגוחכים.
+${scenarioMcRules(true)}
 - דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה חייבת להיות מילה עברית אמיתית ותקנית.
 - true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
 - open: options = [], correctIndex = 0. "answer" תשובה קצרה, "modelAnswer" תשובת מודל מקיפה.
 - אם אין מספיק תוכן ייחודי בחלק הזה, צור פחות שאלות.
-- "explanation": הסבר קצר, ברור ומעודד.
+- "explanation": הסבר קצר, ברור ומעודד -- בהקשר התרחיש עצמו אם השאלה מצבית.
 
 החזר JSON במבנה הבא בלבד:
 {"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`
@@ -1647,12 +1667,12 @@ Mix question types: multiple_choice (70%), true_false (15%), open (15%).
 
 JSON rules:
 - multiple_choice: 4 options, correctIndex = 0-based index of the correct one.
-- Distractors must be realistic and challenging, based on a common misconception from this part. No throwaway distractors.
+${scenarioMcRules(false)}
 - Linguistic accuracy (mandatory): every word in every option must be a real, grammatically correct word.
 - true_false: options = ["True", "False"], correctIndex = 0 or 1.
 - open: options = [], correctIndex = 0. "answer" short reference answer, "modelAnswer" comprehensive model answer.
 - Create fewer questions if there isn't enough unique content in this part.
-- "explanation": a brief, clear, encouraging explanation.
+- "explanation": a brief, clear, encouraging explanation -- in context of the scenario itself if the question is situational.
 
 Return ONLY JSON matching this structure:
 {"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium"}]}`;
@@ -1751,11 +1771,11 @@ ${excludeBlock}
 
 כללי JSON:
 - multiple_choice: 4 אפשרויות, correctIndex = אינדקס 0-3 של הנכונה.
-- מסיחים (distractors) חייבים להיות אמיתיים ומאתגרים: כל אפשרות שגויה צריכה להיות סבירה לחלוטין, מבוססת על טעות מושגית נפוצה או בלבול בין מונחים קרובים מהחומר. אסור מסיחים מגוחכים או כאלה שניתן לפסול בלי לדעת את התוכן. ככל שרמת הקושי גבוהה יותר, כך המסיחים צריכים להיות דקים ומתוחכמים יותר.
+${scenarioMcRules(true)}
 - דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה — נכונה כמו שגויה — חייבת להיות מילה עברית אמיתית, תקנית ומובנת. אסור בהחלט להשתמש במילים מומצאות, צירופי אותיות חסרי משמעות, או "גיבריש". לפני שמחזירים את ה-JSON, בדקו פנימית שכל מילה בכל אפשרות קיימת בשפה העברית והגיונית בהקשר השאלה. אם אינכם בטוחים שמונח מסוים הוא מילה עברית תקנית ונפוצה — אל תשתמשו בו; העדיפו ניסוח פשוט וברור על פני ניסוח מורכב או נדיר.
 - true_false: options = ["נכון", "לא נכון"], correctIndex = 0 או 1.
 - open: options = [], correctIndex = 0. "answer" הוא תשובה קצרה/תקציר, ו-"modelAnswer" הוא תשובת מודל מקיפה ואיכותית, ברמת תשובת מבחן מצוינת, המכסה את כל הנקודות החשובות.
-- "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — בטון חם ותומך, לא רק ציטוט מהטקסט.
+- "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — בטון חם ותומך, בהקשר התרחיש עצמו אם השאלה מצבית, לא רק ציטוט מהטקסט.
 
 החזר JSON במבנה הבא בלבד:
 {
@@ -1784,11 +1804,11 @@ Mix question types: multiple_choice (70%), true_false (15%), open (15%).
 
 JSON rules:
 - multiple_choice: 4 options, correctIndex = 0-based index of the correct one.
-- Distractors must be realistic and challenging: every wrong option should be genuinely plausible, based on a common misconception or confusion between closely related terms/concepts from the material. No throwaway distractors that can be ruled out without knowing the content. The higher the difficulty, the more subtle and sophisticated the distractors should be.
+${scenarioMcRules(false)}
 - Linguistic accuracy (mandatory): every word in every answer option — correct and incorrect alike — must be a real, grammatically correct, commonly understood word or phrase in the target language. Never use made-up words, gibberish, or nonsensical letter combinations. Before returning the JSON, internally verify that every word in every option is a real word and makes sense in context. If you are unsure whether a term is valid and commonly understood, do not use it — prefer simple, clear phrasing over complex or obscure wording.
 - true_false: options = ["True", "False"], correctIndex = 0 or 1.
 - open: options = [], correctIndex = 0. "answer" is a short reference answer, and "modelAnswer" is a comprehensive, high-quality model answer at the level of an excellent exam response, covering all the key points.
-- "explanation": a brief, clear, encouraging explanation of why the correct answer is right — warm and supportive in tone, not just a quote from the text.
+- "explanation": a brief, clear, encouraging explanation of why the correct answer is right — warm and supportive in tone, in context of the scenario itself if the question is situational, not just a quote from the text.
 
 Return ONLY JSON matching this structure:
 {

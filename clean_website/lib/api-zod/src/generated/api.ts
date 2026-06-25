@@ -486,6 +486,31 @@ export const GenerateQuestionsBody = zod.object({
 
 
 /**
+ * @summary Generate a single rescue question for a weak concept
+ */
+export const GenerateTargetedQuestionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GenerateTargetedQuestionBody = zod.object({
+  "language": zod.enum(['he', 'en']),
+  "concept": zod.string(),
+  "excludeQuestions": zod.array(zod.string()).optional()
+})
+
+export const GenerateTargetedQuestionResponse = zod.object({
+  "questionType": zod.enum(['multiple_choice']),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "explanation": zod.string().nullish(),
+  "options": zod.array(zod.string()).optional(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
+  "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish()
+})
+
+
+/**
  * @summary Get a question set with questions
  */
 export const GetQuestionSetParams = zod.object({

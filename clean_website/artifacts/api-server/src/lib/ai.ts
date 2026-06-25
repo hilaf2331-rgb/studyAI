@@ -1895,6 +1895,96 @@ Return ONLY JSON matching this structure:
   }
 }
 
+// Output-token ceiling for a single targeted question. Generous relative to
+// what one multiple_choice item actually needs, since it still carries a
+// full optionExplanations breakdown (3 distractor explanations) alongside
+// the question itself.
+const TARGETED_QUESTION_MAX_OUTPUT_TOKENS = 1200;
+
+/**
+ * Relearning-loop entry point: generates exactly ONE scenario-based
+ * multiple_choice question that re-tests a single concept a student has
+ * repeatedly gotten wrong (across flashcards or quizzes). Deliberately a
+ * single bounded call against a content slice rather than reusing the
+ * chunked generateQuestionsAI pipeline -- that pipeline is built to spread
+ * N questions across an entire document, which is the wrong shape for "give
+ * me one rescue question about this exact concept right now."
+ */
+export function generateTargetedConceptQuestionAI(
+  opts: AIGenerationOptions & { concept: string; excludeQuestions?: string[] }
+): Promise<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; concept?: string; optionExplanations?: (string | null)[] } | null> {
+  return pipelineLimit(() => generateTargetedConceptQuestionAIImpl(opts));
+}
+
+async function generateTargetedConceptQuestionAIImpl(
+  opts: AIGenerationOptions & { concept: string; excludeQuestions?: string[] }
+): Promise<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; concept?: string; optionExplanations?: (string | null)[] } | null> {
+  const { language, materialContent, materialTitle, concept, excludeQuestions } = opts;
+  const isHe = language === "he";
+  const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
+
+  const userPrompt = isHe
+    ? `## חומר לימוד: "${materialTitle}"
+
+${contentSlice(materialContent)}
+${excludeBlock}
+---
+המשימה: התלמיד/ה התקשה שוב ושוב במושג הספציפי הזה: "${concept}". צרו שאלת אמריקאית (multiple_choice) אחת בלבד, ממוקדת בדיוק במושג הזה, שתעזור לתלמיד/ה להבין ולתקן את הטעות.
+
+כללי JSON:
+- 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא האינדקס (0-3) של האפשרות הנכונה.
+${scenarioMcRules(true)}
+- דיוק לשוני (חובה): כל מילה בכל אפשרות תשובה חייבת להיות מילה עברית אמיתית ותקנית.
+- השאלה חייבת להיות ממוקדת אך ורק במושג "${concept}" -- אל תבדקו מושג אחר.
+- "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה, בהקשר התרחיש עצמו אם השאלה מצבית.
+- "concept": חזרו על אותו מושג בדיוק כפי שניתן לכם: "${concept}".
+
+החזר JSON במבנה הבא בלבד, אובייקט שאלה אחד (לא מערך):
+{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "${concept}", "optionExplanations": [null, "הסבר התפיסה השגויה לבחירה ב'ב'", "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}`
+    : `## Study Material: "${materialTitle}"
+
+${contentSlice(materialContent)}
+${excludeBlock}
+---
+Task: the student has repeatedly struggled with this specific concept: "${concept}". Create exactly ONE multiple_choice question, focused precisely on this concept, that will help the student understand and correct the misconception.
+
+JSON rules:
+- 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index (0-3) of the correct option.
+${scenarioMcRules(false)}
+- Linguistic accuracy (mandatory): every word in every option must be a real, grammatically correct word in the target language.
+- The question must be focused exclusively on the concept "${concept}" -- do not test any other concept.
+- "explanation": a brief, clear, encouraging explanation of why the correct answer is right, in context of the scenario itself if the question is situational.
+- "concept": echo back this exact concept string: "${concept}".
+
+Return ONLY JSON matching this structure, a single question object (not an array):
+{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "${concept}", "optionExplanations": [null, "misconception explanation for option B", "misconception explanation for option C", "misconception explanation for option D"]}`;
+
+  try {
+    const question = await callGeminiJsonWithValidation(
+      {
+        systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        temperature: 0.4,
+        jsonMode: true,
+        maxOutputTokens: TARGETED_QUESTION_MAX_OUTPUT_TOKENS,
+      },
+      (text) => {
+        const parsed = safeJsonParse(text);
+        const candidate = Array.isArray(parsed.questions) ? parsed.questions[0] : parsed;
+        const [valid] = filterValidQuestions([{ ...candidate, correctIndex: candidate?.correctIndex ?? 0 }]);
+        if (!valid) throw new Error("invalid targeted question");
+        return valid;
+      },
+      `generateTargetedConceptQuestionAI(${concept})`,
+    );
+    return question;
+  } catch (err) {
+    if (err instanceof RateLimitExhaustedError) throw err;
+    console.error(`generateTargetedConceptQuestionAI: failed to generate question for concept "${concept}":`, err);
+    return null;
+  }
+}
+
 export async function chatWithMaterial(
   materialContent: string,
   materialTitle: string,

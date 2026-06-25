@@ -484,6 +484,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/QuestionSet"
 
+  /materials/{id}/targeted-question:
+    post:
+      operationId: generateTargetedQuestion
+      tags: [questions]
+      summary: Generate a single rescue question for a weak concept
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TargetedQuestionRequest"
+      responses:
+        "200":
+          description: Generated targeted question (not persisted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetedQuestion"
+
   /question-sets/{id}:
     get:
       operationId: getQuestionSet
@@ -1136,6 +1161,47 @@ components:
         difficulty:
           type: string
           enum: [easy, medium, hard, mixed]
+
+    TargetedQuestionRequest:
+      type: object
+      required: [language, concept]
+      properties:
+        language:
+          type: string
+          enum: [he, en]
+        concept:
+          type: string
+        excludeQuestions:
+          type: array
+          items:
+            type: string
+
+    TargetedQuestion:
+      type: object
+      required: [question, answer, questionType]
+      properties:
+        questionType:
+          type: string
+          enum: [multiple_choice]
+        question:
+          type: string
+        answer:
+          type: string
+        explanation:
+          type: ["string", "null"]
+        options:
+          type: array
+          items:
+            type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        concept:
+          type: ["string", "null"]
+        optionExplanations:
+          type: ["array", "null"]
+          items:
+            type: ["string", "null"]
 
     # ── Exams ─────────────────────────────────────────────────────────────────
     Exam:

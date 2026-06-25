@@ -3,9 +3,10 @@ import { db, questionSetsTable, questionsTable, materialsTable, activityTable } 
 import { eq, and } from "drizzle-orm";
 import {
   ListQuestionSetsParams, GenerateQuestionsParams, GenerateQuestionsBody,
-  GetQuestionSetParams, DeleteQuestionSetParams
+  GetQuestionSetParams, DeleteQuestionSetParams,
+  GenerateTargetedQuestionParams, GenerateTargetedQuestionBody
 } from "@workspace/api-zod";
-import { generateQuestionsAI } from "../lib/ai";
+import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
@@ -101,6 +102,40 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
   });
 
   res.status(201).json(await getSetWithQuestions(set.id));
+});
+
+// Relearning-loop "rescue question": one targeted multiple_choice question
+// for a concept the student has repeatedly failed. Never persisted to
+// questionsTable -- it's not part of any question set, just an ephemeral
+// item the frontend shows the student on the spot.
+router.post("/materials/:id/targeted-question", generationRateLimiter, async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = GenerateTargetedQuestionParams.parse({ id: Number(req.params.id) });
+  const body = GenerateTargetedQuestionBody.parse(req.body);
+
+  const [material] = await db.select().from(materialsTable)
+    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
+  if (!material) return res.status(404).json({ error: "Not found" });
+
+  if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
+  const materialContent = material.extractedText || "";
+
+  await requireTokenBalance(userId);
+
+  const question = await generateTargetedConceptQuestionAI({
+    language: body.language as "he" | "en",
+    materialContent,
+    materialTitle: material.title,
+    concept: body.concept,
+    excludeQuestions: body.excludeQuestions,
+    materialId: id,
+  });
+  await deductTokensForGeneration(userId, materialContent, JSON.stringify(question));
+
+  if (!question) return res.status(502).json({ error: "generation_failed" });
+
+  res.json(question);
 });
 
 router.get("/question-sets/:id", async (req, res) => {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, AlertCircle, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react";
 
 interface PasswordRule {
@@ -37,6 +38,7 @@ export const AuthPage: React.FC = () => {
   const [error, setError]       = useState("");
   const [showPw, setShowPw]     = useState(false);
   const [pwTouched, setPwTouched] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const ruleResults = useMemo(() =>
     PASSWORD_RULES.map(r => ({ ...r, passed: r.test(password) })),
@@ -46,7 +48,7 @@ export const AuthPage: React.FC = () => {
 
   const switchMode = (next: "login" | "register") => {
     setMode(next); setError(""); setPwTouched(false);
-    setPassword(""); setEmail(""); setName("");
+    setPassword(""); setEmail(""); setName(""); setAgreedToTerms(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,6 +58,7 @@ export const AuthPage: React.FC = () => {
     if (mode === "register") {
       const pwError = validatePassword(password);
       if (pwError) { setError(pwError); setPwTouched(true); return; }
+      if (!agreedToTerms) { setError("יש לאשר את התקנון ומדיניות הפרטיות כדי להמשיך"); return; }
     }
 
     try {
@@ -165,6 +168,23 @@ export const AuthPage: React.FC = () => {
                 )}
               </div>
 
+              {mode === "register" && (
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="agreeTerms"
+                    checked={agreedToTerms}
+                    onCheckedChange={(v) => setAgreedToTerms(v === true)}
+                    className="mt-0.5"
+                  />
+                  <Label htmlFor="agreeTerms" className="text-sm font-normal leading-relaxed cursor-pointer">
+                    בהרשמה לשירות, אני מסכים/ה ל
+                    <Link href="/terms" className="text-primary font-medium hover:underline">תקנון השימוש</Link>
+                    {" "}ול
+                    <Link href="/privacy" className="text-primary font-medium hover:underline">מדיניות הפרטיות</Link>.
+                  </Label>
+                </div>
+              )}
+
               {error && (
                 <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2.5 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -175,7 +195,7 @@ export const AuthPage: React.FC = () => {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isLoading || (mode === "register" && pwTouched && !allRulesPassed)}
+                disabled={isLoading || (mode === "register" && pwTouched && !allRulesPassed) || (mode === "register" && !agreedToTerms)}
               >
                 {isLoading
                   ? <><Loader2 className="w-4 h-4 me-2 animate-spin" />טוען...</>

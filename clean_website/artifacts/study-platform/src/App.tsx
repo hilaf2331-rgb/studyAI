@@ -24,6 +24,7 @@ import { ExamTakePage } from "@/pages/exam-take";
 import { ExamResultPage } from "@/pages/exam-result";
 import { ChatPage } from "@/pages/chat";
 import { AuthPage } from "@/pages/auth";
+import { LandingPage } from "@/pages/landing";
 import { RecorderPage } from "@/pages/recorder";
 import { ProfilePage } from "@/pages/profile";
 import { TermsPage } from "@/pages/terms";
@@ -50,6 +51,10 @@ function AppRoutes() {
   if (location === "/privacy") return <PrivacyPage />;
 
   if (!user) {
+    // Logged-out visitors land on the marketing page at "/"; the login
+    // gate itself lives at "/login" (linked from the landing page's nav
+    // button and bottom CTA) -- any other path also falls back to it.
+    if (location === "/") return <LandingPage />;
     return <AuthPage />;
   }
 

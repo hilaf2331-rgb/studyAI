@@ -2,21 +2,25 @@ import React, { useState } from "react";
 import { useParams } from "wouter";
 import { useGetQuestionSet, useGenerateTargetedQuestion, TargetedQuestion } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, ChevronDown, ChevronUp, CheckCircle2, XCircle, Wand2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ArrowLeft, ChevronDown, ChevronUp, CheckCircle2, XCircle, Wand2, Sparkles } from "lucide-react";
 
 export const QuestionsPracticePage: React.FC = () => {
   const { id: idStr } = useParams<{ id: string }>();
   const id = Number(idStr);
   const { isRTL } = useLanguage();
+  const { user } = useAuth();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<Record<number, string>>({});
   const [rescue, setRescue] = useState<Record<number, TargetedQuestion>>({});
   const [rescueSelected, setRescueSelected] = useState<Record<number, string>>({});
+  const [showUpsell, setShowUpsell] = useState(false);
 
   const { data: qSet, isLoading } = useGetQuestionSet(id, { query: { enabled: !!id } });
   const rescueMutation = useGenerateTargetedQuestion();
@@ -41,9 +45,16 @@ export const QuestionsPracticePage: React.FC = () => {
   };
 
   const requestRescue = (q: typeof questions[number]) => {
+    if (!user?.isPremium) {
+      setShowUpsell(true);
+      return;
+    }
     rescueMutation.mutate(
       { id: qSet.materialId, data: { language: qSet.language, concept: q.concept || q.question } },
-      { onSuccess: (data) => setRescue(prev => ({ ...prev, [q.id]: data })) }
+      {
+        onSuccess: (data) => setRescue(prev => ({ ...prev, [q.id]: data })),
+        onError: (err: any) => { if (err?.status === 403) setShowUpsell(true); },
+      }
     );
   };
 
@@ -226,6 +237,30 @@ export const QuestionsPracticePage: React.FC = () => {
           );
         })}
       </div>
+
+      <Dialog open={showUpsell} onOpenChange={setShowUpsell}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              {isRTL ? "תכונת פרימיום" : "Premium Feature"}
+            </DialogTitle>
+            <DialogDescription>
+              {isRTL
+                ? "פתח ניתוח נקודות חולשה ושאלות תיקון עם studyAI Premium!"
+                : "Unlock your Weak Spot Analytics and Rescue Questions with studyAI Premium!"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUpsell(false)}>
+              {isRTL ? "אולי בהמשך" : "Maybe later"}
+            </Button>
+            <Button onClick={() => setShowUpsell(false)}>
+              {isRTL ? "שדרג לפרימיום" : "Upgrade to Premium"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

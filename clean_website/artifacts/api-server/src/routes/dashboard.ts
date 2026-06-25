@@ -2,11 +2,15 @@ import { Router } from "express";
 import { db, coursesTable, materialsTable, flashcardsTable, flashcardDecksTable, examResultsTable, activityTable, usersTable } from "@workspace/db";
 import { count, avg, desc, eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
 import { getTokenBalance } from "../lib/tokens";
+import { userIsPremium } from "../lib/subscription";
 
 // Today's Review queue is capped at this many cards across ALL of the
 // user's materials -- a daily review session should feel doable in one
 // sitting, not turn into "every overdue card you've ever skipped."
-const DAILY_REVIEW_CAP = 15;
+const PREMIUM_DAILY_REVIEW_CAP = 15;
+// Free tier gets a smaller taste of the cross-material review queue;
+// admins/premium get the full PREMIUM_DAILY_REVIEW_CAP via isPremium().
+const FREE_DAILY_REVIEW_CAP = 5;
 
 // Rough estimated token cost of one generation of each kind, used only to
 // turn a raw token balance into a friendly "enough for ~X" estimate on the
@@ -87,6 +91,7 @@ router.get("/dashboard/study-streak", async (req, res) => {
 router.get("/dashboard/daily-review-count", async (req, res) => {
   const userId = req.user!.userId;
   const now = new Date();
+  const cap = (await userIsPremium(userId)) ? PREMIUM_DAILY_REVIEW_CAP : FREE_DAILY_REVIEW_CAP;
 
   const [{ value }] = await db.select({ value: count() })
     .from(flashcardsTable)
@@ -97,12 +102,16 @@ router.get("/dashboard/daily-review-count", async (req, res) => {
       or(isNull(flashcardsTable.nextReviewAt), lte(flashcardsTable.nextReviewAt, now))
     ));
 
-  res.json({ count: Number(value) });
+  // Cap the reported count to what the user's tier can actually review, so
+  // the dashboard CTA ("Review N Cards") never promises more than the
+  // daily-review-cards endpoint below will hand back.
+  res.json({ count: Math.min(Number(value), cap) });
 });
 
 router.get("/dashboard/daily-review-cards", async (req, res) => {
   const userId = req.user!.userId;
   const now = new Date();
+  const cap = (await userIsPremium(userId)) ? PREMIUM_DAILY_REVIEW_CAP : FREE_DAILY_REVIEW_CAP;
 
   const cards = await db.select({
     id: flashcardsTable.id,
@@ -128,7 +137,7 @@ router.get("/dashboard/daily-review-cards", async (req, res) => {
     // Never-reviewed cards (nextReviewAt is null) are the most overdue by
     // definition, so they sort first; the rest follow oldest-due-first.
     .orderBy(sql`${flashcardsTable.nextReviewAt} asc nulls first`, asc(flashcardsTable.id))
-    .limit(DAILY_REVIEW_CAP);
+    .limit(cap);
 
   res.json({ cards });
 });

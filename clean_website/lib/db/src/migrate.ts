@@ -18,7 +18,9 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS monthly_token_quota integer NOT NULL DEFAULT ${DEFAULT_MONTHLY_TOKEN_QUOTA},
       ADD COLUMN IF NOT EXISTS last_study_date timestamptz,
       ADD COLUMN IF NOT EXISTS current_streak integer NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS longest_streak integer NOT NULL DEFAULT 0;
+      ADD COLUMN IF NOT EXISTS longest_streak integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user',
+      ADD COLUMN IF NOT EXISTS subscription_tier text NOT NULL DEFAULT 'free';
   `);
 
   await pool.query(`

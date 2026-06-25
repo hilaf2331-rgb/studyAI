@@ -26,6 +26,15 @@ export const usersTable = pgTable("users", {
   lastStudyDate: timestamp("last_study_date", { withTimezone: true }),
   currentStreak: integer("current_streak").notNull().default(0),
   longestStreak: integer("longest_streak").notNull().default(0),
+  // 'user' | 'admin'. Admins bypass premium gating entirely (see
+  // lib/subscription.ts's isPremium()) -- the durable, DB-backed override
+  // for testing/production access, separate from the legacy ADMIN_EMAILS
+  // allowlist in lib/tokens.ts.
+  role: text("role").notNull().default("user"),
+  // 'free' | 'premium'. Drives access to gated features (e.g. the targeted
+  // rescue-question endpoint, full-size daily review queue) ahead of the
+  // Stripe billing integration that will eventually set this.
+  subscriptionTier: text("subscription_tier").notNull().default("free"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

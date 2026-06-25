@@ -8,6 +8,9 @@ export interface AuthUser {
   id: number;
   email: string;
   name?: string | null;
+  role?: string;
+  subscriptionTier?: string;
+  isPremium?: boolean;
 }
 
 interface AuthContextValue {

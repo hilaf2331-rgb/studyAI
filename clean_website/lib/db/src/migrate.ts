@@ -17,4 +17,14 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS tokens_remaining integer NOT NULL DEFAULT ${DEFAULT_MONTHLY_TOKEN_QUOTA},
       ADD COLUMN IF NOT EXISTS monthly_token_quota integer NOT NULL DEFAULT ${DEFAULT_MONTHLY_TOKEN_QUOTA};
   `);
+
+  await pool.query(`
+    ALTER TABLE flashcards
+      ADD COLUMN IF NOT EXISTS concept text;
+  `);
+
+  await pool.query(`
+    ALTER TABLE questions
+      ADD COLUMN IF NOT EXISTS concept text;
+  `);
 }

@@ -79,6 +79,7 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
         back: c.back,
         difficulty: c.difficulty || "medium",
         cardType: c.cardType || "qa",
+        concept: c.concept || null,
       }))
     );
   }

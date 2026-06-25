@@ -18,6 +18,7 @@ export const flashcardsTable = pgTable("flashcards", {
   back: text("back").notNull(),
   difficulty: text("difficulty").notNull().default("medium"),
   cardType: text("card_type").notNull().default("qa"),
+  concept: text("concept"),
   reviewCount: integer("review_count").notNull().default(0),
   nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
   easeFactor: integer("ease_factor").notNull().default(250),

@@ -192,6 +192,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           back: c.back,
           difficulty: c.difficulty || "medium",
           cardType: c.cardType || "qa",
+          concept: c.concept || null,
         }))
       );
     }
@@ -253,6 +254,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           explanation: q.explanation || null,
           options: q.options || [],
           difficulty: q.difficulty || "medium",
+          concept: q.concept || null,
         }))
       );
     }

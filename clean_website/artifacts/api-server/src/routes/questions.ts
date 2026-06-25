@@ -85,6 +85,7 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
         modelAnswer: q.modelAnswer || null,
         options: q.options || [],
         difficulty: q.difficulty || "medium",
+        concept: q.concept || null,
       }))
     );
   }

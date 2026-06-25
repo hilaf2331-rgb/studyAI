@@ -20,5 +20,7 @@ export interface Question {
   modelAnswer?: string | null;
   options?: string[];
   difficulty?: QuestionDifficulty;
+  /** @nullable */
+  concept?: string | null;
   createdAt: Date;
 }

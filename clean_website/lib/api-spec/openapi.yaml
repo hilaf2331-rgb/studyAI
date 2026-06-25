@@ -1025,6 +1025,8 @@ components:
         cardType:
           type: string
           enum: [qa, definition, formula, concept]
+        concept:
+          type: ["string", "null"]
         reviewCount:
           type: integer
         nextReviewAt:
@@ -1107,6 +1109,8 @@ components:
         difficulty:
           type: string
           enum: [easy, medium, hard]
+        concept:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

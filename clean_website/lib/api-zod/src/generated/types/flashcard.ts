@@ -15,6 +15,8 @@ export interface Flashcard {
   back: string;
   difficulty: FlashcardDifficulty;
   cardType?: FlashcardCardType;
+  /** @nullable */
+  concept?: string | null;
   reviewCount?: number;
   /** @nullable */
   nextReviewAt?: Date | null;

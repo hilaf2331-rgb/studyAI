@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "wouter";
-import { useGetDashboardStats, useGetRecentActivity, useGetStudyStreak } from "@workspace/api-client-react";
+import { useGetDashboardStats, useGetRecentActivity, useGetStudyStreak, useGetDailyReviewCount } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,6 +31,7 @@ export const Dashboard: React.FC = () => {
   const { data: stats, isLoading: loadingStats } = useGetDashboardStats();
   const { data: activity, isLoading: loadingActivity } = useGetRecentActivity();
   const { data: streak } = useGetStudyStreak();
+  const { data: dailyReview } = useGetDailyReviewCount();
 
   const statCards = [
     { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: BookOpen, color: "text-blue-500", border: "border-s-blue-500" },
@@ -57,6 +58,28 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Today's Review Queue */}
+      {!!dailyReview?.count && (
+        <Link href="/review">
+          <div className="flex items-center justify-between gap-4 p-5 rounded-xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+                <BrainCircuit className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold">{isRTL ? "סקירה יומית מוכנה" : "Today's Review is ready"}</p>
+                <p className="text-sm text-muted-foreground">
+                  {isRTL ? `${dailyReview.count} כרטיסיות ממתינות בכל החומרים שלך` : `${dailyReview.count} cards due across all your materials`}
+                </p>
+              </div>
+            </div>
+            <span className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold whitespace-nowrap">
+              {isRTL ? `סקור ${dailyReview.count} כרטיסיות` : `Review ${dailyReview.count} Cards`}
+            </span>
+          </div>
+        </Link>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

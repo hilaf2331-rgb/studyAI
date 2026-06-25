@@ -18,6 +18,7 @@ import { MaterialNewPage } from "@/pages/material-new";
 import { MaterialDetailPage } from "@/pages/material-detail";
 import { SummaryViewPage } from "@/pages/summary-view";
 import { FlashcardStudyPage } from "@/pages/flashcard-study";
+import { DailyReviewPage } from "@/pages/daily-review";
 import { QuestionsPracticePage } from "@/pages/questions-practice";
 import { ExamTakePage } from "@/pages/exam-take";
 import { ExamResultPage } from "@/pages/exam-result";
@@ -54,6 +55,7 @@ function AppRoutes() {
         <Route path="/materials/:id" component={MaterialDetailPage} />
         <Route path="/materials/:id/chat" component={ChatPage} />
         <Route path="/summaries/:id" component={SummaryViewPage} />
+        <Route path="/review" component={DailyReviewPage} />
         <Route path="/flashcards/:id" component={FlashcardStudyPage} />
         <Route path="/questions/:id" component={QuestionsPracticePage} />
         <Route path="/exams/:id/result/:resultId" component={ExamResultPage} />

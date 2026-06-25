@@ -293,6 +293,8 @@ export interface Flashcard {
   back: string;
   difficulty: FlashcardDifficulty;
   cardType?: FlashcardCardType;
+  /** @nullable */
+  concept?: string | null;
   reviewCount?: number;
   /** @nullable */
   nextReviewAt?: string | null;
@@ -388,6 +390,10 @@ export interface Question {
   modelAnswer?: string | null;
   options?: string[];
   difficulty?: QuestionDifficulty;
+  /** @nullable */
+  concept?: string | null;
+  /** @nullable */
+  optionExplanations?: (string | null)[] | null;
   createdAt: string;
 }
 
@@ -640,6 +646,94 @@ export interface TokenBalance {
   monthlyTokenQuota: number;
   estimatedSummariesRemaining: number;
   estimatedExamsRemaining: number;
+}
+
+export interface DailyReviewCount {
+  count: number;
+}
+
+export type DailyReviewCardDifficulty = typeof DailyReviewCardDifficulty[keyof typeof DailyReviewCardDifficulty];
+
+
+export const DailyReviewCardDifficulty = {
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'hard',
+} as const;
+
+export type DailyReviewCardCardType = typeof DailyReviewCardCardType[keyof typeof DailyReviewCardCardType];
+
+
+export const DailyReviewCardCardType = {
+  qa: 'qa',
+  definition: 'definition',
+  formula: 'formula',
+  concept: 'concept',
+} as const;
+
+export interface DailyReviewCard {
+  id: number;
+  deckId: number;
+  front: string;
+  back: string;
+  difficulty: DailyReviewCardDifficulty;
+  cardType?: DailyReviewCardCardType;
+  /** @nullable */
+  concept?: string | null;
+  reviewCount?: number;
+  /** @nullable */
+  nextReviewAt?: string | null;
+  materialId: number;
+  materialTitle: string;
+  createdAt: string;
+}
+
+export interface DailyReviewCards {
+  cards: DailyReviewCard[];
+}
+
+export type TargetedQuestionRequestLanguage = typeof TargetedQuestionRequestLanguage[keyof typeof TargetedQuestionRequestLanguage];
+
+
+export const TargetedQuestionRequestLanguage = {
+  he: 'he',
+  en: 'en',
+} as const;
+
+export interface TargetedQuestionRequest {
+  language: TargetedQuestionRequestLanguage;
+  concept: string;
+  excludeQuestions?: string[];
+}
+
+export type TargetedQuestionQuestionType = typeof TargetedQuestionQuestionType[keyof typeof TargetedQuestionQuestionType];
+
+
+export const TargetedQuestionQuestionType = {
+  multiple_choice: 'multiple_choice',
+} as const;
+
+export type TargetedQuestionDifficulty = typeof TargetedQuestionDifficulty[keyof typeof TargetedQuestionDifficulty];
+
+
+export const TargetedQuestionDifficulty = {
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'hard',
+} as const;
+
+export interface TargetedQuestion {
+  questionType: TargetedQuestionQuestionType;
+  question: string;
+  answer: string;
+  /** @nullable */
+  explanation?: string | null;
+  options?: string[];
+  difficulty?: TargetedQuestionDifficulty;
+  /** @nullable */
+  concept?: string | null;
+  /** @nullable */
+  optionExplanations?: (string | null)[] | null;
 }
 
 export type ListMaterialsParams = {

@@ -34,5 +34,7 @@ export interface Material {
   cramMode?: boolean;
   /** @nullable */
   examDate?: Date | null;
+  /** @nullable */
+  shareId?: string | null;
   createdAt: Date;
 }

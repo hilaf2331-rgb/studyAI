@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import authRouter from "./routes/auth";
 import { billingPublicRouter } from "./routes/billing";
+import { sharedPublicRouter } from "./routes/shared";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "./lib/ai";
@@ -73,6 +74,7 @@ app.use("/api", globalRateLimiter);
 
 app.use("/api", authRouter);
 app.use("/api", billingPublicRouter);
+app.use("/api", sharedPublicRouter);
 app.use("/api", requireAuth, router);
 
 // Catch-all error handler.

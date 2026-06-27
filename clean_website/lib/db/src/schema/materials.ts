@@ -23,6 +23,11 @@ export const materialsTable = pgTable("materials", {
   // queue right up to the exam instead of being spread across weeks.
   cramMode: boolean("cram_mode").notNull().default(false),
   examDate: timestamp("exam_date", { withTimezone: true }),
+  // Public share link token (see /shared/:shareId in routes/shared.ts). Null
+  // until the owner first clicks "Share with Class" -- generated once and
+  // reused on every later share, never regenerated, so a link a student
+  // already sent out keeps working.
+  shareId: text("share_id").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

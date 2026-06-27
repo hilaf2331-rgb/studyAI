@@ -1,8 +1,9 @@
 import { Router } from "express";
 import multer from "multer";
+import { randomBytes } from "crypto";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
 import { eq, count, and, inArray } from "drizzle-orm";
-import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody } from "@workspace/api-zod";
+import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -294,6 +295,26 @@ router.patch("/materials/:id", async (req, res) => {
     .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)))
     .returning({ id: materialsTable.id });
   if (!updated) return res.status(404).json({ error: "Not found" });
+
+  res.json(await getMaterialWithCounts(id, userId));
+});
+
+// Idempotent: a material that's already been shared keeps its existing
+// shareId forever (re-clicking "Share with Class" must never invalidate a
+// link a student already sent into a WhatsApp group), so this only ever
+// generates a fresh token on the first call.
+router.post("/materials/:id/share", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = ShareMaterialParams.parse({ id: Number(req.params.id) });
+
+  const [material] = await db.select().from(materialsTable)
+    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
+  if (!material) return res.status(404).json({ error: "Not found" });
+
+  if (!material.shareId) {
+    const shareId = randomBytes(9).toString("base64url");
+    await db.update(materialsTable).set({ shareId }).where(eq(materialsTable.id, id));
+  }
 
   res.json(await getMaterialWithCounts(id, userId));
 });

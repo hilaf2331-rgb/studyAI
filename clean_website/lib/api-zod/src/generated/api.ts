@@ -130,6 +130,7 @@ export const ListMaterialsResponseItem = zod.object({
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
+  "shareId": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
@@ -178,6 +179,7 @@ export const GetMaterialResponse = zod.object({
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
+  "shareId": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -213,6 +215,7 @@ export const UpdateMaterialResponse = zod.object({
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
+  "shareId": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -222,6 +225,37 @@ export const UpdateMaterialResponse = zod.object({
  */
 export const DeleteMaterialParams = zod.object({
   "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Create (or fetch the existing) public share link for a material's study kit
+ */
+export const ShareMaterialParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ShareMaterialResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "title": zod.string(),
+  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'xlsx', 'image', 'audio', 'video']),
+  "status": zod.enum(['pending', 'processing', 'ready', 'error']),
+  "language": zod.enum(['he', 'en', 'mixed']).optional(),
+  "extractedText": zod.string().nullish(),
+  "sourceUrl": zod.string().nullish(),
+  "fileSize": zod.number().nullish(),
+  "duration": zod.number().nullish(),
+  "summaryCount": zod.number().optional(),
+  "flashcardCount": zod.number().optional(),
+  "questionCount": zod.number().optional(),
+  "examCount": zod.number().optional(),
+  "wordCount": zod.number().optional(),
+  "tooShortForGeneration": zod.boolean().optional(),
+  "cramMode": zod.boolean().optional(),
+  "examDate": zod.coerce.date().nullish(),
+  "shareId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
 })
 
 
@@ -863,5 +897,29 @@ export const GetTokenBalanceResponse = zod.object({
   "estimatedSummariesRemaining": zod.number(),
   "estimatedExamsRemaining": zod.number()
 })
+
+
+/**
+ * @summary Public, unauthenticated read-only view of a shared study kit (summary + flashcards)
+ */
+export const GetSharedMaterialParams = zod.object({
+  "shareId": zod.coerce.string()
+})
+
+export const GetSharedMaterialResponse = zod.object({
+  "title": zod.string(),
+  "language": zod.enum(['he', 'en', 'mixed']),
+  "summary": zod.object({
+  "content": zod.string().optional(),
+  "keyPoints": zod.array(zod.string()).optional()
+}).nullish(),
+  "flashcards": zod.array(zod.object({
+  "id": zod.number(),
+  "front": zod.string(),
+  "back": zod.string(),
+  "cardType": zod.string().optional(),
+  "concept": zod.string().nullish()
+}))
+}).describe('Read-only, unauthenticated preview shape for a shared study kit -- deliberately excludes internal ids, ownership info, and review\/SRS state (nextReviewAt, easeFactor, interval), since guests only ever flip through cards, never review\/schedule them.')
 
 

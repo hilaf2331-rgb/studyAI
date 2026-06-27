@@ -102,7 +102,46 @@ export interface Material {
   cramMode?: boolean;
   /** @nullable */
   examDate?: string | null;
+  /** @nullable */
+  shareId?: string | null;
   createdAt: string;
+}
+
+export type SharedMaterialLanguage = typeof SharedMaterialLanguage[keyof typeof SharedMaterialLanguage];
+
+
+export const SharedMaterialLanguage = {
+  he: 'he',
+  en: 'en',
+  mixed: 'mixed',
+} as const;
+
+/**
+ * @nullable
+ */
+export type SharedMaterialSummary = {
+  content?: string;
+  keyPoints?: string[];
+} | null;
+
+export type SharedMaterialFlashcardsItem = {
+  id: number;
+  front: string;
+  back: string;
+  cardType?: string;
+  /** @nullable */
+  concept?: string | null;
+};
+
+/**
+ * Read-only, unauthenticated preview shape for a shared study kit -- deliberately excludes internal ids, ownership info, and review/SRS state (nextReviewAt, easeFactor, interval), since guests only ever flip through cards, never review/schedule them.
+ */
+export interface SharedMaterial {
+  title: string;
+  language: SharedMaterialLanguage;
+  /** @nullable */
+  summary?: SharedMaterialSummary;
+  flashcards: SharedMaterialFlashcardsItem[];
 }
 
 export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeof GenerationProgressStage];

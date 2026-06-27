@@ -31,6 +31,7 @@ import { RecorderPage } from "@/pages/recorder";
 import { ProfilePage } from "@/pages/profile";
 import { TermsPage } from "@/pages/terms";
 import { PrivacyPage } from "@/pages/privacy";
+import { SharedViewPage } from "@/pages/shared-view";
 
 import { getStoredToken } from "@/lib/auth";
 
@@ -61,6 +62,20 @@ function AppRoutes() {
   // them, so they're checked before the auth/loading gates below.
   if (location === "/terms") return <PageTransition locationKey={location}><TermsPage /></PageTransition>;
   if (location === "/privacy") return <PageTransition locationKey={location}><PrivacyPage /></PageTransition>;
+
+  // Shared study-kit links are the whole point of the feature: a classmate
+  // who clicks one has no FocusStudy session at all, so this has to be
+  // reachable before the logged-out/loading gates below ever run. Rendered
+  // via a standalone <Route> (no enclosing <Switch>) purely so SharedViewPage
+  // can read :shareId through wouter's normal useParams, instead of this
+  // component having to parse the path itself.
+  if (location.startsWith("/shared/")) {
+    return (
+      <PageTransition locationKey={location}>
+        <Route path="/shared/:shareId" component={SharedViewPage} />
+      </PageTransition>
+    );
+  }
 
   // Auth state hasn't resolved yet (a login/register request is in flight).
   // `user` can flip from null -> truthy on the very next render, so routes

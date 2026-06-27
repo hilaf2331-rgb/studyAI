@@ -46,6 +46,7 @@ import type {
   MaterialInput,
   QuestionRequest,
   QuestionSet,
+  SharedMaterial,
   StudyStreak,
   Summary,
   SummaryRequest,
@@ -883,6 +884,76 @@ export const useDeleteMaterial = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteMaterialMutationOptions(options));
+    }
+
+export const getShareMaterialUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}/share`
+}
+
+/**
+ * @summary Create (or fetch the existing) public share link for a material's study kit
+ */
+export const shareMaterial = async (id: number, options?: RequestInit): Promise<Material> => {
+
+  return customFetch<Material>(getShareMaterialUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getShareMaterialMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof shareMaterial>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof shareMaterial>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['shareMaterial'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof shareMaterial>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  shareMaterial(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ShareMaterialMutationResult = NonNullable<Awaited<ReturnType<typeof shareMaterial>>>
+
+    export type ShareMaterialMutationError = ErrorType<void>
+
+    /**
+ * @summary Create (or fetch the existing) public share link for a material's study kit
+ */
+export const useShareMaterial = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof shareMaterial>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof shareMaterial>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getShareMaterialMutationOptions(options));
     }
 
 export const getBulkDeleteMaterialsUrl = () => {
@@ -3186,6 +3257,83 @@ export function useGetTokenBalance<TData = Awaited<ReturnType<typeof getTokenBal
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTokenBalanceQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSharedMaterialUrl = (shareId: string,) => {
+
+
+
+
+  return `/api/shared/${shareId}`
+}
+
+/**
+ * @summary Public, unauthenticated read-only view of a shared study kit (summary + flashcards)
+ */
+export const getSharedMaterial = async (shareId: string, options?: RequestInit): Promise<SharedMaterial> => {
+
+  return customFetch<SharedMaterial>(getGetSharedMaterialUrl(shareId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSharedMaterialQueryKey = (shareId: string,) => {
+    return [
+    `/api/shared/${shareId}`
+    ] as const;
+    }
+
+
+export const getGetSharedMaterialQueryOptions = <TData = Awaited<ReturnType<typeof getSharedMaterial>>, TError = ErrorType<void>>(shareId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSharedMaterial>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSharedMaterialQueryKey(shareId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSharedMaterial>>> = ({ signal }) => getSharedMaterial(shareId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(shareId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSharedMaterial>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSharedMaterialQueryResult = NonNullable<Awaited<ReturnType<typeof getSharedMaterial>>>
+export type GetSharedMaterialQueryError = ErrorType<void>
+
+
+/**
+ * @summary Public, unauthenticated read-only view of a shared study kit (summary + flashcards)
+ */
+
+export function useGetSharedMaterial<TData = Awaited<ReturnType<typeof getSharedMaterial>>, TError = ErrorType<void>>(
+ shareId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSharedMaterial>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSharedMaterialQueryOptions(shareId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

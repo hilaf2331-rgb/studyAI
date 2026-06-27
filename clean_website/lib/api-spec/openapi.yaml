@@ -228,6 +228,27 @@ paths:
         "204":
           description: Deleted
 
+  /materials/{id}/share:
+    post:
+      operationId: shareMaterial
+      tags: [materials]
+      summary: Create (or fetch the existing) public share link for a material's study kit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Material with its shareId populated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+        "404":
+          description: Not found
+
   /materials/bulk-delete:
     post:
       operationId: bulkDeleteMaterials
@@ -813,6 +834,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenBalance"
 
+  /shared/{shareId}:
+    get:
+      operationId: getSharedMaterial
+      tags: [shared]
+      summary: Public, unauthenticated read-only view of a shared study kit (summary + flashcards)
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared study kit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedMaterial"
+        "404":
+          description: Not found
+
 components:
   schemas:
     HealthStatus:
@@ -921,9 +963,47 @@ components:
         examDate:
           type: ["string", "null"]
           format: date-time
+        shareId:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
+
+    SharedMaterial:
+      description: Read-only, unauthenticated preview shape for a shared study kit -- deliberately excludes internal ids, ownership info, and review/SRS state (nextReviewAt, easeFactor, interval), since guests only ever flip through cards, never review/schedule them.
+      type: object
+      required: [title, language, flashcards]
+      properties:
+        title:
+          type: string
+        language:
+          type: string
+          enum: [he, en, mixed]
+        summary:
+          type: ["object", "null"]
+          properties:
+            content:
+              type: string
+            keyPoints:
+              type: array
+              items:
+                type: string
+        flashcards:
+          type: array
+          items:
+            type: object
+            required: [id, front, back]
+            properties:
+              id:
+                type: integer
+              front:
+                type: string
+              back:
+                type: string
+              cardType:
+                type: string
+              concept:
+                type: ["string", "null"]
 
     GenerationProgress:
       type: object

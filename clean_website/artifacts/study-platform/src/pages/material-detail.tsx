@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
-  useGetMaterialProgress, useUpdateMaterial,
+  useGetMaterialProgress, useUpdateMaterial, useShareMaterial,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
 } from "@workspace/api-client-react";
@@ -25,11 +25,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
-  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer
+  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer, Share2, Copy, Check
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
+import { useToast } from "@/hooks/use-toast";
 
 function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
@@ -161,6 +162,7 @@ export const MaterialDetailPage: React.FC = () => {
   const search = useSearch();
   const { user } = useAuth();
   const qc = useQueryClient();
+  const { toast } = useToast();
 
   // App.tsx already swaps in <AuthPage /> for any logged-out visitor, but
   // that's a render-level gate, not a real navigation -- a deep link opened
@@ -207,6 +209,12 @@ export const MaterialDetailPage: React.FC = () => {
 
   const [examDatePickerOpen, setExamDatePickerOpen] = useState(false);
   const updateMaterial = useUpdateMaterial({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) }) },
+  });
+
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const shareMaterial = useShareMaterial({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) }) },
   });
 
@@ -496,9 +504,27 @@ export const MaterialDetailPage: React.FC = () => {
 
       <div>
         <h1 className="text-3xl font-bold tracking-tight">{material.title}</h1>
-        <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={() => setLocation(`/materials/${id}/chat`)}>
-          <MessageSquare className="w-4 h-4" />{isRTL ? "שוחח עם המורה AI" : "Chat with AI Tutor"}
-        </Button>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setLocation(`/materials/${id}/chat`)}>
+            <MessageSquare className="w-4 h-4" />{isRTL ? "שוחח עם המורה AI" : "Chat with AI Tutor"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={shareMaterial.isPending}
+            onClick={() => {
+              if (material.shareId) {
+                setShareDialogOpen(true);
+              } else {
+                shareMaterial.mutate({ id }, { onSuccess: () => setShareDialogOpen(true) });
+              }
+            }}
+          >
+            {shareMaterial.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+            {isRTL ? "שיתוף ערכת לימוד" : "Share with Class"}
+          </Button>
+        </div>
       </div>
 
       <Card className={`border transition-all ${material.cramMode && material.examDate ? "border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20" : "border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40"}`}>
@@ -831,6 +857,47 @@ export const MaterialDetailPage: React.FC = () => {
         </div>
         {examError && <p className="text-destructive text-sm">{examError}</p>}
       </GenerateDialog>
+
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-primary" />
+              {isRTL ? "שיתוף ערכת לימוד" : "Share Study Kit"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground" dir={isRTL ? "rtl" : "ltr"}>
+            {isRTL
+              ? "כל מי שיש לו את הקישור יכול לצפות בסיכום ולתרגל את הכרטיסיות, בלי צורך בהתחברות."
+              : "Anyone with this link can view the summary and practice the flashcards, no login required."}
+          </p>
+          {material.shareId && (
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={`${window.location.origin}/shared/${material.shareId}`}
+                onFocus={e => e.currentTarget.select()}
+                className="flex-1 rounded-md border bg-muted px-3 py-2 text-sm font-mono"
+                dir="ltr"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-2 shrink-0"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(`${window.location.origin}/shared/${material.shareId}`);
+                  setLinkCopied(true);
+                  toast({ description: isRTL ? "הקישור הועתק" : "Link copied" });
+                  setTimeout(() => setLinkCopied(false), 2000);
+                }}
+              >
+                {linkCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {isRTL ? "העתק" : "Copy"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

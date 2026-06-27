@@ -35,11 +35,24 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  // `user` is hydrated first because a corrupted USER_KEY entry clears both
+  // keys -- TOKEN_KEY must be read afterwards so the two states never
+  // disagree about whether the session is valid.
   const [user, setUser] = useState<AuthUser | null>(() => {
     const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      // Corrupted entry (e.g. from an old schema) would otherwise throw
+      // during this synchronous mount-time hydration and crash the whole
+      // app into the error boundary instead of just logging the user out.
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
   });
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [isLoading, setIsLoading] = useState(false);
 
   const saveAuth = (newToken: string, newUser: AuthUser) => {

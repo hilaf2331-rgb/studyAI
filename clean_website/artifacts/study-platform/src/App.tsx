@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
 import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
+import { Spinner } from "@/components/ui/spinner";
 import NotFound from "@/pages/not-found";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 
@@ -84,7 +85,13 @@ function AppRoutes() {
   // authenticated <Switch> commit to its <NotFound/> catch-all, for a single
   // frame before flipping again. Render an empty, same-background frame and
   // wait instead.
-  if (isLoading) return <div className="min-h-screen bg-background" />;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Spinner className="size-8 text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!user) {
     // Logged-out visitors land on the marketing page at "/"; the login

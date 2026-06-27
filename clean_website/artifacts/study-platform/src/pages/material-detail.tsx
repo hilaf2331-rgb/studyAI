@@ -33,10 +33,11 @@ import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 
 function GenerateDialog({
-  open, onClose, title, onGenerate, isGenerating, isRTL, children, progress
+  open, onClose, title, onGenerate, isGenerating, isRTL, children, progress, costEstimate
 }: {
   open: boolean; onClose: () => void; title: string; onGenerate: () => void; isGenerating: boolean; isRTL: boolean; children: React.ReactNode;
   progress?: { currentChunk: number; totalChunks: number; percentage: number; stage: string };
+  costEstimate?: number;
 }) {
   // Only the chunked path (large documents, multiple sequential Groq calls)
   // ever reports totalChunks > 0 — short materials finish in one call before
@@ -64,6 +65,13 @@ function GenerateDialog({
             <Progress value={percent} active className="h-2" />
           </div>
         )}
+        {!isGenerating && !!costEstimate && (
+          <p className="text-xs text-muted-foreground text-center">
+            {isRTL
+              ? `הפעולה תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוערך, בהתאם לאורך החומר)`
+              : `This will cost about ${costEstimate.toLocaleString()} tokens (estimated, based on material length)`}
+          </p>
+        )}
         <Button onClick={onGenerate} disabled={isGenerating} className="w-full gap-2">
           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {isGenerating ? (isRTL ? "מייצר..." : "Generating...") : (isRTL ? "צור עכשיו" : "Generate Now")}
@@ -78,7 +86,7 @@ function GenerateDialog({
 // that links straight to that item's dedicated page, plus a "+ Generate"
 // button to create another one of the same type.
 function ContentSection({
-  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint, disabled, disabledReason,
+  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint, disabled, disabledReason, costEstimate,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -89,6 +97,7 @@ function ContentSection({
   emptyHint: string;
   disabled?: boolean;
   disabledReason?: string;
+  costEstimate?: number;
 }) {
   const addButton = (
     <Button size="sm" variant="outline" className="gap-1" onClick={onAddNew} disabled={disabled}>
@@ -115,6 +124,14 @@ function ContentSection({
             addButton
           )}
         </div>
+
+        {!disabled && !!costEstimate && (
+          <p className={`text-xs text-muted-foreground ${isRTL ? "text-right" : ""}`}>
+            {isRTL
+              ? `יצירה נוספת תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוערך)`
+              : `Another generation costs about ${costEstimate.toLocaleString()} tokens (estimated)`}
+          </p>
+        )}
 
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{emptyHint}</p>
@@ -146,6 +163,18 @@ function ContentSection({
 
 const PROGRESS_STEPS_HE = ["מנתח את חומר הלימוד...", "מייצר סיכום מפורט...", "בונה כרטיסיות לימוד...", "מכין שאלות חידון...", "מסיים את ערכת הלימוד..."];
 const PROGRESS_STEPS_EN = ["Analyzing study material...", "Generating detailed summary...", "Building flashcard deck...", "Preparing quiz questions...", "Finishing your study kit..."];
+
+// Inline cost hints only, mirroring the estimates dashboard.ts already uses
+// to turn a raw token balance into "X summaries/exams remaining" -- actual
+// cost is dynamic (deductTokensForGeneration in tokens.ts, billed off real
+// input/output size), so these are deliberately framed as estimates, not a
+// flat fee.
+const ESTIMATED_TOKEN_COST = {
+  summary: 3000,
+  flashcards: 3000,
+  quiz: 3000,
+  exam: 6000,
+} as const;
 
 interface KitResult {
   summary?: { id: number; keyPointCount: number };
@@ -709,6 +738,7 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setSummaryOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר סיכום לחומר זה" : "No summary generated for this material yet"}
+          costEstimate={ESTIMATED_TOKEN_COST.summary}
         />
         <ContentSection
           icon={<BrainCircuit className="w-5 h-5 text-primary" />}
@@ -720,6 +750,7 @@ export const MaterialDetailPage: React.FC = () => {
           emptyHint={isRTL ? "עדיין לא נוצרה ערכת כרטיסיות לחומר זה" : "No flashcard deck generated for this material yet"}
           disabled={material.tooShortForGeneration}
           disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
+          costEstimate={ESTIMATED_TOKEN_COST.flashcards}
         />
         <ContentSection
           icon={<HelpCircle className="w-5 h-5 text-primary" />}
@@ -731,6 +762,7 @@ export const MaterialDetailPage: React.FC = () => {
           emptyHint={isRTL ? "עדיין לא נוצר חידון לחומר זה" : "No quiz generated for this material yet"}
           disabled={material.tooShortForGeneration}
           disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
+          costEstimate={ESTIMATED_TOKEN_COST.quiz}
         />
         <ContentSection
           icon={<FileQuestion className="w-5 h-5 text-primary" />}
@@ -742,6 +774,7 @@ export const MaterialDetailPage: React.FC = () => {
           emptyHint={isRTL ? "עדיין לא נוצר מבחן לחומר זה" : "No exam generated for this material yet"}
           disabled={material.tooShortForGeneration}
           disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
+          costEstimate={ESTIMATED_TOKEN_COST.exam}
         />
       </div>
 
@@ -753,6 +786,7 @@ export const MaterialDetailPage: React.FC = () => {
         isGenerating={genSummary.isPending}
         progress={generationProgress}
         isRTL={isRTL}
+        costEstimate={ESTIMATED_TOKEN_COST.summary}
       >
         <div className="space-y-2">
           <Label>{isRTL ? "סוג סיכום" : "Summary Type"}</Label>
@@ -788,6 +822,7 @@ export const MaterialDetailPage: React.FC = () => {
         isGenerating={genFlash.isPending}
         progress={generationProgress}
         isRTL={isRTL}
+        costEstimate={ESTIMATED_TOKEN_COST.flashcards}
       >
         <div className="space-y-2">
           <Label>{isRTL ? "שפה" : "Language"}</Label>
@@ -810,6 +845,7 @@ export const MaterialDetailPage: React.FC = () => {
         isGenerating={genQA.isPending}
         progress={generationProgress}
         isRTL={isRTL}
+        costEstimate={ESTIMATED_TOKEN_COST.quiz}
       >
         <div className="space-y-2">
           <Label>{isRTL ? "שפה" : "Language"}</Label>
@@ -832,6 +868,7 @@ export const MaterialDetailPage: React.FC = () => {
         isGenerating={examLoading}
         progress={generationProgress}
         isRTL={isRTL}
+        costEstimate={ESTIMATED_TOKEN_COST.exam}
       >
         <div className="space-y-2">
           <Label>{isRTL ? "סוג מבחן" : "Exam Type"}</Label>

@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { BackgroundGlow } from "@/components/background-glow";
+import { TokenWidget } from "@/components/token-widget";
 import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -67,6 +68,9 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const renderBottomActions = (showLabels: boolean) => (
     <div className={`p-2 space-y-1 border-t border-sidebar-border mt-auto ${showLabels ? "" : "flex flex-col items-center"}`}>
+      <div className={showLabels ? "px-1 pb-1" : "py-1"}>
+        <TokenWidget compact={!showLabels} />
+      </div>
       {showLabels && user && (
         <div className="px-3 py-2 text-xs text-sidebar-foreground/50 truncate">
           {user.name || user.email}
@@ -153,7 +157,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
             <img src="/logo.png" alt="FocusStudy" className="w-5 h-5 object-contain" />
             <span>FocusStudy</span>
           </div>
-          <div className="w-9" aria-hidden="true" />
+          <TokenWidget compact />
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

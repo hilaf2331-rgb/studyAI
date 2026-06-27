@@ -1,16 +1,23 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "wouter";
-import { useGetDashboardStats, useGetRecentActivity, useGetStudyStreak, useGetDailyReviewCount } from "@workspace/api-client-react";
+import { useGetDashboardStats, useGetRecentActivity, useGetStudyStreak, useGetDailyReviewCount, useGetTokenBalance } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { getHebrewGreeting } from "@/lib/greeting";
-import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
+import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText, Gift, Coins } from "lucide-react";
 import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/components/icons";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
+import { WELCOME_PENDING_KEY } from "@/lib/auth";
+
+// Mirrors FEATURE_TOKEN_COSTS.dailyReviewQueue in api-server/src/lib/tokens.ts --
+// a real flat fee (not an estimate), so it's safe to show as an exact number.
+const DAILY_REVIEW_TOKEN_COST = 20;
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   upload: <Upload className="w-4 h-4" />,
@@ -37,6 +44,13 @@ export const Dashboard: React.FC = () => {
   const { data: activity, isLoading: loadingActivity } = useGetRecentActivity();
   const { data: streak } = useGetStudyStreak();
   const { data: dailyReview } = useGetDailyReviewCount();
+  const { data: tokenBalance } = useGetTokenBalance();
+  const [showWelcome, setShowWelcome] = useState(() => sessionStorage.getItem(WELCOME_PENDING_KEY) === "1");
+
+  const dismissWelcome = () => {
+    sessionStorage.removeItem(WELCOME_PENDING_KEY);
+    setShowWelcome(false);
+  };
 
   const statCards = [
     { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: CourseGlyph, glow: "hover:shadow-indigo-500/25 hover:border-indigo-400/50" },
@@ -78,6 +92,9 @@ export const Dashboard: React.FC = () => {
                 <p className="font-semibold">{isRTL ? "סקירה יומית מוכנה" : "Today's Review is ready"}</p>
                 <p className="text-sm text-muted-foreground">
                   {isRTL ? `${dailyReview.count} כרטיסיות ממתינות בכל החומרים שלך` : `${dailyReview.count} cards due across all your materials`}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {isRTL ? `יעלה ${DAILY_REVIEW_TOKEN_COST} טוקנים` : `Costs ${DAILY_REVIEW_TOKEN_COST} tokens`}
                 </p>
               </div>
             </div>
@@ -192,6 +209,34 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      <Dialog open={showWelcome} onOpenChange={(open) => !open && dismissWelcome()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Gift className="w-5 h-5 text-primary" />
+              {isRTL ? "ברוכים הבאים ל-FocusStudy" : "Welcome to FocusStudy"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {isRTL
+                ? "החשבון שלך נוצר בהצלחה. קיבלת חבילת פתיחה של טוקנים חינמיים, מוכנים לשימוש מיידי לסיכומים, כרטיסיות ותרגול."
+                : "Your account was created successfully. You've received a free starter token package, ready to use right away for summaries, flashcards, and practice."}
+            </p>
+            <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+              <span className="text-sm font-medium flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-500" />
+                {isRTL ? "היתרה שלך" : "Your balance"}
+              </span>
+              <span className="text-2xl font-black text-primary">{(tokenBalance?.tokensRemaining ?? 0).toLocaleString()}</span>
+            </div>
+          </div>
+          <Button className="w-full" onClick={dismissWelcome}>
+            {isRTL ? "התחל ללמוד" : "Start studying"}
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

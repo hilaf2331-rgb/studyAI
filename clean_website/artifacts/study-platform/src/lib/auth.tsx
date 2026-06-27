@@ -4,6 +4,12 @@ import { apiUrl } from "./api-base";
 const TOKEN_KEY = "studyai_token";
 const USER_KEY = "studyai_user";
 
+// Set right after a successful registration (see register() below), read by
+// the Dashboard to show a one-time "Welcome Package" popup with the new
+// user's starter token balance. sessionStorage (not localStorage) so it
+// only ever fires once per registration, not on every future visit.
+export const WELCOME_PENDING_KEY = "studyai_welcome_pending";
+
 export type Gender = "male" | "female" | "other";
 
 export interface AuthUser {
@@ -77,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Registration failed");
       saveAuth(data.token, data.user);
+      sessionStorage.setItem(WELCOME_PENDING_KEY, "1");
     } finally {
       setIsLoading(false);
     }

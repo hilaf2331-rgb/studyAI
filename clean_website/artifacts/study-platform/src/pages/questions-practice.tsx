@@ -10,6 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ArrowLeft, ChevronDown, ChevronUp, CheckCircle2, XCircle, Wand2, Sparkles } from "lucide-react";
 
+// Mirrors FEATURE_TOKEN_COSTS.targetedQuestion in api-server/src/lib/tokens.ts --
+// a real flat fee (not an estimate), so it's safe to show as an exact number.
+const RESCUE_QUESTION_TOKEN_COST = 50;
+
 export const QuestionsPracticePage: React.FC = () => {
   const { id: idStr } = useParams<{ id: string }>();
   const id = Number(idStr);
@@ -159,7 +163,9 @@ export const QuestionsPracticePage: React.FC = () => {
                             disabled={rescueMutation.isPending}
                           >
                             <Wand2 className="w-3.5 h-3.5" />
-                            {rescueMutation.isPending ? (isRTL ? "מכין שאלה..." : "Preparing question...") : (isRTL ? "תקן את הפער הזה" : "Fix this Weak Spot")}
+                            {rescueMutation.isPending
+                              ? (isRTL ? "מכין שאלה..." : "Preparing question...")
+                              : (isRTL ? `תקן את הפער הזה (יעלה ${RESCUE_QUESTION_TOKEN_COST} טוקנים)` : `Fix this Weak Spot (costs ${RESCUE_QUESTION_TOKEN_COST} tokens)`)}
                           </Button>
                         )}
                       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
@@ -155,6 +155,7 @@ export const MaterialDetailPage: React.FC = () => {
   const id = Number(idStr);
   const { isRTL, t } = useLanguage();
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { user } = useAuth();
   const qc = useQueryClient();
 
@@ -342,6 +343,25 @@ export const MaterialDetailPage: React.FC = () => {
       setKitLoading(false);
     }
   };
+
+  // Every upload path (text, PDF, YouTube, URL, image, audio, video) lands
+  // here with ?autogen=1 right after material-new.tsx creates the material
+  // -- this fires the exact same generate-all pipeline the manual "Generate
+  // Study Kit" button below triggers, so a fresh upload gets an instant kit
+  // with zero extra clicks, matching the voice recorder's behavior. Stripped
+  // from the URL immediately so a refresh or back-nav never re-fires it, and
+  // gated on `material` being loaded since the counts/tooShortForGeneration
+  // checks below need real data, not the undefined first render.
+  useEffect(() => {
+    if (!search.includes("autogen=1") || !material) return;
+    setLocation(`/materials/${id}`, { replace: true });
+
+    const hasContent = material.status !== "error" && (material.extractedText?.length ?? 0) > 20;
+    const alreadyHasKit = (material.summaryCount ?? 0) > 0 || (material.deckCount ?? 0) > 0 || (material.qSetCount ?? 0) > 0;
+    if (hasContent && !material.tooShortForGeneration && !alreadyHasKit && !kitLoading) {
+      handleGenerateAll();
+    }
+  }, [search, material]);
 
   const handleGenerateSummary = () => {
     genSummary.mutate(

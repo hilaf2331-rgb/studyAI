@@ -295,7 +295,10 @@ export const MaterialNewPage: React.FC = () => {
 
       const material = await response.json();
       qc.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
-      setLocation(`/materials/${material.id}`);
+      // autogen=1 tells MaterialDetailPage to kick off generate-all itself
+      // the moment it mounts, so every upload path (not just the voice
+      // recorder) lands on an instant study kit instead of a manual click.
+      setLocation(`/materials/${material.id}?autogen=1`);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {

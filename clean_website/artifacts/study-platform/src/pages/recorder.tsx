@@ -97,6 +97,13 @@ export const RecorderPage: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
 
+  // Mic check: lets the user verify (and pick) their input device before
+  // they ever hit "Record".
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [micLevel, setMicLevel] = useState(0);
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false);
+
   // Save progress
   const [saveStep, setSaveStep] = useState(0);
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
@@ -121,6 +128,14 @@ export const RecorderPage: React.FC = () => {
   const animFrameRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const recordedAtRef = useRef<Date>(new Date());
+  // Standalone preview stream/analyser used only to drive the mic-level
+  // meter before recording starts -- entirely separate from the
+  // recording's own stream/analyser above, and always released before that
+  // one is opened so the two never fight over the same device.
+  const previewStreamRef = useRef<MediaStream | null>(null);
+  const previewCtxRef = useRef<AudioContext | null>(null);
+  const previewAnalyserRef = useRef<AnalyserNode | null>(null);
+  const previewAnimRef = useRef<number | null>(null);
   // Long-lived callbacks like mr.onstop close over state from when
   // recording started, not what's on screen now -- mirror title/courseId
   // into refs kept fresh every render so the cache write below reflects
@@ -162,7 +177,9 @@ export const RecorderPage: React.FC = () => {
     })();
   }, []);
 
-  // Waveform animation while recording
+  // Waveform animation while recording -- also drives micLevel so the same
+  // level meter that ran during the pre-recording mic check keeps reading
+  // live off the actual recording stream once it starts.
   const animateWaveform = useCallback(() => {
     if (!analyserRef.current) return;
     const data = new Uint8Array(analyserRef.current.frequencyBinCount);
@@ -170,8 +187,81 @@ export const RecorderPage: React.FC = () => {
     const step = Math.floor(data.length / 32);
     const bars = Array.from({ length: 32 }, (_, i) => Math.max(2, (data[i * step] / 255) * 100));
     setWaveform(bars);
+    const avg = data.reduce((a, b) => a + b, 0) / data.length;
+    setMicLevel(Math.min(100, (avg / 255) * 140));
     animFrameRef.current = requestAnimationFrame(animateWaveform);
   }, []);
+
+  const refreshAudioInputDevices = useCallback(async () => {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    const mics = all.filter(d => d.kind === "audioinput" && d.deviceId);
+    setAudioInputDevices(mics);
+    return mics;
+  }, []);
+
+  const stopMicPreview = useCallback(() => {
+    if (previewAnimRef.current) { cancelAnimationFrame(previewAnimRef.current); previewAnimRef.current = null; }
+    previewStreamRef.current?.getTracks().forEach(t => t.stop());
+    previewStreamRef.current = null;
+    previewCtxRef.current?.close();
+    previewCtxRef.current = null;
+    previewAnalyserRef.current = null;
+    setMicLevel(0);
+  }, []);
+
+  // Opens a standalone (non-recording) stream just to monitor input level,
+  // so the user can visually confirm their mic is picking up sound before
+  // ever hitting "Record". Re-run whenever the selected device changes.
+  const startMicPreview = useCallback(async (deviceId?: string) => {
+    stopMicPreview();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      });
+      previewStreamRef.current = stream;
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      previewCtxRef.current = ctx;
+      previewAnalyserRef.current = analyser;
+      setMicPermissionDenied(false);
+
+      const mics = await refreshAudioInputDevices();
+      if (!deviceId && mics[0]) setSelectedDeviceId(mics[0].deviceId);
+
+      const tick = () => {
+        if (!previewAnalyserRef.current) return;
+        const data = new Uint8Array(previewAnalyserRef.current.frequencyBinCount);
+        previewAnalyserRef.current.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setMicLevel(Math.min(100, (avg / 255) * 140));
+        previewAnimRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch {
+      setMicPermissionDenied(true);
+    }
+  }, [stopMicPreview, refreshAudioInputDevices]);
+
+  // Mic check runs as soon as the page loads, before the user does
+  // anything -- and the preview stream is torn down on unmount so the mic
+  // indicator light doesn't stay on after navigating away.
+  useEffect(() => {
+    startMicPreview();
+    navigator.mediaDevices.addEventListener?.("devicechange", refreshAudioInputDevices);
+    return () => {
+      stopMicPreview();
+      navigator.mediaDevices.removeEventListener?.("devicechange", refreshAudioInputDevices);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onSelectDevice = (deviceId: string) => {
+    setSelectedDeviceId(deviceId);
+    if (recState !== "recording") startMicPreview(deviceId);
+  };
 
   const startRecording = async () => {
     setError("");
@@ -184,8 +274,14 @@ export const RecorderPage: React.FC = () => {
     setRecState("idle");
     chunksRef.current = [];
 
+    // Release the mic-check preview stream first -- the recording stream
+    // below needs exclusive access to the same device.
+    stopMicPreview();
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true,
+      });
 
       // Set up analyser for waveform
       const ctx = new AudioContext();
@@ -223,6 +319,11 @@ export const RecorderPage: React.FC = () => {
           elapsed: elapsedRef.current,
           recordedAt: recordedAtRef.current.toISOString(),
         });
+
+        // The recording stream is fully released now -- safe to bring the
+        // mic-check preview back so the level meter keeps working for the
+        // user's next take.
+        startMicPreview(selectedDeviceId);
       };
 
       mr.start(250);
@@ -232,6 +333,7 @@ export const RecorderPage: React.FC = () => {
     } catch (err: any) {
       setError("לא ניתן לגשת למיקרופון. אנא אפשר גישה בהגדרות הדפדפן.");
       setRecState("error");
+      startMicPreview(selectedDeviceId);
     }
   };
 
@@ -431,6 +533,39 @@ export const RecorderPage: React.FC = () => {
       {/* ── Recorder Card ─────────────────────────────────────────── */}
       <Card className="overflow-hidden">
         <CardContent className="p-6 space-y-6">
+
+          {/* Mic check: device picker + live level meter, visible before and
+              during recording so the user can confirm the mic is actually
+              picking up sound. */}
+          {(recState === "idle" || recState === "recording") && (
+            <div className="space-y-2 bg-muted/30 rounded-xl p-3">
+              <div className="flex items-center gap-2">
+                <Mic className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <Select value={selectedDeviceId} onValueChange={onSelectDevice} disabled={recState === "recording"}>
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue placeholder="מיקרופון ברירת מחדל" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {audioInputDevices.map((d, i) => (
+                      <SelectItem key={d.deviceId || i} value={d.deviceId}>
+                        {d.label || `מיקרופון ${i + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {micPermissionDenied ? (
+                <p className="text-xs text-destructive">לא ניתן לגשת למיקרופון לבדיקה — אנא אפשרו גישה בהגדרות הדפדפן</p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 transition-transform ${micLevel > 6 ? "bg-green-500 scale-125" : "bg-muted-foreground/40"}`} />
+                  <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-green-500 transition-all duration-75" style={{ width: `${micLevel}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Idle: call to action */}
           {recState === "idle" && (

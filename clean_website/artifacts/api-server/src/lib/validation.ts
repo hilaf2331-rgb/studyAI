@@ -69,6 +69,19 @@ export function insufficientAudioContentMessage(language: "he" | "en" = "he"): s
     : "No content was detected in the recording (it may have been silent or too short). Please check the recording and try again.";
 }
 
+// Free-plan ceiling on transcribable audio length, enforced both as a fast
+// pre-flight check (client-supplied duration, before any Whisper call is
+// made) and as a server-side backstop against the actual measured duration
+// (lib/extractor.ts's transcribeAudio) -- lifted entirely for anyone who has
+// ever bought a token package (lib/tokens.ts's getFreeTierAudioCapSeconds).
+export const FREE_TIER_MAX_AUDIO_SECONDS = 20 * 60;
+
+export function freeTierAudioLimitMessage(language: "he" | "en" = "he"): string {
+  return language === "he"
+    ? "בתוכנית החינמית ניתן לתמלל הקלטות של עד 20 דקות. שדרגו לחשבון בתשלום כדי לתמלל הרצאות באורך מלא."
+    : "Free accounts can transcribe recordings up to 20 minutes. Top up your account to transcribe full-length lectures.";
+}
+
 /**
  * If the material's text is too short to generate from, writes a 400 JSON
  * response and returns true (caller should return immediately). Otherwise

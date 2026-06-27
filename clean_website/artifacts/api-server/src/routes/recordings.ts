@@ -2,10 +2,10 @@ import { Router } from "express";
 import multer from "multer";
 import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTable, questionSetsTable, activityTable, flashcardsTable, questionsTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import { transcribeAudio } from "../lib/extractor";
+import { transcribeAudio, AudioDurationLimitError } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError } from "../lib/tokens";
-import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage } from "../lib/validation";
+import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds } from "../lib/tokens";
+import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, freeTierAudioLimitMessage } from "../lib/validation";
 
 const router = Router();
 
@@ -92,6 +92,16 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return res.status(413).json({ error: mediaTooLargeMessage("he"), code: "RECORDING_TOO_LONG" });
   }
 
+  // Free-tier students are capped at 20 minutes per recording; the cap is
+  // lifted entirely (null) for admins and anyone who has ever bought a
+  // token package. Checked here against the client-supplied duration before
+  // any Whisper cost is spent, and again authoritatively inside
+  // transcribeAudio() against the actual measured duration below.
+  const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
+  if (audioCapSeconds != null && durationSeconds && durationSeconds > audioCapSeconds) {
+    return res.status(413).json({ error: freeTierAudioLimitMessage("he"), code: "FREE_TIER_AUDIO_LIMIT" });
+  }
+
   // Beta-only hard cap on total processing actions -- a live recording is a
   // processing action just like a material upload, checked before
   // transcription starts.
@@ -109,9 +119,14 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   let extractedText = "";
   let transcriptionError: string | undefined;
   try {
-    const result = await transcribeAudio(req.file.buffer, mimeType, `recording.webm`);
+    const result = await transcribeAudio(req.file.buffer, mimeType, `recording.webm`, undefined, {
+      maxDurationSeconds: audioCapSeconds ?? undefined,
+    });
     extractedText = result.text;
   } catch (err: any) {
+    if (err instanceof AudioDurationLimitError) {
+      return res.status(413).json({ error: err.message, code: err.code });
+    }
     req.log.error({ err }, "Transcription failed");
     transcriptionError = err.message;
     extractedText = `[Transcription failed: ${err.message}]`;

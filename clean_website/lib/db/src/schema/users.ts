@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -35,6 +35,12 @@ export const usersTable = pgTable("users", {
   // rescue-question endpoint, full-size daily review queue) ahead of the
   // Stripe billing integration that will eventually set this.
   subscriptionTier: text("subscription_tier").notNull().default("free"),
+  // Set true the first time a payment-webhook credit lands for this user
+  // (see routes/billing.ts) and never reset back to false -- a one-way flag
+  // that lifts the free tier's 20-minute audio-transcription cap
+  // (lib/tokens.ts's getFreeTierAudioCapSeconds) for anyone who has ever
+  // bought a token package, independent of their current token balance.
+  isPayingCustomer: boolean("is_paying_customer").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

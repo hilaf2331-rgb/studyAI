@@ -18,6 +18,11 @@ declare global {
   namespace Express {
     interface Request {
       user?: JWTPayload;
+      // Raw request body bytes, stashed by app.ts's express.json() verify
+      // callback -- HMAC signature verification (routes/billing.ts's
+      // payment webhook) must hash the exact bytes the gateway sent, not a
+      // re-serialized JSON.stringify(req.body).
+      rawBody?: Buffer;
     }
   }
 }

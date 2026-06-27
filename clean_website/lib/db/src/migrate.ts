@@ -20,7 +20,8 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS current_streak integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS longest_streak integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user',
-      ADD COLUMN IF NOT EXISTS subscription_tier text NOT NULL DEFAULT 'free';
+      ADD COLUMN IF NOT EXISTS subscription_tier text NOT NULL DEFAULT 'free',
+      ADD COLUMN IF NOT EXISTS is_paying_customer boolean NOT NULL DEFAULT false;
   `);
 
   await pool.query(`
@@ -62,5 +63,25 @@ export async function runStartupMigrations(): Promise<void> {
   `);
   await pool.query(`
     CREATE INDEX IF NOT EXISTS glossary_terms_course_id_idx ON glossary_terms (course_id);
+  `);
+
+  // Token top-up purchases credited by the payment webhook (routes/billing.ts).
+  // provider_transaction_id is UNIQUE so a gateway's at-least-once webhook
+  // retry can never double-credit the same payment.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      package_id text NOT NULL,
+      tokens integer NOT NULL,
+      price_ils integer NOT NULL,
+      provider text NOT NULL DEFAULT 'cardcom',
+      provider_transaction_id text NOT NULL UNIQUE,
+      status text NOT NULL DEFAULT 'completed',
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS transactions_user_id_idx ON transactions (user_id);
   `);
 }

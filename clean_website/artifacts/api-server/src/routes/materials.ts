@@ -4,12 +4,12 @@ import { randomBytes } from "crypto";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
 import { eq, count, and, inArray } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams } from "@workspace/api-zod";
-import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
+import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError, AudioDurationLimitError } from "../lib/extractor";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
-import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError } from "../lib/tokens";
+import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds } from "../lib/tokens";
 
 const router = Router();
 
@@ -184,11 +184,17 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
       const result = await extractImage(req.file.buffer, req.file.mimetype, reportProgress);
       extractedText = result.text;
     } else if ((contentType === "audio" || contentType === "video") && req.file) {
+      // No client-supplied duration exists for an uploaded file (unlike the
+      // live-recording flow in recordings.ts), so the free-tier cap can only
+      // be enforced authoritatively, against Whisper's actual measured
+      // duration, inside transcribeAudio() itself.
+      const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
       const result = await transcribeAudio(
         req.file.buffer,
         req.file.mimetype,
         req.file.originalname,
-        reportProgress
+        reportProgress,
+        { maxDurationSeconds: audioCapSeconds ?? undefined }
       );
       extractedText = result.text;
       duration = result.duration;
@@ -227,6 +233,14 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     // as the two YouTube cases above, reject outright instead of creating a
     // material whose later generation calls would just time out.
     if (err instanceof ContentTooLongError) {
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(413).json({ error: err.message, code: err.code });
+    }
+    // A free-tier file over the 20-minute cap is a plan-limit issue, not a
+    // processing failure -- reject outright instead of creating a material
+    // (the Groq transcription cost has already been spent, but there's no
+    // point also burning the AI-generation calls below on truncated value).
+    if (err instanceof AudioDurationLimitError) {
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(413).json({ error: err.message, code: err.code });
     }

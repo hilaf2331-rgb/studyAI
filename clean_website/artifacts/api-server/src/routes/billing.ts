@@ -1,16 +1,17 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable } from "@workspace/db";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { db, usersTable, transactionsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
-// Token packages planned for purchase once a payment gateway (Cardcom) is
-// under contract. Kept here so the frontend/copy can reference package
-// shapes ahead of time, but no checkout or webhook logic is wired to real
-// money yet -- see BETA_MODE below.
+// Token packages on sale via Bit/PayBox (through Cardcom). Priced as a
+// no-brainer student top-up while keeping a 5-9x margin over the buffered
+// real API cost per lecture hour (Whisper + Gemini) -- see the pricing
+// analysis this was derived from.
 export const TOKEN_PACKAGES = {
-  starter: { tokens: 50_000, priceILS: 19 },
-  standard: { tokens: 150_000, priceILS: 49 },
-  pro: { tokens: 500_000, priceILS: 129 },
+  bronze: { tokens: 300_000, priceILS: 19 },
+  silver: { tokens: 800_000, priceILS: 39 },
+  gold: { tokens: 2_000_000, priceILS: 79 },
 } as const;
 
 export type TokenPackageId = keyof typeof TOKEN_PACKAGES;
@@ -51,48 +52,87 @@ billingAuthRouter.post("/billing/create-checkout-session", async (req, res) => {
 
 export default billingAuthRouter;
 
-// Public: will be called server-to-server by the payment gateway once a
-// payment clears. Must stay outside requireAuth (mount directly in app.ts,
-// the same way authRouter is mounted) since the gateway has no user JWT to
-// send -- which is exactly why this route is fully gated until there is a
-// real signature to verify. Previously this accepted a bare
-// { userId, tokens } body with no verification at all, letting anyone credit
-// arbitrary tokens to any account; it now refuses every request unless
-// billing is explicitly enabled AND a signature secret is configured.
+// Public: called server-to-server by the payment gateway once a payment
+// clears. Must stay outside requireAuth (mounted directly in app.ts, same as
+// authRouter) since the gateway has no user JWT to send.
 export const billingPublicRouter: IRouter = Router();
 
-billingPublicRouter.post("/billing/payment-webhook", async (req, res) => {
+// Constant-time HMAC-SHA256 check over the exact raw request bytes
+// (app.ts's express.json verify callback stashes these on req.rawBody before
+// JSON parsing runs) -- a re-serialized JSON.stringify(req.body) would not
+// reliably reproduce the gateway's own signature if key order/whitespace
+// differs from what it actually sent. timingSafeEqual throws on mismatched
+// buffer lengths rather than returning false, so the length check must come
+// first.
+function isValidWebhookSignature(rawBody: Buffer | undefined, signatureHeader: string, secret: string): boolean {
+  if (!rawBody) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const providedBuf = Buffer.from(signatureHeader, "utf8");
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
+
+billingPublicRouter.post("/webhooks/payment", async (req, res) => {
   const webhookSecret = process.env.CARDCOM_WEBHOOK_SECRET;
   if (BETA_MODE || !webhookSecret) {
-    logger.warn("[billing] payment-webhook called while billing is disabled or unconfigured -- rejecting");
+    logger.warn("[billing] payment webhook called while billing is disabled or unconfigured -- rejecting");
     return res.status(404).json({ error: "Not found" });
   }
 
-  // ---- WEBHOOK SIGNATURE VERIFICATION INJECTION POINT ----
-  // Cardcom signs webhook payloads. Verify the request's signature header
-  // against `webhookSecret` here and reject (401) before touching the DB if
-  // it doesn't match -- do not credit tokens based on an unverified body.
   const signature = req.headers["x-cardcom-signature"];
-  if (!signature) {
-    return res.status(401).json({ error: "Missing webhook signature" });
+  if (!signature || typeof signature !== "string" || !isValidWebhookSignature(req.rawBody, signature, webhookSecret)) {
+    logger.warn("[billing] payment webhook signature verification failed");
+    return res.status(401).json({ error: "Invalid webhook signature" });
   }
 
+  // Tokens/price are looked up from our own TOKEN_PACKAGES rather than
+  // trusted from the request body -- the previous implementation accepted a
+  // bare { userId, tokens } body, letting anyone credit arbitrary tokens to
+  // any account. The gateway only tells us which package was bought.
   const userId = Number(req.body?.userId);
-  const tokens = Number(req.body?.tokens);
+  const requestedPackageId = req.body?.packageId as TokenPackageId | undefined;
+  const transactionId = req.body?.transactionId;
+  const pkg = requestedPackageId ? TOKEN_PACKAGES[requestedPackageId] : undefined;
 
-  if (!Number.isFinite(userId) || !Number.isFinite(tokens) || tokens <= 0) {
-    return res.status(400).json({ error: "Expected { userId: number, tokens: number > 0 }" });
+  if (!Number.isFinite(userId) || !requestedPackageId || !pkg || typeof transactionId !== "string" || !transactionId) {
+    return res.status(400).json({ error: "Expected { userId: number, packageId: 'bronze'|'silver'|'gold', transactionId: string }" });
   }
+  const packageId: TokenPackageId = requestedPackageId;
 
-  const result = await db.update(usersTable)
-    .set({ tokensRemaining: sql`${usersTable.tokensRemaining} + ${tokens}` })
-    .where(eq(usersTable.id, userId))
-    .returning({ id: usersTable.id });
-
-  if (result.length === 0) {
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) {
     return res.status(404).json({ error: "Unknown userId" });
   }
 
-  logger.info({ userId, tokens }, "[billing] credited tokens from payment webhook");
-  res.json({ ok: true, userId, tokensAdded: tokens });
+  // Idempotent crediting: providerTransactionId is UNIQUE, so a gateway's
+  // at-least-once webhook retry hits a 23505 unique-violation here instead
+  // of crediting the same payment twice.
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(transactionsTable).values({
+        userId,
+        packageId,
+        tokens: pkg.tokens,
+        priceIls: pkg.priceILS,
+        provider: "cardcom",
+        providerTransactionId: transactionId,
+      });
+      await tx.update(usersTable)
+        .set({
+          tokensRemaining: sql`${usersTable.tokensRemaining} + ${pkg.tokens}`,
+          isPayingCustomer: true,
+        })
+        .where(eq(usersTable.id, userId));
+    });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      logger.info({ userId, transactionId }, "[billing] payment webhook retry for already-processed transaction -- not re-crediting");
+      return res.json({ ok: true, userId, alreadyProcessed: true });
+    }
+    throw err;
+  }
+
+  logger.info({ userId, packageId, tokens: pkg.tokens }, "[billing] credited tokens from payment webhook");
+  res.json({ ok: true, userId, tokensAdded: pkg.tokens });
 });

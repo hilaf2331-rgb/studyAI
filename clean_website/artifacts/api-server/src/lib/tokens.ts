@@ -1,6 +1,7 @@
 import { db, usersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
+import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 
 // Admin/dev accounts that bypass token-balance checks entirely -- so testing
 // large documents never burns down (or gets blocked by) the same quota a
@@ -106,6 +107,17 @@ export async function incrementActionsUsed(userId: number): Promise<void> {
   await db.update(usersTable)
     .set({ actionsUsed: sql`${usersTable.actionsUsed} + 1` })
     .where(eq(usersTable.id, userId));
+}
+
+// Free-plan ceiling on transcribable audio length, lifted entirely for
+// admins and for anyone who has ever bought a token package (isPayingCustomer,
+// set one-way by routes/billing.ts's webhook on first credited purchase) --
+// returns null to mean "no cap", or the numeric cap in seconds otherwise.
+export async function getFreeTierAudioCapSeconds(userId: number): Promise<number | null> {
+  if (await isAdminUser(userId)) return null;
+  const [user] = await db.select({ isPayingCustomer: usersTable.isPayingCustomer }).from(usersTable).where(eq(usersTable.id, userId));
+  if (user?.isPayingCustomer) return null;
+  return FREE_TIER_MAX_AUDIO_SECONDS;
 }
 
 // Flat per-execution token cost for the advanced AI features that sit on

@@ -11,6 +11,7 @@ import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
 import { sanitizeExtractedText } from "./sanitize";
+import { freeTierAudioLimitMessage } from "./validation";
 
 export type ExtractedContent = {
   text: string;
@@ -276,11 +277,26 @@ export async function extractOffice(buffer: Buffer, fileType: OfficeFileType, on
   return { text };
 }
 
+// Thrown once Whisper's actual measured duration (not the client-supplied
+// estimate) exceeds the free tier's cap -- the authoritative backstop for
+// callers like materials.ts's file-upload path, which has no pre-known
+// duration to check before transcription even starts. By this point the
+// Groq transcription cost has already been spent; there's no way to know
+// the real duration any earlier for an uploaded file.
+export class AudioDurationLimitError extends Error {
+  readonly code = "FREE_TIER_AUDIO_LIMIT";
+  constructor(language: "he" | "en" = "he") {
+    super(freeTierAudioLimitMessage(language));
+    this.name = "AudioDurationLimitError";
+  }
+}
+
 export async function transcribeAudio(
   buffer: Buffer,
   mimeType: string,
   filename: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  options?: { maxDurationSeconds?: number }
 ): Promise<ExtractedContent> {
   const form = new FormData();
   form.append("file", buffer, {
@@ -325,9 +341,13 @@ export async function transcribeAudio(
 
   const result = (await response.json()) as { text: string; duration?: number };
   onProgress?.(100);
+  const duration = result.duration ? Math.round(result.duration) : undefined;
+  if (options?.maxDurationSeconds != null && duration != null && duration > options.maxDurationSeconds) {
+    throw new AudioDurationLimitError("he");
+  }
   return {
     text: sanitizeExtractedText(result.text || ""),
-    duration: result.duration ? Math.round(result.duration) : undefined,
+    duration,
   };
 }
 

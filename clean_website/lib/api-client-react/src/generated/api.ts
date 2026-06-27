@@ -51,7 +51,8 @@ import type {
   SummaryRequest,
   TargetedQuestion,
   TargetedQuestionRequest,
-  TokenBalance
+  TokenBalance,
+  UpdateMaterialInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -741,6 +742,78 @@ export function useGetMaterial<TData = Awaited<ReturnType<typeof getMaterial>>, 
 
 
 
+
+export const getUpdateMaterialUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}`
+}
+
+/**
+ * @summary Update a material's Cram Mode settings (exam date / enabled flag)
+ */
+export const updateMaterial = async (id: number,
+    updateMaterialInput: UpdateMaterialInput, options?: RequestInit): Promise<Material> => {
+
+  return customFetch<Material>(getUpdateMaterialUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateMaterialInput,)
+  }
+);}
+
+
+
+
+export const getUpdateMaterialMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMaterial>>, TError,{id: number;data: BodyType<UpdateMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMaterial>>, TError,{id: number;data: BodyType<UpdateMaterialInput>}, TContext> => {
+
+const mutationKey = ['updateMaterial'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMaterial>>, {id: number;data: BodyType<UpdateMaterialInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateMaterial(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMaterialMutationResult = NonNullable<Awaited<ReturnType<typeof updateMaterial>>>
+    export type UpdateMaterialMutationBody = BodyType<UpdateMaterialInput>
+    export type UpdateMaterialMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a material's Cram Mode settings (exam date / enabled flag)
+ */
+export const useUpdateMaterial = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMaterial>>, TError,{id: number;data: BodyType<UpdateMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMaterial>>,
+        TError,
+        {id: number;data: BodyType<UpdateMaterialInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateMaterialMutationOptions(options));
+    }
 
 export const getDeleteMaterialUrl = (id: number,) => {
 
@@ -1850,6 +1923,78 @@ export const useGenerateQuestions = <TError = ErrorType<unknown>,
       return useMutation(getGenerateQuestionsMutationOptions(options));
     }
 
+export const getGenerateTargetedQuestionUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}/targeted-question`
+}
+
+/**
+ * @summary Generate a single rescue question for a weak concept
+ */
+export const generateTargetedQuestion = async (id: number,
+    targetedQuestionRequest: TargetedQuestionRequest, options?: RequestInit): Promise<TargetedQuestion> => {
+
+  return customFetch<TargetedQuestion>(getGenerateTargetedQuestionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      targetedQuestionRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateTargetedQuestionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext> => {
+
+const mutationKey = ['generateTargetedQuestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateTargetedQuestion>>, {id: number;data: BodyType<TargetedQuestionRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  generateTargetedQuestion(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateTargetedQuestionMutationResult = NonNullable<Awaited<ReturnType<typeof generateTargetedQuestion>>>
+    export type GenerateTargetedQuestionMutationBody = BodyType<TargetedQuestionRequest>
+    export type GenerateTargetedQuestionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate a single rescue question for a weak concept
+ */
+export const useGenerateTargetedQuestion = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateTargetedQuestion>>,
+        TError,
+        {id: number;data: BodyType<TargetedQuestionRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateTargetedQuestionMutationOptions(options));
+    }
+
 export const getGetQuestionSetUrl = (id: number,) => {
 
 
@@ -2822,6 +2967,160 @@ export function useGetStudyStreak<TData = Awaited<ReturnType<typeof getStudyStre
 
 
 
+export const getGetDailyReviewCountUrl = () => {
+
+
+
+
+  return `/api/dashboard/daily-review-count`
+}
+
+/**
+ * @summary Count of flashcards due for review across all materials
+ */
+export const getDailyReviewCount = async ( options?: RequestInit): Promise<DailyReviewCount> => {
+
+  return customFetch<DailyReviewCount>(getGetDailyReviewCountUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDailyReviewCountQueryKey = () => {
+    return [
+    `/api/dashboard/daily-review-count`
+    ] as const;
+    }
+
+
+export const getGetDailyReviewCountQueryOptions = <TData = Awaited<ReturnType<typeof getDailyReviewCount>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDailyReviewCountQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDailyReviewCount>>> = ({ signal }) => getDailyReviewCount({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDailyReviewCountQueryResult = NonNullable<Awaited<ReturnType<typeof getDailyReviewCount>>>
+export type GetDailyReviewCountQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Count of flashcards due for review across all materials
+ */
+
+export function useGetDailyReviewCount<TData = Awaited<ReturnType<typeof getDailyReviewCount>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDailyReviewCountQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetDailyReviewCardsUrl = () => {
+
+
+
+
+  return `/api/dashboard/daily-review-cards`
+}
+
+/**
+ * @summary Flashcards due for review across all materials, capped at 15
+ */
+export const getDailyReviewCards = async ( options?: RequestInit): Promise<DailyReviewCards> => {
+
+  return customFetch<DailyReviewCards>(getGetDailyReviewCardsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDailyReviewCardsQueryKey = () => {
+    return [
+    `/api/dashboard/daily-review-cards`
+    ] as const;
+    }
+
+
+export const getGetDailyReviewCardsQueryOptions = <TData = Awaited<ReturnType<typeof getDailyReviewCards>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDailyReviewCardsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDailyReviewCards>>> = ({ signal }) => getDailyReviewCards({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDailyReviewCardsQueryResult = NonNullable<Awaited<ReturnType<typeof getDailyReviewCards>>>
+export type GetDailyReviewCardsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Flashcards due for review across all materials, capped at 15
+ */
+
+export function useGetDailyReviewCards<TData = Awaited<ReturnType<typeof getDailyReviewCards>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDailyReviewCardsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getGetTokenBalanceUrl = () => {
 
 
@@ -2892,227 +3191,6 @@ export function useGetTokenBalance<TData = Awaited<ReturnType<typeof getTokenBal
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-
-
-
-export const getGetDailyReviewCountUrl = () => {
-
-
-
-
-  return `/api/dashboard/daily-review-count`
-}
-
-/**
- * @summary Count of flashcards due for review across all materials
- */
-export const getDailyReviewCount = async ( options?: RequestInit): Promise<DailyReviewCount> => {
-
-  return customFetch<DailyReviewCount>(getGetDailyReviewCountUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-export const getGetDailyReviewCountQueryKey = () => {
-    return [
-    `/api/dashboard/daily-review-count`
-    ] as const;
-    }
-
-
-export const getGetDailyReviewCountQueryOptions = <TData = Awaited<ReturnType<typeof getDailyReviewCount>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetDailyReviewCountQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDailyReviewCount>>> = ({ signal }) => getDailyReviewCount({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetDailyReviewCountQueryResult = NonNullable<Awaited<ReturnType<typeof getDailyReviewCount>>>
-export type GetDailyReviewCountQueryError = ErrorType<unknown>
-
-
-/**
- * @summary Count of flashcards due for review across all materials
- */
-
-export function useGetDailyReviewCount<TData = Awaited<ReturnType<typeof getDailyReviewCount>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetDailyReviewCountQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-export const getGetDailyReviewCardsUrl = () => {
-
-
-
-
-  return `/api/dashboard/daily-review-cards`
-}
-
-/**
- * @summary Flashcards due for review across all materials, capped at 15
- */
-export const getDailyReviewCards = async ( options?: RequestInit): Promise<DailyReviewCards> => {
-
-  return customFetch<DailyReviewCards>(getGetDailyReviewCardsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-export const getGetDailyReviewCardsQueryKey = () => {
-    return [
-    `/api/dashboard/daily-review-cards`
-    ] as const;
-    }
-
-
-export const getGetDailyReviewCardsQueryOptions = <TData = Awaited<ReturnType<typeof getDailyReviewCards>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetDailyReviewCardsQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDailyReviewCards>>> = ({ signal }) => getDailyReviewCards({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetDailyReviewCardsQueryResult = NonNullable<Awaited<ReturnType<typeof getDailyReviewCards>>>
-export type GetDailyReviewCardsQueryError = ErrorType<unknown>
-
-
-/**
- * @summary Flashcards due for review across all materials, capped at 15
- */
-
-export function useGetDailyReviewCards<TData = Awaited<ReturnType<typeof getDailyReviewCards>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDailyReviewCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetDailyReviewCardsQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-export const getGenerateTargetedQuestionUrl = (id: number,) => {
-
-
-
-
-  return `/api/materials/${id}/targeted-question`
-}
-
-/**
- * @summary Generate a single rescue question for a weak concept
- */
-export const generateTargetedQuestion = async (id: number,
-    targetedQuestionRequest: TargetedQuestionRequest, options?: RequestInit): Promise<TargetedQuestion> => {
-
-  return customFetch<TargetedQuestion>(getGenerateTargetedQuestionUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      targetedQuestionRequest,)
-  }
-);}
-
-
-
-
-export const getGenerateTargetedQuestionMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext> => {
-
-const mutationKey = ['generateTargetedQuestion'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateTargetedQuestion>>, {id: number;data: BodyType<TargetedQuestionRequest>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  generateTargetedQuestion(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type GenerateTargetedQuestionMutationResult = NonNullable<Awaited<ReturnType<typeof generateTargetedQuestion>>>
-    export type GenerateTargetedQuestionMutationBody = BodyType<TargetedQuestionRequest>
-    export type GenerateTargetedQuestionMutationError = ErrorType<unknown>
-
-    /**
- * @summary Generate a single rescue question for a weak concept
- */
-export const useGenerateTargetedQuestion = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateTargetedQuestion>>, TError,{id: number;data: BodyType<TargetedQuestionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof generateTargetedQuestion>>,
-        TError,
-        {id: number;data: BodyType<TargetedQuestionRequest>},
-        TContext
-      > => {
-      return useMutation(getGenerateTargetedQuestionMutationOptions(options));
-    }
 
 
 

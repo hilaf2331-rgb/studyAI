@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
 import { eq, count, and, inArray } from "drizzle-orm";
-import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody } from "@workspace/api-zod";
+import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -279,6 +279,23 @@ router.get("/materials/:id", async (req, res) => {
   const material = await getMaterialWithCounts(id, userId);
   if (!material) return res.status(404).json({ error: "Not found" });
   res.json(material);
+});
+
+router.patch("/materials/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateMaterialParams.parse({ id: Number(req.params.id) });
+  const body = UpdateMaterialBody.parse(req.body);
+
+  const [updated] = await db.update(materialsTable)
+    .set({
+      ...(body.cramMode !== undefined ? { cramMode: body.cramMode } : {}),
+      ...(body.examDate !== undefined ? { examDate: body.examDate } : {}),
+    })
+    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)))
+    .returning({ id: materialsTable.id });
+  if (!updated) return res.status(404).json({ error: "Not found" });
+
+  res.json(await getMaterialWithCounts(id, userId));
 });
 
 router.get("/materials/upload-progress/:uploadId", async (req, res) => {

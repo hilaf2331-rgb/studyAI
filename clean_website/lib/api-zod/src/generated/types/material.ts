@@ -31,5 +31,8 @@ export interface Material {
   examCount?: number;
   wordCount?: number;
   tooShortForGeneration?: boolean;
+  cramMode?: boolean;
+  /** @nullable */
+  examDate?: Date | null;
   createdAt: Date;
 }

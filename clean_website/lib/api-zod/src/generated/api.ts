@@ -128,6 +128,8 @@ export const ListMaterialsResponseItem = zod.object({
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "tooShortForGeneration": zod.boolean().optional(),
+  "cramMode": zod.boolean().optional(),
+  "examDate": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
@@ -174,6 +176,43 @@ export const GetMaterialResponse = zod.object({
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "tooShortForGeneration": zod.boolean().optional(),
+  "cramMode": zod.boolean().optional(),
+  "examDate": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a material's Cram Mode settings (exam date / enabled flag)
+ */
+export const UpdateMaterialParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateMaterialBody = zod.object({
+  "cramMode": zod.boolean().optional(),
+  "examDate": zod.coerce.date().nullish().describe('ISO date-time of the upcoming exam. Pass null to clear it (which also turns Cram Mode\'s scheduling override off, since it requires a target date).')
+})
+
+export const UpdateMaterialResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "title": zod.string(),
+  "contentType": zod.enum(['text', 'url', 'youtube', 'pdf', 'docx', 'pptx', 'xlsx', 'image', 'audio', 'video']),
+  "status": zod.enum(['pending', 'processing', 'ready', 'error']),
+  "language": zod.enum(['he', 'en', 'mixed']).optional(),
+  "extractedText": zod.string().nullish(),
+  "sourceUrl": zod.string().nullish(),
+  "fileSize": zod.number().nullish(),
+  "duration": zod.number().nullish(),
+  "summaryCount": zod.number().optional(),
+  "flashcardCount": zod.number().optional(),
+  "questionCount": zod.number().optional(),
+  "examCount": zod.number().optional(),
+  "wordCount": zod.number().optional(),
+  "tooShortForGeneration": zod.boolean().optional(),
+  "cramMode": zod.boolean().optional(),
+  "examDate": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -797,7 +836,8 @@ export const GetDailyReviewCountResponse = zod.object({
 /**
  * @summary Flashcards due for review across all materials, capped at 15
  */
-export const DailyReviewCardSchema = zod.object({
+export const GetDailyReviewCardsResponse = zod.object({
+  "cards": zod.array(zod.object({
   "id": zod.number(),
   "deckId": zod.number(),
   "front": zod.string(),
@@ -810,10 +850,7 @@ export const DailyReviewCardSchema = zod.object({
   "materialId": zod.number(),
   "materialTitle": zod.string(),
   "createdAt": zod.coerce.date()
-})
-
-export const GetDailyReviewCardsResponse = zod.object({
-  "cards": zod.array(DailyReviewCardSchema)
+}))
 })
 
 

@@ -123,7 +123,10 @@ router.post("/flashcards/:id/review", async (req, res) => {
   if (!card) return res.status(404).json({ error: "Not found" });
 
   const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.id, card.deckId));
-  if (!deck || !await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+  if (!deck) return res.status(404).json({ error: "Not found" });
+  const [material] = await db.select().from(materialsTable)
+    .where(and(eq(materialsTable.id, deck.materialId), eq(materialsTable.userId, userId)));
+  if (!material) return res.status(403).json({ error: "Forbidden" });
 
   const difficultyMap: Record<string, string> = { again: "hard", hard: "hard", good: "medium", easy: "easy" };
 
@@ -135,23 +138,43 @@ router.post("/flashcards/:id/review", async (req, res) => {
   const qualityMap: Record<string, number> = { again: 0, hard: 3, good: 4, easy: 5 };
   const q = qualityMap[body.result] ?? 4;
 
-  const prevEf = card.easeFactor / 100;
-  const nextEf = Math.max(1.3, prevEf + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
-
   let nextInterval: number;
-  if (q < 3) {
-    // Failed recall: SM-2 resets repetitions to 0 and restarts the spacing
-    // ladder from day 1. We don't persist a separate "repetitions" counter --
-    // an interval of 1 day doubles as "no successful streak built up yet",
-    // which is exactly the state a fresh card is in too.
-    nextInterval = 1;
-  } else if (card.interval <= 1) {
-    nextInterval = 6;
-  } else {
-    nextInterval = Math.round(card.interval * nextEf);
-  }
+  let nextEf: number;
+  let nextReviewAt: Date;
 
-  const nextReviewAt = new Date(Date.now() + nextInterval * 86400000);
+  const isCramming = material.cramMode && material.examDate && material.examDate.getTime() > Date.now();
+
+  if (isCramming) {
+    // Cram Mode: a student with an exam days (not weeks) away needs an
+    // aggressive, hour-scale loop instead of SM-2's day-scale one -- weak
+    // cards ("again"/"hard") come back within hours so they get hammered
+    // multiple times a day, and nothing is ever scheduled past the exam
+    // itself, so the whole deck keeps recycling right up to it.
+    const examDate = material.examDate as Date;
+    const hoursUntilExam = Math.max(0, (examDate.getTime() - Date.now()) / 3_600_000);
+    const cramHoursMap: Record<string, number> = { again: 1, hard: 3, good: 6, easy: 12 };
+    const hours = Math.min(cramHoursMap[body.result] ?? 6, Math.max(1, hoursUntilExam));
+    nextEf = card.easeFactor / 100;
+    nextInterval = Math.max(1, Math.round(hours / 24));
+    nextReviewAt = new Date(Math.min(Date.now() + hours * 3_600_000, examDate.getTime()));
+  } else {
+    const prevEf = card.easeFactor / 100;
+    nextEf = Math.max(1.3, prevEf + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+
+    if (q < 3) {
+      // Failed recall: SM-2 resets repetitions to 0 and restarts the spacing
+      // ladder from day 1. We don't persist a separate "repetitions" counter --
+      // an interval of 1 day doubles as "no successful streak built up yet",
+      // which is exactly the state a fresh card is in too.
+      nextInterval = 1;
+    } else if (card.interval <= 1) {
+      nextInterval = 6;
+    } else {
+      nextInterval = Math.round(card.interval * nextEf);
+    }
+
+    nextReviewAt = new Date(Date.now() + nextInterval * 86400000);
+  }
 
   const [updated] = await db.update(flashcardsTable)
     .set({

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { coursesTable } from "./courses";
@@ -16,6 +16,13 @@ export const materialsTable = pgTable("materials", {
   sourceUrl: text("source_url"),
   fileSize: integer("file_size"),
   duration: integer("duration"),
+  // Cram Mode: when active, the flashcard review scheduler (see
+  // flashcards.ts's /review route) overrides standard SM-2 day-scale
+  // intervals with hour-scale ones, and clamps every nextReviewAt to never
+  // drift past examDate -- so the whole deck keeps recycling through the
+  // queue right up to the exam instead of being spread across weeks.
+  cramMode: boolean("cram_mode").notNull().default(false),
+  examDate: timestamp("exam_date", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

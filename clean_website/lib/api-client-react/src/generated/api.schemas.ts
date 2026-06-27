@@ -99,6 +99,9 @@ export interface Material {
   examCount?: number;
   wordCount?: number;
   tooShortForGeneration?: boolean;
+  cramMode?: boolean;
+  /** @nullable */
+  examDate?: string | null;
   createdAt: string;
 }
 
@@ -192,6 +195,15 @@ export interface MaterialInput {
   sourceUrl?: string;
   /** Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight. */
   uploadId?: string;
+}
+
+export interface UpdateMaterialInput {
+  cramMode?: boolean;
+  /**
+     * ISO date-time of the upcoming exam. Pass null to clear it (which also turns Cram Mode's scheduling override off, since it requires a target date).
+     * @nullable
+     */
+  examDate?: string | null;
 }
 
 export interface BulkDeleteMaterialsInput {
@@ -443,6 +455,50 @@ export interface QuestionRequest {
   difficulty?: QuestionRequestDifficulty;
 }
 
+export type TargetedQuestionRequestLanguage = typeof TargetedQuestionRequestLanguage[keyof typeof TargetedQuestionRequestLanguage];
+
+
+export const TargetedQuestionRequestLanguage = {
+  he: 'he',
+  en: 'en',
+} as const;
+
+export interface TargetedQuestionRequest {
+  language: TargetedQuestionRequestLanguage;
+  concept: string;
+  excludeQuestions?: string[];
+}
+
+export type TargetedQuestionQuestionType = typeof TargetedQuestionQuestionType[keyof typeof TargetedQuestionQuestionType];
+
+
+export const TargetedQuestionQuestionType = {
+  multiple_choice: 'multiple_choice',
+} as const;
+
+export type TargetedQuestionDifficulty = typeof TargetedQuestionDifficulty[keyof typeof TargetedQuestionDifficulty];
+
+
+export const TargetedQuestionDifficulty = {
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'hard',
+} as const;
+
+export interface TargetedQuestion {
+  questionType: TargetedQuestionQuestionType;
+  question: string;
+  answer: string;
+  /** @nullable */
+  explanation?: string | null;
+  options?: string[];
+  difficulty?: TargetedQuestionDifficulty;
+  /** @nullable */
+  concept?: string | null;
+  /** @nullable */
+  optionExplanations?: (string | null)[] | null;
+}
+
 export type ExamLanguage = typeof ExamLanguage[keyof typeof ExamLanguage];
 
 
@@ -641,13 +697,6 @@ export interface StudyStreak {
   todayStudied?: boolean;
 }
 
-export interface TokenBalance {
-  tokensRemaining: number;
-  monthlyTokenQuota: number;
-  estimatedSummariesRemaining: number;
-  estimatedExamsRemaining: number;
-}
-
 export interface DailyReviewCount {
   count: number;
 }
@@ -692,48 +741,11 @@ export interface DailyReviewCards {
   cards: DailyReviewCard[];
 }
 
-export type TargetedQuestionRequestLanguage = typeof TargetedQuestionRequestLanguage[keyof typeof TargetedQuestionRequestLanguage];
-
-
-export const TargetedQuestionRequestLanguage = {
-  he: 'he',
-  en: 'en',
-} as const;
-
-export interface TargetedQuestionRequest {
-  language: TargetedQuestionRequestLanguage;
-  concept: string;
-  excludeQuestions?: string[];
-}
-
-export type TargetedQuestionQuestionType = typeof TargetedQuestionQuestionType[keyof typeof TargetedQuestionQuestionType];
-
-
-export const TargetedQuestionQuestionType = {
-  multiple_choice: 'multiple_choice',
-} as const;
-
-export type TargetedQuestionDifficulty = typeof TargetedQuestionDifficulty[keyof typeof TargetedQuestionDifficulty];
-
-
-export const TargetedQuestionDifficulty = {
-  easy: 'easy',
-  medium: 'medium',
-  hard: 'hard',
-} as const;
-
-export interface TargetedQuestion {
-  questionType: TargetedQuestionQuestionType;
-  question: string;
-  answer: string;
-  /** @nullable */
-  explanation?: string | null;
-  options?: string[];
-  difficulty?: TargetedQuestionDifficulty;
-  /** @nullable */
-  concept?: string | null;
-  /** @nullable */
-  optionExplanations?: (string | null)[] | null;
+export interface TokenBalance {
+  tokensRemaining: number;
+  monthlyTokenQuota: number;
+  estimatedSummariesRemaining: number;
+  estimatedExamsRemaining: number;
 }
 
 export type ListMaterialsParams = {

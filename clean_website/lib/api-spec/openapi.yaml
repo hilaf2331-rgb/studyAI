@@ -189,6 +189,31 @@ paths:
                 $ref: "#/components/schemas/Material"
         "404":
           description: Not found
+    patch:
+      operationId: updateMaterial
+      tags: [materials]
+      summary: Update a material's Cram Mode settings (exam date / enabled flag)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMaterialInput"
+      responses:
+        "200":
+          description: Updated material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+        "404":
+          description: Not found
     delete:
       operationId: deleteMaterial
       tags: [materials]
@@ -891,6 +916,11 @@ components:
           type: integer
         tooShortForGeneration:
           type: boolean
+        cramMode:
+          type: boolean
+        examDate:
+          type: ["string", "null"]
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -976,6 +1006,16 @@ components:
         uploadId:
           type: string
           description: Client-generated identifier used to poll extraction progress via /materials/upload-progress/{uploadId} while this request is in flight.
+
+    UpdateMaterialInput:
+      type: object
+      properties:
+        cramMode:
+          type: boolean
+        examDate:
+          description: ISO date-time of the upcoming exam. Pass null to clear it (which also turns Cram Mode's scheduling override off, since it requires a target date).
+          type: ["string", "null"]
+          format: date-time
 
     BulkDeleteMaterialsInput:
       type: object

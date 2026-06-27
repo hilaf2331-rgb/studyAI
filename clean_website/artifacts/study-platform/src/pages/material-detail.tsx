@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
-  useGetMaterialProgress,
+  useGetMaterialProgress, useUpdateMaterial,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
 } from "@workspace/api-client-react";
@@ -20,9 +20,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
-  Sparkles, CheckCircle2, AlertCircle, Eye, Plus
+  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
@@ -201,6 +204,11 @@ export const MaterialDetailPage: React.FC = () => {
   const genSummary = useGenerateSummary();
   const genFlash = useGenerateFlashcards();
   const genQA = useGenerateQuestions();
+
+  const [examDatePickerOpen, setExamDatePickerOpen] = useState(false);
+  const updateMaterial = useUpdateMaterial({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) }) },
+  });
 
   // While any of the four individual generation requests is in flight, poll
   // the backend's "chunk X of Y" tracker so the dialog can show real
@@ -492,6 +500,70 @@ export const MaterialDetailPage: React.FC = () => {
           <MessageSquare className="w-4 h-4" />{isRTL ? "שוחח עם המורה AI" : "Chat with AI Tutor"}
         </Button>
       </div>
+
+      <Card className={`border transition-all ${material.cramMode && material.examDate ? "border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20" : "border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40"}`}>
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Timer className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">{isRTL ? "מצב מרתון" : "Cram Mode"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {isRTL
+                    ? "לקראת מבחן קרוב? סקירה אינטנסיבית של הכרטיסיות עד תאריך המבחן"
+                    : "Studying for an exam soon? Intensive flashcard review until your exam date"}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={!!material.cramMode}
+              onCheckedChange={(checked) => updateMaterial.mutate({ id, data: { cramMode: checked } })}
+            />
+          </div>
+
+          {material.cramMode && (
+            <div className={`flex flex-wrap items-center gap-3 pt-1 ${isRTL ? "flex-row-reverse" : ""}`}>
+              <Popover open={examDatePickerOpen} onOpenChange={setExamDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <CalendarClock className="w-4 h-4" />
+                    {material.examDate
+                      ? new Date(material.examDate).toLocaleDateString(isRTL ? "he-IL" : "en-US")
+                      : (isRTL ? "בחר תאריך מבחן" : "Set exam date")}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align={isRTL ? "end" : "start"} className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={material.examDate ? new Date(material.examDate) : undefined}
+                    onSelect={(date) => {
+                      if (!date) return;
+                      updateMaterial.mutate({ id, data: { examDate: date.toISOString() } });
+                      setExamDatePickerOpen(false);
+                    }}
+                    disabled={{ before: new Date() }}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {material.examDate && (() => {
+                const examTime = new Date(material.examDate).getTime();
+                const isFuture = examTime > Date.now();
+                const daysLeft = Math.max(0, Math.ceil((examTime - Date.now()) / 86400000));
+                return (
+                  <Badge variant="outline" className="gap-1.5 text-amber-700 dark:text-amber-400 border-amber-400/50">
+                    {isFuture
+                      ? (isRTL ? `המבחן בעוד ${daysLeft} ימים — מצב מרתון פעיל` : `Exam in ${daysLeft} days — Cram Mode active`)
+                      : (isRTL ? "תאריך המבחן עבר" : "Exam date has passed")}
+                  </Badge>
+                );
+              })()}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* The one-click "Generate Study Kit" trigger is gone -- generation now
           fires automatically right after upload (see the ?autogen=1 effect

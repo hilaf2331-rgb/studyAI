@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTable, questionSetsTable, activityTable, flashcardsTable, questionsTable } from "@workspace/db";
+import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTable, questionSetsTable, activityTable, flashcardsTable, questionsTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
@@ -166,8 +166,17 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   try {
     await requireTokenBalance(userId);
 
+    // Course-specific terminology the student pre-defined (see glossary.ts)
+    // -- grounds the summary against the student's own definitions instead
+    // of guessing at course-specific jargon in the live transcript.
+    const glossaryTerms = courseId
+      ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+          .from(glossaryTermsTable)
+          .where(eq(glossaryTermsTable.courseId, courseId))
+      : [];
+
     const [summaryResult, flashResult, questionResult] = await Promise.all([
-      generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds }),
+      generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds, glossaryTerms }),
       generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
       generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
     ]);

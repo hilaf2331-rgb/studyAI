@@ -943,8 +943,35 @@ function buildBookmarkContext(
   return `\n---\nThe student marked the following moments as "important" live during the lecture (tapped a bookmark button in real time):\n${lines}\n\nPay extra attention to the core concepts discussed near each of these moments, and highlight them in the final summary with a dedicated section/badge using the exact label "📌 Critical point marked during class" right before the explanation of that topic.\n`;
 }
 
+// Course-specific terminology the student pre-defined (see glossary.ts) --
+// grounds the model's transcription/correction/summary logic against the
+// student's own definitions instead of guessing at course-specific jargon,
+// abbreviations, or formulas. The "glossary:" markdown-link scheme is the
+// carrier for output-side highlighting (see summary-view.tsx's custom `a`
+// component override) -- chosen over raw HTML or a custom syntax so it
+// renders correctly with the app's existing remark-gfm-only Markdown
+// pipeline, with no new dependency needed.
+function buildGlossaryContext(
+  glossaryTerms: { term: string; definition: string }[] | undefined,
+  isHe: boolean,
+): string {
+  if (!glossaryTerms || glossaryTerms.length === 0) return "";
+  const list = glossaryTerms.map((t) => `[Term: ${t.term}: ${t.definition}]`).join(", ");
+
+  if (isHe) {
+    return `\n---\nהקשר קריטי: התלמיד/ה סיפק/ה מילון מונחים מותאם-קורס. השתמש/י בהגדרות המדויקות האלה כדי לבסס את התמלול, התיקון ולוגיקת הסיכום שלך: ${list}\n\nכל פעם שאחד מהמונחים האלה (בדיוק כפי שהוגדר, או נטייה דקדוקית ברורה שלו) מופיע בסיכום שאתה כותב, עטוף אותו בתחביר Markdown הבא במקום טקסט רגיל: [המונח](glossary:מונח "ההגדרה המדויקת"), כך שיודגש ויהיה ברור לתלמיד/ה שזה מונח מהמילון שלו/ה.\n`;
+  }
+  return `\n---\nCRITICAL CONTEXT: The user has provided a custom glossary of course-specific terminology. Use these exact definitions to ground your transcription, correction, and summary logic: ${list}\n\nWhenever one of these terms (exactly as defined, or an obvious inflection of it) appears in the summary you write, wrap it using this Markdown syntax instead of plain text: [TERM](glossary:term "EXACT DEFINITION"), so it gets highlighted and the student can instantly see it's a glossary term.\n`;
+}
+
 export function generateSummary(
-  opts: AIGenerationOptions & { summaryType: string; topic?: string; bookmarkTimestamps?: number[]; audioDurationSeconds?: number }
+  opts: AIGenerationOptions & {
+    summaryType: string;
+    topic?: string;
+    bookmarkTimestamps?: number[];
+    audioDurationSeconds?: number;
+    glossaryTerms?: { term: string; definition: string }[];
+  }
 ): Promise<{
   content: string;
   keyPoints: string[];
@@ -955,7 +982,13 @@ export function generateSummary(
 }
 
 async function generateSummaryImpl(
-  opts: AIGenerationOptions & { summaryType: string; topic?: string; bookmarkTimestamps?: number[]; audioDurationSeconds?: number }
+  opts: AIGenerationOptions & {
+    summaryType: string;
+    topic?: string;
+    bookmarkTimestamps?: number[];
+    audioDurationSeconds?: number;
+    glossaryTerms?: { term: string; definition: string }[];
+  }
 ): Promise<{
   content: string;
   keyPoints: string[];
@@ -966,9 +999,10 @@ async function generateSummaryImpl(
   parts: string[];
   chunked: boolean;
 }> {
-  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds } = opts;
+  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds, glossaryTerms } = opts;
   const isHe = language === "he";
   const bookmarkContext = buildBookmarkContext(bookmarkTimestamps, audioDurationSeconds, materialContent, isHe);
+  const glossaryContext = buildGlossaryContext(glossaryTerms, isHe);
 
   const typeMap: Record<string, { he: string; en: string }> = {
     quick:         { he: "סיכום קצר ותמציתי (עד 400 מילה) עם הנקודות המרכזיות בלבד", en: "a short summary (up to 400 words) with only the key points" },
@@ -1035,7 +1069,7 @@ async function generateSummaryImpl(
       ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
 
 ${contentSlice(chapterBody)}
-${bookmarkContext}
+${bookmarkContext}${glossaryContext}
 ---
 המשימה שלך: קרא את כל הפרקים מעלה וצור:
 1. keyPoints — מערך של 5–8 משפטים קצרים, הכי חשובים מכל החומר (מה שהייתה רוצה לדעת לפני הבחינה).
@@ -1049,7 +1083,7 @@ ${bookmarkContext}
       : `## Chapter-by-chapter summary of study material "${materialTitle}":
 
 ${contentSlice(chapterBody)}
-${bookmarkContext}
+${bookmarkContext}${glossaryContext}
 ---
 Your task: read every chapter above and produce:
 1. keyPoints — an array of 5-8 short sentences, the most important things from the whole material (what you'd want to know before the exam).
@@ -1091,7 +1125,7 @@ Return ONLY JSON matching this structure:
     ? `## חומר לימוד: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-${bookmarkContext}
+${bookmarkContext}${glossaryContext}
 ---
 המשימה שלך: צור ${typeDesc}.
 
@@ -1114,7 +1148,7 @@ ${useRichFormatting ? richBulletsHe : ""}${summaryType === "quick" ? '- חשוב
     : `## Study Material: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-${bookmarkContext}
+${bookmarkContext}${glossaryContext}
 ---
 Your task: Create ${typeDesc}.
 

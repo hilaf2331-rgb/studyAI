@@ -66,4 +66,56 @@ router.delete("/courses/:id", async (req, res) => {
   res.status(204).end();
 });
 
+// Ownership of the parent course is checked on every glossary route below
+// (not just a glossaryTermsTable.id lookup) since glossary terms have no
+// userId column of their own -- the course is the only link back to the
+// owning user.
+async function getOwnedCourseId(courseId: number, userId: number): Promise<number | null> {
+  const [course] = await db.select({ id: coursesTable.id }).from(coursesTable)
+    .where(and(eq(coursesTable.id, courseId), eq(coursesTable.userId, userId)));
+  return course ? course.id : null;
+}
+
+router.get("/courses/:id/glossary", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = ListGlossaryTermsParams.parse({ id: Number(req.params.id) });
+  if (!(await getOwnedCourseId(id, userId))) return res.status(404).json({ error: "Not found" });
+  const terms = await db.select().from(glossaryTermsTable)
+    .where(eq(glossaryTermsTable.courseId, id))
+    .orderBy(glossaryTermsTable.createdAt);
+  res.json(terms);
+});
+
+router.post("/courses/:id/glossary", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = CreateGlossaryTermParams.parse({ id: Number(req.params.id) });
+  if (!(await getOwnedCourseId(id, userId))) return res.status(404).json({ error: "Not found" });
+  const body = CreateGlossaryTermBody.parse(req.body);
+  const [term] = await db.insert(glossaryTermsTable).values({ ...body, courseId: id }).returning();
+  res.status(201).json(term);
+});
+
+router.patch("/courses/:id/glossary/:termId", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id, termId } = UpdateGlossaryTermParams.parse({ id: Number(req.params.id), termId: Number(req.params.termId) });
+  if (!(await getOwnedCourseId(id, userId))) return res.status(404).json({ error: "Not found" });
+  const body = UpdateGlossaryTermBody.parse(req.body);
+  const [term] = await db.update(glossaryTermsTable).set(body)
+    .where(and(eq(glossaryTermsTable.id, termId), eq(glossaryTermsTable.courseId, id)))
+    .returning();
+  if (!term) return res.status(404).json({ error: "Not found" });
+  res.json(term);
+});
+
+router.delete("/courses/:id/glossary/:termId", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id, termId } = DeleteGlossaryTermParams.parse({ id: Number(req.params.id), termId: Number(req.params.termId) });
+  if (!(await getOwnedCourseId(id, userId))) return res.status(404).json({ error: "Not found" });
+  const [deleted] = await db.delete(glossaryTermsTable)
+    .where(and(eq(glossaryTermsTable.id, termId), eq(glossaryTermsTable.courseId, id)))
+    .returning({ id: glossaryTermsTable.id });
+  if (!deleted) return res.status(404).json({ error: "Not found" });
+  res.status(204).end();
+});
+
 export default router;

@@ -122,6 +122,29 @@ export const SummaryViewPage: React.FC = () => {
                   }
                   return <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>;
                 },
+                // AI-generated glossary highlights ride on the "glossary:"
+                // markdown-link scheme (see ai.ts's buildGlossaryContext) --
+                // a custom URL scheme rather than raw HTML/a new syntax, so
+                // it renders correctly through the existing remark-gfm-only
+                // pipeline with no extra dependency. Real links still pass
+                // through untouched.
+                a: ({ href, title, children }) => {
+                  if (href?.startsWith("glossary:")) {
+                    return (
+                      <mark
+                        title={title}
+                        className="bg-primary/15 text-primary font-medium rounded px-1 not-italic cursor-help"
+                      >
+                        {children}
+                      </mark>
+                    );
+                  }
+                  return (
+                    <a href={href} title={title} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      {children}
+                    </a>
+                  );
+                },
               }}
             >
               {summary.content}

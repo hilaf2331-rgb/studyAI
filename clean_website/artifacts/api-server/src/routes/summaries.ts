@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, summariesTable, materialsTable, activityTable } from "@workspace/db";
+import { db, summariesTable, materialsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
@@ -42,6 +42,11 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
   // already guarantees extractedText clears the minimum, so this is always
   // the real transcript/extracted content.
   const materialContent = material.extractedText || "";
+  const glossaryTerms = material.courseId
+    ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+        .from(glossaryTermsTable)
+        .where(eq(glossaryTermsTable.courseId, material.courseId))
+    : [];
   const result = await generateSummary({
     language: body.language as "he" | "en",
     materialContent,
@@ -49,6 +54,7 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
     summaryType: body.summaryType,
     topic: body.topic,
     materialId: id,
+    glossaryTerms,
   });
   await deductTokensForGeneration(userId, materialContent, result.content);
 

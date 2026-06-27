@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable } from "@workspace/db";
+import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
@@ -104,6 +104,16 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
   try {
     const { maxFlashcards } = getDynamicGenerationLimits(content.length);
 
+    // Course-specific terminology the student pre-defined (see glossary.ts)
+    // -- fetched once up front and passed into generateSummary below so the
+    // model grounds its summary against the student's own definitions
+    // instead of guessing at course-specific jargon.
+    const glossaryTerms = material.courseId
+      ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+          .from(glossaryTermsTable)
+          .where(eq(glossaryTermsTable.courseId, material.courseId))
+      : [];
+
     // Stage 1/3: summary -- top priority. generateSummary is already
     // internally chunked (ai.ts/buildAggregatedContent) for large documents,
     // and now also returns `parts`/`chunked` so stages 2 and 3 below can
@@ -113,7 +123,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
     let summaryFailed = false;
     try {
       summaryResult = await withTimeout(
-        generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId }),
+        generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId, glossaryTerms }),
         AI_TASK_TIMEOUT_MS,
         "generateSummary",
       );

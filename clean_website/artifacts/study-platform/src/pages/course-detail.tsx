@@ -1,8 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import {
   useGetCourse, useListMaterials, useDeleteMaterial,
-  getListMaterialsQueryKey
+  getListMaterialsQueryKey,
+  useListGlossaryTerms, useCreateGlossaryTerm, useUpdateGlossaryTerm, useDeleteGlossaryTerm,
+  getListGlossaryTermsQueryKey,
+  type GlossaryTerm,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -10,10 +13,130 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import {
   ArrowLeft, ArrowRight, BookOpen, FileText, Plus, Trash2,
   BrainCircuit, HelpCircle, FileQuestion, Loader2, AlertCircle, CheckCircle2, Mic,
+  BookMarked, Pencil,
 } from "lucide-react";
+
+function GlossarySection({ courseId, isRTL }: { courseId: number; isRTL: boolean }) {
+  const qc = useQueryClient();
+  const { data: terms, isLoading } = useListGlossaryTerms(courseId);
+  const createTerm = useCreateGlossaryTerm();
+  const updateTerm = useUpdateGlossaryTerm();
+  const deleteTerm = useDeleteGlossaryTerm();
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<GlossaryTerm | null>(null);
+  const [term, setTerm] = useState("");
+  const [definition, setDefinition] = useState("");
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListGlossaryTermsQueryKey(courseId) });
+
+  const openCreate = () => { setEditing(null); setTerm(""); setDefinition(""); setOpen(true); };
+  const openEdit = (t: GlossaryTerm) => { setEditing(t); setTerm(t.term); setDefinition(t.definition); setOpen(true); };
+
+  const handleSave = () => {
+    if (!term.trim() || !definition.trim()) return;
+    if (editing) {
+      updateTerm.mutate({ id: courseId, termId: editing.id, data: { term, definition } }, {
+        onSuccess: () => { invalidate(); setOpen(false); },
+      });
+    } else {
+      createTerm.mutate({ id: courseId, data: { term, definition } }, {
+        onSuccess: () => { invalidate(); setOpen(false); },
+      });
+    }
+  };
+
+  const handleDeleteTerm = (termId: number) => {
+    if (!window.confirm(isRTL ? "האם אתה בטוח שברצונך למחוק מונח זה?" : "Delete this term?")) return;
+    deleteTerm.mutate({ id: courseId, termId }, { onSuccess: invalidate });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <BookMarked className="w-5 h-5 text-primary" />
+          {isRTL ? "מילון מונחי הקורס" : "Course Glossary"}
+        </h2>
+        <Button variant="outline" size="sm" className="gap-2" onClick={openCreate}>
+          <Plus className="w-4 h-4" />
+          {isRTL ? "הוסף מונח" : "Add Term"}
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {isRTL
+          ? "מונחים, קיצורים ונוסחאות ספציפיים לקורס שלך יעוגנו בתשובות ה-AI ויודגשו בסיכומים."
+          : "Course-specific terms, abbreviations, and formulas that ground the AI's answers and get highlighted in summaries."}
+      </p>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}
+        </div>
+      ) : !terms?.length ? (
+        <p className="text-sm text-muted-foreground italic">
+          {isRTL ? "לא הוגדרו עדיין מונחים לקורס זה." : "No glossary terms defined for this course yet."}
+        </p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {terms.map(t => (
+            <Card key={t.id}>
+              <CardContent className="p-3 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm break-words">{t.term}</p>
+                  <p className="text-xs text-muted-foreground break-words mt-0.5">{t.definition}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => openEdit(t)} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleDeleteTerm(t.id)} className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? (isRTL ? "ערוך מונח" : "Edit Term") : (isRTL ? "הוסף מונח" : "Add Term")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="glossary-term">{isRTL ? "מונח" : "Term"}</Label>
+              <Input id="glossary-term" value={term} onChange={(e) => setTerm(e.target.value)} placeholder={isRTL ? "לדוגמה: אינטגרל לוגריתמי" : "e.g. Logarithmic Integral"} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="glossary-definition">{isRTL ? "הגדרה" : "Definition"}</Label>
+              <Textarea id="glossary-definition" value={definition} onChange={(e) => setDefinition(e.target.value)} rows={4} placeholder={isRTL ? "ההגדרה המדויקת כפי שנלמדה בקורס" : "The exact definition as taught in the course"} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>{isRTL ? "ביטול" : "Cancel"}</Button>
+            <Button onClick={handleSave} disabled={createTerm.isPending || updateTerm.isPending}>
+              {isRTL ? "שמור" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function StatusBadge({ status, isRTL }: { status: string; isRTL: boolean }) {
   if (status === "processing") return (
@@ -121,6 +244,8 @@ export const CourseDetailPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      <GlossarySection courseId={courseId} isRTL={isRTL} />
 
       {loadingMaterials ? (
         <div className="space-y-3">

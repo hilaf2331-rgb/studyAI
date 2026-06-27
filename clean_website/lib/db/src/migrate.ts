@@ -33,4 +33,18 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS concept text,
       ADD COLUMN IF NOT EXISTS option_explanations text[];
   `);
+
+  await pool.query(`
+    ALTER TABLE materials
+      ADD COLUMN IF NOT EXISTS cram_mode boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS exam_date timestamptz,
+      ADD COLUMN IF NOT EXISTS share_id text;
+  `);
+
+  // share_id's uniqueness (materials.ts's .unique()) is enforced via index
+  // rather than ADD CONSTRAINT, since Postgres has no
+  // "ADD CONSTRAINT IF NOT EXISTS" -- this is the idempotent equivalent.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS materials_share_id_unique ON materials (share_id);
+  `);
 }

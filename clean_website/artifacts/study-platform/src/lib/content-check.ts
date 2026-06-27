@@ -26,6 +26,18 @@ export function silentAudioMessage(isRTL: boolean): string {
   return isRTL ? SILENT_AUDIO_MESSAGE_HE : SILENT_AUDIO_MESSAGE_EN;
 }
 
+// The backend's recording upload route rejects too-short transcripts with
+// `error: "insufficient_content"` -- raw enough to confuse non-technical
+// users if shown as-is, so the recorder UI maps it to this friendly copy
+// instead of displaying `data.error`/`data.message` directly.
+export const RECORDING_TOO_SHORT_MESSAGE_HE =
+  "אוי, ההקלטה קצרה מדי! כדי שנוכל לייצר סיכום מעולה, אנא הקליטו לפחות 40 שניות.";
+
+export function friendlyRecordingErrorMessage(data: { error?: string; message?: string }): string {
+  if (data?.error === "insufficient_content") return RECORDING_TOO_SHORT_MESSAGE_HE;
+  return data?.message || "שמירת ההקלטה נכשלה. נסה שנית.";
+}
+
 // Decodes the audio and checks its RMS amplitude against a near-silence
 // threshold. Best-effort: an undecodable blob (corrupt/unsupported codec)
 // resolves to "not silent" so an inconclusive check never blocks a

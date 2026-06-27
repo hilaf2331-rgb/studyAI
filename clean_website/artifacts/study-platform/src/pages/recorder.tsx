@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
-import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording } from "@/lib/content-check";
+import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording, friendlyRecordingErrorMessage } from "@/lib/content-check";
 import { saveCachedRecording, getCachedRecording, clearCachedRecording } from "@/lib/recording-cache";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
@@ -27,6 +27,12 @@ import {
 // accidentally record for hours and blow past Render's free-tier HTTP
 // timeout once the file hits transcription + AI generation.
 const MAX_RECORDING_SECONDS = 20 * 60;
+
+// Matches the backend's MIN_AUDIO_TRANSCRIPT_LENGTH check in recordings.ts:
+// anything shorter than this reliably transcribes to too little text and
+// gets rejected as insufficient_content, burning a beta action for nothing
+// -- so the stop action is gated client-side before that round-trip happens.
+const MIN_RECORDING_SECONDS = 40;
 
 type RecorderState = "idle" | "recording" | "stopped" | "saving" | "done" | "error";
 
@@ -88,6 +94,7 @@ export const RecorderPage: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState("");
   const [autoStopped, setAutoStopped] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
 
   // Save progress
@@ -173,6 +180,7 @@ export const RecorderPage: React.FC = () => {
     setElapsed(0);
     setKitResult(null);
     setAutoStopped(false);
+    setIsPaused(false);
     setRecState("idle");
     chunksRef.current = [];
 
@@ -220,33 +228,57 @@ export const RecorderPage: React.FC = () => {
       mr.start(250);
       setRecState("recording");
       animateWaveform();
-
-      // Reads/clears timerRef.current directly rather than through a
-      // captured variable, since refs stay live across renders -- avoids
-      // the stale-closure trap of reading state set up at the start of this
-      // long-lived interval callback.
-      timerRef.current = setInterval(() => {
-        setElapsed(s => {
-          const next = s + 1;
-          if (next >= MAX_RECORDING_SECONDS) {
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-            mediaRecorderRef.current?.stop();
-            setAutoStopped(true);
-            setRecState("stopped");
-          }
-          return next;
-        });
-      }, 1000);
+      startTimer();
     } catch (err: any) {
       setError("לא ניתן לגשת למיקרופון. אנא אפשר גישה בהגדרות הדפדפן.");
       setRecState("error");
     }
   };
 
+  // Reads/clears timerRef.current directly rather than through a captured
+  // variable, since refs stay live across renders -- avoids the
+  // stale-closure trap of reading state set up at the start of this
+  // long-lived interval callback. Shared by startRecording and the
+  // pause/resume toggle below, since resuming needs the exact same
+  // auto-stop-aware ticking the initial start uses.
+  const startTimer = () => {
+    timerRef.current = setInterval(() => {
+      setElapsed(s => {
+        const next = s + 1;
+        if (next >= MAX_RECORDING_SECONDS) {
+          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+          mediaRecorderRef.current?.stop();
+          setAutoStopped(true);
+          setRecState("stopped");
+        }
+        return next;
+      });
+    }, 1000);
+  };
+
   const stopRecording = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     mediaRecorderRef.current?.stop();
     setRecState("stopped");
+  };
+
+  // Pause/resume during a recording (e.g. a lecture break) without losing
+  // progress -- MediaRecorder.pause()/resume() keep accumulating into the
+  // same chunk stream, so no new Blob/cache write is needed here.
+  const togglePause = () => {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+    if (isPaused) {
+      mr.resume();
+      startTimer();
+      animateWaveform();
+      setIsPaused(false);
+    } else {
+      mr.pause();
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+      setIsPaused(true);
+    }
   };
 
   const performSave = useCallback(async (blob: Blob, recTitle: string) => {
@@ -279,7 +311,7 @@ export const RecorderPage: React.FC = () => {
           setRecState("stopped");
           return;
         }
-        setError(data.error || "שמירת ההקלטה נכשלה. נסה שנית.");
+        setError(friendlyRecordingErrorMessage(data));
         setRecState("error");
         return;
       }
@@ -421,8 +453,10 @@ export const RecorderPage: React.FC = () => {
             <div className="space-y-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                  <span className="font-bold text-red-600 text-sm">מקליט...</span>
+                  <span className={`w-3 h-3 rounded-full ${isPaused ? "bg-amber-500" : "bg-red-500 animate-pulse"}`} />
+                  <span className={`font-bold text-sm ${isPaused ? "text-amber-600" : "text-red-600"}`}>
+                    {isPaused ? "בהשהיה" : "מקליט..."}
+                  </span>
                 </div>
                 <span className={`font-mono text-2xl font-bold tabular-nums ${elapsed >= MAX_RECORDING_SECONDS - 60 ? "text-destructive" : "text-foreground"}`}>
                   {formatDuration(elapsed)} <span className="text-muted-foreground text-base font-normal">/ {formatDuration(MAX_RECORDING_SECONDS)}</span>
@@ -439,6 +473,15 @@ export const RecorderPage: React.FC = () => {
               <p className="text-xs text-muted-foreground text-center -mt-1">
                 מקסימום 20 דקות להקלטה — ההקלטה תישמר ותעובד אוטומטית כשמגיעים למגבלה
               </p>
+              <p className="text-xs text-center -mt-1">
+                {elapsed < MIN_RECORDING_SECONDS ? (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    מינימום {MIN_RECORDING_SECONDS} שניות להקלטה — עוד {MIN_RECORDING_SECONDS - elapsed} שניות לפני שניתן לעצור
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">מינימום {MIN_RECORDING_SECONDS} שניות להקלטה</span>
+                )}
+              </p>
 
               {/* Waveform visualizer */}
               <div className="flex items-end justify-center gap-0.5 h-16 bg-muted/40 rounded-xl px-3">
@@ -451,9 +494,22 @@ export const RecorderPage: React.FC = () => {
                 ))}
               </div>
 
-              <Button size="lg" variant="destructive" className="w-full gap-2" onClick={stopRecording}>
-                <Square className="w-5 h-5" /> עצור הקלטה
-              </Button>
+              <div className="grid grid-cols-2 gap-3">
+                <Button size="lg" variant="outline" className="gap-2" onClick={togglePause}>
+                  {isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                  {isPaused ? "המשך הקלטה" : "השהה הקלטה"}
+                </Button>
+                <Button
+                  size="lg"
+                  variant="destructive"
+                  className="gap-2"
+                  onClick={stopRecording}
+                  disabled={elapsed < MIN_RECORDING_SECONDS}
+                  title={elapsed < MIN_RECORDING_SECONDS ? `יש להקליט לפחות ${MIN_RECORDING_SECONDS} שניות` : undefined}
+                >
+                  <Square className="w-5 h-5" /> עצור הקלטה
+                </Button>
+              </div>
             </div>
           )}
 

@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { getHebrewGreeting } from "@/lib/greeting";
 import { BookOpen, BrainCircuit, FileQuestion, GraduationCap, Flame, Clock, Sparkles, HelpCircle, MessageSquare, Upload, BookText } from "lucide-react";
 import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/components/icons";
+import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   upload: <Upload className="w-4 h-4" />,
@@ -46,6 +47,8 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="relative space-y-10 animate-in fade-in duration-500">
+      <OnboardingTour />
+
       {/* Header */}
       <div className="relative z-10 flex items-start justify-between">
         <div>
@@ -66,7 +69,7 @@ export const Dashboard: React.FC = () => {
       {/* Today's Review Queue */}
       {!!dailyReview?.count && (
         <Link href="/review">
-          <div className="group flex items-center justify-between gap-4 p-5 rounded-xl border border-primary/30 bg-primary/5 backdrop-blur-md hover:bg-primary/10 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/20 transition-all duration-300 cursor-pointer">
+          <div data-tour="daily-review" className="group flex items-center justify-between gap-4 p-5 rounded-xl border border-primary/30 bg-primary/5 backdrop-blur-md hover:bg-primary/10 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/20 transition-all duration-300 cursor-pointer">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
                 <BrainCircuit className="w-5 h-5 text-primary" />
@@ -139,7 +142,10 @@ export const Dashboard: React.FC = () => {
             { href: "/materials", label: isRTL ? "תרגל עכשיו" : "Practice Now", icon: Sparkles, color: "bg-green-500/10 text-green-600 dark:text-green-400", glow: "hover:shadow-green-500/25 hover:border-green-400/50" },
           ].map(a => (
             <Link key={a.href + a.label} href={a.href}>
-              <div className={`group p-4 rounded-xl border border-white/30 dark:border-white/10 backdrop-blur-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${a.color} ${a.glow}`}>
+              <div
+                data-tour={a.href === "/materials/new" ? "upload-material" : undefined}
+                className={`group p-4 rounded-xl border border-white/30 dark:border-white/10 backdrop-blur-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${a.color} ${a.glow}`}
+              >
                 <a.icon className="w-5 h-5 mb-2 transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">{a.label}</p>
               </div>

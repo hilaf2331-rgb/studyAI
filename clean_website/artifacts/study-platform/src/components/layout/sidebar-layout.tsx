@@ -38,7 +38,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
   // Shared nav + bottom-actions markup, reused by both the desktop sidebar
   // and the mobile drawer so behavior stays in sync between breakpoints.
   const renderNav = (showLabels: boolean, onNavigate?: () => void) => (
-    <nav className="flex-1 px-2 space-y-1 mt-2">
+    <nav className="flex-1 px-2 space-y-1 mt-2" data-tour="sidebar-nav">
       {navItems.map((item) => {
         const isActive = isItemActive(item.href);
         const label = t(item.label);

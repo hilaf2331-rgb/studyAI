@@ -1,13 +1,11 @@
 import React from "react";
 import { Link } from "wouter";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundGlow } from "@/components/background-glow";
-import { TokenGlyph, InfinityGlyph, SummaryGlyph, ChatGlyph, RescueGlyph } from "@/components/icons";
+import { TokenGlyph, InfinityGlyph, FlashcardGlyph, RescueGlyph } from "@/components/icons";
 
 // Public marketing page — the / route for logged-out visitors (see App.tsx).
-// Deliberately built as a single screen: compact spacing throughout so the
-// whole pitch fits without forcing visitors to scroll through a long page.
 export const LandingPage: React.FC = () => {
   return (
     <div className="relative min-h-screen flex flex-col bg-background overflow-hidden" dir="rtl">
@@ -22,25 +20,68 @@ export const LandingPage: React.FC = () => {
         </Link>
       </header>
 
-      <main className="relative flex-1 flex flex-col items-center justify-center px-6 sm:px-10 py-8 sm:py-12">
-        <BackgroundGlow className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[42rem] h-[42rem] sm:w-[58rem] sm:h-[58rem]" />
-        <BackgroundGlow className="-top-20 -right-20 w-[26rem] h-[26rem] opacity-60" />
+      <main className="relative flex-1 flex flex-col items-center px-6 sm:px-10 py-8 sm:py-12">
+        <BackgroundGlow className="top-0 left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] sm:w-[58rem] sm:h-[58rem]" />
+        <BackgroundGlow className="top-[60rem] -right-20 w-[26rem] h-[26rem] opacity-60" />
 
-        <div className="relative z-10 w-full max-w-3xl space-y-10">
-          {/* Hero / Hila's story */}
-          <section className="text-center space-y-4">
-            <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-[1.1]">
-              <span className="bg-gradient-to-l from-indigo-500 via-fuchsia-500 to-amber-500 bg-clip-text text-transparent">FocusStudy</span> — האתר שמפקס ומנגיש לכם<br className="hidden sm:block" /> את מה שחשוב באמת
+        <div className="relative z-10 w-full max-w-3xl space-y-20">
+          {/* Hero */}
+          <section className="text-center space-y-5 pt-4 sm:pt-8">
+            <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-[1.15]">
+              מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
+              <span className="bg-gradient-to-l from-indigo-500 via-fuchsia-500 to-amber-500 bg-clip-text text-transparent">
+                ערכת לימוד מלאה
+              </span>
+              .<br className="hidden sm:block" /> תוך שניות.
             </h1>
             <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              היי אני הילה, והחלטתי שנמאס לי לשלם מנוי חודשי לאתרים ואפליקציות ללמידה שלא תמיד אני
-              משתמשת בהם כל החודש. יש פעמים שהייתי רוצה להעלות מלא חומרים וללמוד אפילו יותר מ-5
-              פעמים ביום, ויש ימים שאני לא נכנסת 3 שבועות מפני שאני בחופשה או בפגרה. ולכן החלטתי
-              להקים את FocusStudy.
+              PDF, מצגת, סרטון YouTube, טקסט או הקלטה קולית — מה שיש לכם.
+              <br />
+              FocusStudy בונה מזה סיכום, כרטיסיות זיכרון וחידון תרגול,
+              מוכנים ללמידה כבר ברגע שהעלאתם את החומר.
             </p>
+            <div className="flex justify-center pt-2">
+              <Link href="/login">
+                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
+                  יאללה, מעלים חומר ראשון 🚀
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              </Link>
+            </div>
           </section>
 
-          {/* Core pillars */}
+          {/* Why FocusStudy */}
+          <section className="space-y-6">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">למה FocusStudy?</h2>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/20 hover:border-indigo-400/50">
+                <FlashcardGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
+                <p className="text-sm font-bold tracking-wide">ערכת לימוד מיידית</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  לא צריך ללחוץ שוב ושוב. מעלים פעם אחת, ומקבלים סיכום, כרטיסיות
+                  וחידון תרגול — בלי שום הגדרה נוספת.
+                </p>
+              </div>
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/50">
+                <RescueGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
+                <p className="text-sm font-bold tracking-wide">★ Rescue Questions — המורה הפרואקטיבי שלכם</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  טעיתם בתרגול? FocusStudy מזהה בדיוק איפה נפלתם, ובונה שאלות
+                  ממוקדות שתוקפות רק את הנקודות החלשות שלכם — לפני המבחן, לא אחריו.
+                </p>
+              </div>
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
+                <RotateCw className="w-10 h-10 mx-auto text-fuchsia-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
+                <p className="text-sm font-bold tracking-wide">חזרה מרווחת שמזכירה לכם מה לחזור עליו</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  אלגוריתם חזרה מרווחת קובע מתי הזמן הנכון לחזור על כל כרטיסייה —
+                  כל מה שמגיע לחזרה היום מחכה לכם במקום אחד.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Token pillars */}
           <section className="grid sm:grid-cols-2 gap-4">
             <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/20 hover:border-amber-400/50">
               <TokenGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
@@ -58,33 +99,20 @@ export const LandingPage: React.FC = () => {
             </div>
           </section>
 
-          {/* Features */}
-          <section className="grid sm:grid-cols-3 gap-4">
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/20 hover:border-indigo-400/50">
-              <SummaryGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
-              <p className="text-sm font-bold tracking-wide">סיכומים וכרטיסיות זיכרון</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                מעלים חומרי לימוד ומקבלים תמציות מדויקות ברגע.
-              </p>
-            </div>
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
-              <ChatGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
-              <p className="text-sm font-bold tracking-wide">מבחני דמה וצ'אט אינטראקטיבי</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                סימולציות מותאמות אישית שמכינות אתכם לדבר האמיתי.
-              </p>
-            </div>
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/50">
-              <RescueGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
-              <p className="text-sm font-bold tracking-wide">Rescue Questions</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                זיהוי נקודות חולשה ותרגול ממוקד כדי להציל את הציון במבחן.
-              </p>
-            </div>
+          {/* Founder story — moved below the fold as a trust-building section */}
+          <section className="text-center space-y-3 max-w-2xl mx-auto">
+            <p className="text-xs font-bold tracking-wide text-primary uppercase">הסיפור מאחורי FocusStudy</p>
+            <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+              היי, אני הילה. הקמתי את FocusStudy כי נמאס לי לשלם מנוי חודשי
+              לאתרי למידה שלא תמיד השתמשתי בהם כל החודש — יש תקופות שרציתי
+              ללמוד 5 פעמים ביום, ויש שבועות שלא נכנסתי כלל כי הייתי בחופשה.
+              לכן בניתי מערכת שעובדת לפי טוקנים: משלמים רק על מה שמשתמשים,
+              והטוקנים לא פגים בתוקף — אף פעם.
+            </p>
           </section>
 
-          {/* CTA */}
-          <section className="flex justify-center pt-2">
+          {/* Final CTA */}
+          <section className="flex justify-center pt-2 pb-6">
             <Link href="/login">
               <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
                 יאללה, בואו נתחיל ללמוד חכם 🚀

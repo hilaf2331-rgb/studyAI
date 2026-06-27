@@ -15,6 +15,7 @@ import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording } from "@/lib/content-check";
+import { saveCachedRecording, getCachedRecording, clearCachedRecording } from "@/lib/recording-cache";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -113,6 +114,16 @@ export const RecorderPage: React.FC = () => {
   const animFrameRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const recordedAtRef = useRef<Date>(new Date());
+  // Long-lived callbacks like mr.onstop close over state from when
+  // recording started, not what's on screen now -- mirror title/courseId
+  // into refs kept fresh every render so the cache write below reflects
+  // whatever the user actually has typed when they hit "stop".
+  const titleRef = useRef(title);
+  const courseIdRef = useRef(courseId);
+  const elapsedRef = useRef(elapsed);
+  useEffect(() => { titleRef.current = title; }, [title]);
+  useEffect(() => { courseIdRef.current = courseId; }, [courseId]);
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
 
   // Load history
   const loadHistory = useCallback(async () => {
@@ -125,6 +136,24 @@ export const RecorderPage: React.FC = () => {
   }, []);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  // Recover an orphaned cached recording left behind by a tab crash/reload
+  // that happened mid-upload-failure, before the user could hit retry --
+  // restores it into the error state so "נסה שנית" can still send it.
+  useEffect(() => {
+    (async () => {
+      const cached = await getCachedRecording();
+      if (!cached) return;
+      recordedAtRef.current = new Date(cached.recordedAt);
+      setTitle(cached.title);
+      setCourseId(cached.courseId);
+      setElapsed(cached.elapsed);
+      setAudioBlobRef(cached.blob);
+      setAudioUrl(URL.createObjectURL(cached.blob));
+      setError("נמצאה הקלטה קודמת שלא הועלתה בהצלחה. ניתן לנסות לשלוח אותה שוב.");
+      setRecState("error");
+    })();
+  }, []);
 
   // Waveform animation while recording
   const animateWaveform = useCallback(() => {
@@ -175,6 +204,17 @@ export const RecorderPage: React.FC = () => {
         stream.getTracks().forEach(t => t.stop());
         if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
         setWaveform(Array(32).fill(2));
+
+        // Fail-Safe Recording Save: persist the audio locally *before* the
+        // upload pipeline even starts, so a network/server failure during
+        // upload never permanently loses the take.
+        saveCachedRecording({
+          blob,
+          title: titleRef.current,
+          courseId: courseIdRef.current,
+          elapsed: elapsedRef.current,
+          recordedAt: recordedAtRef.current.toISOString(),
+        });
       };
 
       mr.start(250);
@@ -218,7 +258,7 @@ export const RecorderPage: React.FC = () => {
 
     try {
       const fd = new FormData();
-      fd.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+      fd.append("audio", blob, `recording.${blob.type.includes("mp4") ? "mp4" : "webm"}`);
       fd.append("title", recTitle);
       fd.append("recordedAt", recordedAtRef.current.toISOString());
       fd.append("durationSeconds", String(elapsed));
@@ -247,6 +287,9 @@ export const RecorderPage: React.FC = () => {
       if (data.kit) {
         setKitResult(data.kit);
       }
+      // Upload succeeded (or the job was at least registered) -- the local
+      // safety-net copy is no longer needed.
+      clearCachedRecording();
       setRecState("done");
       loadHistory();
     } catch (err: any) {
@@ -291,8 +334,26 @@ export const RecorderPage: React.FC = () => {
     })();
   }, [autoStopped, recState, audioBlobRef, elapsed, title, toast, performSave]);
 
+  // Re-uploads the exact audio Blob already saved to IndexedDB by mr.onstop
+  // (falling back to whatever's still in memory if the cache write somehow
+  // failed) -- the user never has to re-record after a failed upload.
+  const retryUpload = useCallback(async () => {
+    const cached = await getCachedRecording();
+    const blob = cached?.blob ?? audioBlobRef;
+    if (!blob) {
+      // Nothing to re-upload (e.g. the error was a mic-permission failure,
+      // not an upload failure) -- fall back to a normal reset instead of
+      // leaving the user stuck on a dead-end "retry" button.
+      resetRecorder();
+      return;
+    }
+    const recTitle = cached?.title || title.trim() || "הקלטה";
+    performSave(blob, recTitle);
+  }, [audioBlobRef, title, performSave]);
+
   const resetRecorder = () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
+    clearCachedRecording();
     setRecState("idle");
     setElapsed(0);
     setAudioUrl(null);
@@ -563,7 +624,7 @@ export const RecorderPage: React.FC = () => {
                 <AlertCircle className="w-5 h-5 shrink-0" />
                 <p className="text-sm">{error || "אירעה שגיאה"}</p>
               </div>
-              <Button variant="outline" className="w-full" onClick={resetRecorder}>נסה שנית</Button>
+              <Button variant="outline" className="w-full" onClick={retryUpload}>נסה שנית</Button>
             </div>
           )}
         </CardContent>

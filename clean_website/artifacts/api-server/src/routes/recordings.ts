@@ -74,6 +74,20 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const courseId = req.body.courseId ? Number(req.body.courseId) : undefined;
   const mimeType = req.file.mimetype || "audio/webm";
 
+  // Real-time bookmarks the student tapped during the live recording
+  // ("סמן רגע חשוב 📌"), sent as a JSON-stringified array of elapsed
+  // seconds -- best-effort parse, since a malformed/missing field should
+  // never block the upload itself, only skip the bookmark-aware prompting.
+  let bookmarkTimestamps: number[] = [];
+  if (typeof req.body.bookmarks === "string") {
+    try {
+      const parsed = JSON.parse(req.body.bookmarks);
+      if (Array.isArray(parsed)) {
+        bookmarkTimestamps = parsed.filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0);
+      }
+    } catch {}
+  }
+
   if (durationSeconds && durationSeconds > MAX_RECORDING_SECONDS) {
     return res.status(413).json({ error: mediaTooLargeMessage("he"), code: "RECORDING_TOO_LONG" });
   }
@@ -153,7 +167,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     await requireTokenBalance(userId);
 
     const [summaryResult, flashResult, questionResult] = await Promise.all([
-      generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed" }),
+      generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds }),
       generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
       generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
     ]);

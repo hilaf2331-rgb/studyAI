@@ -19,7 +19,7 @@ import { saveCachedRecording, getCachedRecording, clearCachedRecording } from "@
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
-  AlertCircle, Clock, Calendar, Zap,
+  AlertCircle, Clock, Calendar, Zap, Bookmark,
 } from "lucide-react";
 
 // Hard ceiling matching the backend's MAX_RECORDING_SECONDS in
@@ -97,6 +97,11 @@ export const RecorderPage: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
 
+  // Real-Time Bookmarking: timestamps (elapsed seconds) the student marked
+  // as important during the live recording, surfaced to the backend so the
+  // AI summary can pay closer attention to those moments.
+  const [bookmarks, setBookmarks] = useState<number[]>([]);
+
   // Mic check: lets the user verify (and pick) their input device before
   // they ever hit "Record".
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -143,9 +148,11 @@ export const RecorderPage: React.FC = () => {
   const titleRef = useRef(title);
   const courseIdRef = useRef(courseId);
   const elapsedRef = useRef(elapsed);
+  const bookmarksRef = useRef(bookmarks);
   useEffect(() => { titleRef.current = title; }, [title]);
   useEffect(() => { courseIdRef.current = courseId; }, [courseId]);
   useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
+  useEffect(() => { bookmarksRef.current = bookmarks; }, [bookmarks]);
 
   // Load history
   const loadHistory = useCallback(async () => {
@@ -172,6 +179,7 @@ export const RecorderPage: React.FC = () => {
       setElapsed(cached.elapsed);
       setAudioBlobRef(cached.blob);
       setAudioUrl(URL.createObjectURL(cached.blob));
+      setBookmarks(cached.bookmarks || []);
       setError("נמצאה הקלטה קודמת שלא הועלתה בהצלחה. ניתן לנסות לשלוח אותה שוב.");
       setRecState("error");
     })();
@@ -271,6 +279,7 @@ export const RecorderPage: React.FC = () => {
     setKitResult(null);
     setAutoStopped(false);
     setIsPaused(false);
+    setBookmarks([]);
     setRecState("idle");
     chunksRef.current = [];
 
@@ -318,6 +327,7 @@ export const RecorderPage: React.FC = () => {
           courseId: courseIdRef.current,
           elapsed: elapsedRef.current,
           recordedAt: recordedAtRef.current.toISOString(),
+          bookmarks: bookmarksRef.current,
         });
 
         // The recording stream is fully released now -- safe to bring the
@@ -383,6 +393,15 @@ export const RecorderPage: React.FC = () => {
     }
   };
 
+  // Real-Time Bookmarking: lets the student flag a moment as important
+  // while the lecture is still being recorded, so the AI summary can later
+  // pay closer attention to whatever was being discussed around it.
+  const addBookmark = () => {
+    const ts = elapsedRef.current;
+    setBookmarks(prev => [...prev, ts]);
+    toast({ description: `סומן בדקה ${formatDuration(ts)} 📌` });
+  };
+
   const performSave = useCallback(async (blob: Blob, recTitle: string) => {
     setError("");
     setRecState("saving");
@@ -397,6 +416,7 @@ export const RecorderPage: React.FC = () => {
       fd.append("recordedAt", recordedAtRef.current.toISOString());
       fd.append("durationSeconds", String(elapsed));
       if (courseId) fd.append("courseId", courseId);
+      if (bookmarks.length > 0) fd.append("bookmarks", JSON.stringify(bookmarks));
 
       const res = await fetch(apiUrl("/api/recordings"), {
         method: "POST",
@@ -431,7 +451,7 @@ export const RecorderPage: React.FC = () => {
       setError("שמירת ההקלטה נכשלה. נסה שנית.");
       setRecState("error");
     }
-  }, [mimeType, elapsed, courseId, loadHistory]);
+  }, [mimeType, elapsed, courseId, bookmarks, loadHistory]);
 
   const handleSave = async () => {
     if (!audioBlobRef) return;
@@ -497,6 +517,7 @@ export const RecorderPage: React.FC = () => {
     setKitResult(null);
     setSaveStep(0);
     setAutoStopped(false);
+    setBookmarks([]);
   };
 
   const deleteRecording = async (id: number) => {
@@ -628,6 +649,27 @@ export const RecorderPage: React.FC = () => {
                   />
                 ))}
               </div>
+
+              {!isPaused && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="w-full gap-2 border border-amber-300 dark:border-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-700 dark:text-amber-300"
+                  onClick={addBookmark}
+                >
+                  <Bookmark className="w-5 h-5" /> סמן רגע חשוב 📌
+                </Button>
+              )}
+
+              {bookmarks.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {bookmarks.map((ts, i) => (
+                    <Badge key={i} variant="outline" className="gap-1 text-xs font-mono">
+                      <Bookmark className="w-2.5 h-2.5" />{formatDuration(ts)}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <Button size="lg" variant="outline" className="gap-2" onClick={togglePause}>

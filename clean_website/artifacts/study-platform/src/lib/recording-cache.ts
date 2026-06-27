@@ -14,6 +14,7 @@ export interface CachedRecording {
   courseId: string;
   elapsed: number;
   recordedAt: string;
+  bookmarks: number[];
 }
 
 function openDb(): Promise<IDBDatabase> {

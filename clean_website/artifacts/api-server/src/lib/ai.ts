@@ -910,8 +910,41 @@ Output plain Markdown text only -- no JSON, no code fence (\`\`\`), no preamble 
   });
 }
 
+// Whisper's recording transcript has no per-segment timestamps (verbose_json
+// is requested but only `text`/`duration` are kept -- see transcribeAudio in
+// extractor.ts), so a bookmark's recorded second is mapped onto the
+// transcript only by proportional position (timestamp / totalDuration ->
+// character offset), not by an exact timestamp-to-text alignment. Good
+// enough to anchor the AI's attention near the right neighborhood of the
+// lecture without claiming precision the data doesn't support.
+function buildBookmarkContext(
+  bookmarkTimestamps: number[] | undefined,
+  audioDurationSeconds: number | undefined,
+  content: string,
+  isHe: boolean,
+): string {
+  if (!bookmarkTimestamps || bookmarkTimestamps.length === 0 || !audioDurationSeconds || audioDurationSeconds <= 0) {
+    return "";
+  }
+  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const EXCERPT_RADIUS = 200;
+  const entries = bookmarkTimestamps.map((ts) => {
+    const fraction = Math.min(1, Math.max(0, ts / audioDurationSeconds));
+    const charPos = Math.round(fraction * content.length);
+    const excerpt = content.slice(Math.max(0, charPos - EXCERPT_RADIUS), charPos + EXCERPT_RADIUS).trim();
+    return { ts, excerpt };
+  });
+
+  if (isHe) {
+    const lines = entries.map((e) => `- בדקה ${fmt(e.ts)}, בסביבות הטקסט: "...${e.excerpt}..."`).join("\n");
+    return `\n---\nהתלמיד/ה סימן/ה את הרגעים הבאים כ"חשובים" בזמן ההרצאה החיה (לחיצה על כפתור סימון רגע בזמן אמת):\n${lines}\n\nהתייחס/י במיוחד למושגים המרכזיים שמופיעים בקרבת כל אחד מהרגעים הללו, והדגש/י אותם בסיכום הסופי בעזרת סקשן/תג מיוחד עם הכיתוב המדויק "📌 נקודה קריטית שסומנה במהלך השיעור" ממש לפני ההסבר על אותו נושא.\n`;
+  }
+  const lines = entries.map((e) => `- At minute ${fmt(e.ts)}, near this part of the transcript: "...${e.excerpt}..."`).join("\n");
+  return `\n---\nThe student marked the following moments as "important" live during the lecture (tapped a bookmark button in real time):\n${lines}\n\nPay extra attention to the core concepts discussed near each of these moments, and highlight them in the final summary with a dedicated section/badge using the exact label "📌 Critical point marked during class" right before the explanation of that topic.\n`;
+}
+
 export function generateSummary(
-  opts: AIGenerationOptions & { summaryType: string; topic?: string }
+  opts: AIGenerationOptions & { summaryType: string; topic?: string; bookmarkTimestamps?: number[]; audioDurationSeconds?: number }
 ): Promise<{
   content: string;
   keyPoints: string[];
@@ -922,7 +955,7 @@ export function generateSummary(
 }
 
 async function generateSummaryImpl(
-  opts: AIGenerationOptions & { summaryType: string; topic?: string }
+  opts: AIGenerationOptions & { summaryType: string; topic?: string; bookmarkTimestamps?: number[]; audioDurationSeconds?: number }
 ): Promise<{
   content: string;
   keyPoints: string[];
@@ -933,8 +966,9 @@ async function generateSummaryImpl(
   parts: string[];
   chunked: boolean;
 }> {
-  const { language, materialContent, materialTitle, summaryType, topic, materialId } = opts;
+  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds } = opts;
   const isHe = language === "he";
+  const bookmarkContext = buildBookmarkContext(bookmarkTimestamps, audioDurationSeconds, materialContent, isHe);
 
   const typeMap: Record<string, { he: string; en: string }> = {
     quick:         { he: "סיכום קצר ותמציתי (עד 400 מילה) עם הנקודות המרכזיות בלבד", en: "a short summary (up to 400 words) with only the key points" },
@@ -1001,11 +1035,11 @@ async function generateSummaryImpl(
       ? `## סיכום מחולק לפרקים של חומר הלימוד "${materialTitle}":
 
 ${contentSlice(chapterBody)}
-
+${bookmarkContext}
 ---
 המשימה שלך: קרא את כל הפרקים מעלה וצור:
 1. keyPoints — מערך של 5–8 משפטים קצרים, הכי חשובים מכל החומר (מה שהייתה רוצה לדעת לפני הבחינה).
-2. executiveSummary — פסקת "סיכום מנהלים" חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור", המכסה את כל הפרקים.
+2. executiveSummary — פסקת "סיכום מנהלים" חמה של 3-5 משפטים, כאילו אתה אומר לחבר "זה מה שחשוב שתזכור", המכסה את כל הפרקים.${bookmarkContext ? ' לאחר פסקת הסיכום, הוסף סקשן נפרד בשם "## נקודות קריטיות שסומנו במהלך השיעור" עם תג "📌 נקודה קריטית שסומנה במהלך השיעור" והסבר קצר לכל אחד מהרגעים שסומנו.' : ""}
 
 החזר JSON בלבד במבנה הבא:
 {
@@ -1015,11 +1049,11 @@ ${contentSlice(chapterBody)}
       : `## Chapter-by-chapter summary of study material "${materialTitle}":
 
 ${contentSlice(chapterBody)}
-
+${bookmarkContext}
 ---
 Your task: read every chapter above and produce:
 1. keyPoints — an array of 5-8 short sentences, the most important things from the whole material (what you'd want to know before the exam).
-2. executiveSummary — a warm 3-5 sentence "executive summary" wrap-up, written like you're telling a friend "here's what actually matters", covering all the chapters.
+2. executiveSummary — a warm 3-5 sentence "executive summary" wrap-up, written like you're telling a friend "here's what actually matters", covering all the chapters.${bookmarkContext ? ' After the wrap-up, add a separate section titled "## Critical Points Marked During Class" with a "📌 Critical point marked during class" badge and a short explanation for each marked moment.' : ""}
 
 Return ONLY JSON matching this structure:
 {
@@ -1057,7 +1091,7 @@ Return ONLY JSON matching this structure:
     ? `## חומר לימוד: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-
+${bookmarkContext}
 ---
 המשימה שלך: צור ${typeDesc}.
 
@@ -1080,7 +1114,7 @@ ${useRichFormatting ? richBulletsHe : ""}${summaryType === "quick" ? '- חשוב
     : `## Study Material: "${materialTitle}"
 
 ${contentSlice(aggregatedContent)}
-
+${bookmarkContext}
 ---
 Your task: Create ${typeDesc}.
 

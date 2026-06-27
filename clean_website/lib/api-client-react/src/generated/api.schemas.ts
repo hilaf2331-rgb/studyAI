@@ -42,6 +42,21 @@ export interface CourseUpdate {
   color?: string;
 }
 
+export interface GlossaryTerm {
+  id: number;
+  courseId: number;
+  term: string;
+  definition: string;
+  createdAt: string;
+}
+
+export interface GlossaryTermInput {
+  /** @minLength 1 */
+  term: string;
+  /** @minLength 1 */
+  definition: string;
+}
+
 export type MaterialContentType = typeof MaterialContentType[keyof typeof MaterialContentType];
 
 

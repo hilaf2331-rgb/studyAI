@@ -105,6 +105,75 @@ export const DeleteCourseParams = zod.object({
 
 
 /**
+ * @summary List glossary terms for a course
+ */
+export const ListGlossaryTermsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListGlossaryTermsResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "term": zod.string(),
+  "definition": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListGlossaryTermsResponse = zod.array(ListGlossaryTermsResponseItem)
+
+
+/**
+ * @summary Add a glossary term to a course
+ */
+export const CreateGlossaryTermParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+
+export const CreateGlossaryTermBody = zod.object({
+  "term": zod.string().min(1),
+  "definition": zod.string().min(1)
+})
+
+
+/**
+ * @summary Update a glossary term
+ */
+export const UpdateGlossaryTermParams = zod.object({
+  "id": zod.coerce.number(),
+  "termId": zod.coerce.number()
+})
+
+
+
+
+
+export const UpdateGlossaryTermBody = zod.object({
+  "term": zod.string().min(1),
+  "definition": zod.string().min(1)
+})
+
+export const UpdateGlossaryTermResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "term": zod.string(),
+  "definition": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a glossary term
+ */
+export const DeleteGlossaryTermParams = zod.object({
+  "id": zod.coerce.number(),
+  "termId": zod.coerce.number()
+})
+
+
+/**
  * @summary List materials, optionally filtered by courseId
  */
 export const ListMaterialsQueryParams = zod.object({

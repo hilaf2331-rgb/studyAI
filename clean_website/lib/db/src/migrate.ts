@@ -47,4 +47,20 @@ export async function runStartupMigrations(): Promise<void> {
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS materials_share_id_unique ON materials (share_id);
   `);
+
+  // Course Glossary: student-defined course-specific terminology used to
+  // ground the AI summary pipeline (see ai.ts's buildGlossaryContext).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS glossary_terms (
+      id serial PRIMARY KEY,
+      course_id integer NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      term text NOT NULL,
+      definition text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS glossary_terms_course_id_idx ON glossary_terms (course_id);
+  `);
 }

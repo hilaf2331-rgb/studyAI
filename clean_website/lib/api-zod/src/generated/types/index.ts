@@ -52,6 +52,8 @@ export * from './generateAllResultQuestionSet';
 export * from './generateAllResultSummary';
 export * from './generationProgress';
 export * from './generationProgressStage';
+export * from './glossaryTerm';
+export * from './glossaryTermInput';
 export * from './healthStatus';
 export * from './listMaterialsParams';
 export * from './material';

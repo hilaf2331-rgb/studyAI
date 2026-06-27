@@ -131,6 +131,106 @@ paths:
           description: Deleted
 
   # ── Study Materials ───────────────────────────────────────────────────────
+  /courses/{id}/glossary:
+    get:
+      operationId: listGlossaryTerms
+      tags: [courses]
+      summary: List glossary terms for a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of glossary terms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GlossaryTerm"
+        "404":
+          description: Not found
+    post:
+      operationId: createGlossaryTerm
+      tags: [courses]
+      summary: Add a glossary term to a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GlossaryTermInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlossaryTerm"
+        "404":
+          description: Not found
+
+  /courses/{id}/glossary/{termId}:
+    patch:
+      operationId: updateGlossaryTerm
+      tags: [courses]
+      summary: Update a glossary term
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: termId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GlossaryTermInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlossaryTerm"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteGlossaryTerm
+      tags: [courses]
+      summary: Delete a glossary term
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: termId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
   /materials:
     get:
       operationId: listMaterials
@@ -917,6 +1017,34 @@ components:
           type: string
         color:
           type: string
+
+    # ── Glossary ─────────────────────────────────────────────────────────────
+    GlossaryTerm:
+      type: object
+      required: [id, courseId, term, definition, createdAt]
+      properties:
+        id:
+          type: integer
+        courseId:
+          type: integer
+        term:
+          type: string
+        definition:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    GlossaryTermInput:
+      type: object
+      required: [term, definition]
+      properties:
+        term:
+          type: string
+          minLength: 1
+        definition:
+          type: string
+          minLength: 1
 
     # ── Material ─────────────────────────────────────────────────────────────
     Material:

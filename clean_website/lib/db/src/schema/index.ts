@@ -8,3 +8,4 @@ export * from "./exams";
 export * from "./chat";
 export * from "./activity";
 export * from "./recordings";
+export * from "./glossary";

@@ -1,7 +1,11 @@
 import { Router } from "express";
-import { db, coursesTable, materialsTable } from "@workspace/db";
+import { db, coursesTable, materialsTable, glossaryTermsTable } from "@workspace/db";
 import { eq, count, and } from "drizzle-orm";
-import { CreateCourseBody, UpdateCourseBody, GetCourseParams, UpdateCourseParams, DeleteCourseParams } from "@workspace/api-zod";
+import {
+  CreateCourseBody, UpdateCourseBody, GetCourseParams, UpdateCourseParams, DeleteCourseParams,
+  ListGlossaryTermsParams, CreateGlossaryTermParams, CreateGlossaryTermBody,
+  UpdateGlossaryTermParams, UpdateGlossaryTermBody, DeleteGlossaryTermParams,
+} from "@workspace/api-zod";
 
 const router = Router();
 

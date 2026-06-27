@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
-  Sparkles, Zap, CheckCircle2, AlertCircle, Eye, Plus
+  Sparkles, CheckCircle2, AlertCircle, Eye, Plus
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
@@ -464,7 +464,6 @@ export const MaterialDetailPage: React.FC = () => {
 
   const extractionFailed = material.status === "error";
   const hasContent = !extractionFailed && (material.extractedText?.length ?? 0) > 20;
-  const canGenerateKit = hasContent && !material.tooShortForGeneration;
   // On failure the extractor stores a "[Extraction failed: ...]" placeholder
   // as extractedText (there's no separate persisted error-message column) —
   // strip the brackets/prefix back off so the banner reads like a message
@@ -494,28 +493,16 @@ export const MaterialDetailPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* The one-click "Generate Study Kit" trigger is gone -- generation now
+          fires automatically right after upload (see the ?autogen=1 effect
+          above), and once a kit exists, per-section "Generate More" buttons
+          inside the summary/flashcards/quiz views are how students add to it.
+          This card now only ever shows the auto-triggered run's progress/
+          result/error -- never a redundant manual prompt -- so it disappears
+          entirely once there's nothing in flight to report. */}
+      {(kitLoading || kitResult || kitError) && (
       <Card className={`border-2 transition-all ${kitResult ? "border-green-400/60 bg-green-50/40 dark:bg-green-950/20" : "border-primary/30 bg-primary/5"}`}>
         <CardContent className="p-6">
-          {!kitLoading && !kitResult && (
-            <div className={`flex flex-col sm:flex-row items-center gap-4 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
-              <div className="flex-1">
-                <h2 className="font-bold text-lg flex items-center gap-2"><Zap className="w-5 h-5 text-primary" />{isRTL ? "צור ערכת לימוד מלאה" : "Generate Full Study Kit"}</h2>
-                <p className="text-sm text-muted-foreground">{isRTL ? "סיכום, כרטיסיות ושאלות בלחיצה אחת" : "Summary, flashcards & quiz in one click"}</p>
-              </div>
-              {!canGenerateKit && hasContent ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button size="lg" onClick={handleGenerateAll} disabled><Zap className="w-5 h-5" />{isRTL ? "צור ערכת לימוד ⚡" : "Generate Study Kit ⚡"}</Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}</TooltipContent>
-                </Tooltip>
-              ) : (
-                <Button size="lg" onClick={handleGenerateAll} disabled={!canGenerateKit}><Zap className="w-5 h-5" />{isRTL ? "צור ערכת לימוד ⚡" : "Generate Study Kit ⚡"}</Button>
-              )}
-            </div>
-          )}
           {kitLoading && (
             <div className="space-y-4">
               {/* Summary lands first and stays visible the instant its stage
@@ -596,6 +583,7 @@ export const MaterialDetailPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      )}
 
       {extractionFailed ? (
         <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-4 py-3 rounded-lg">

@@ -7,8 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Wand2, Sparkles } from "lucide-react";
+import { BetaUpsellDialog } from "@/components/beta-upsell-dialog";
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Wand2 } from "lucide-react";
 
 export const ExamResultPage: React.FC = () => {
   const { id: examId, resultId } = useParams<{ id: string; resultId: string }>();
@@ -180,29 +180,7 @@ export const ExamResultPage: React.FC = () => {
         </div>
       )}
 
-      <Dialog open={showUpsell} onOpenChange={setShowUpsell}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
-              {isRTL ? "נגמרו לך הטוקנים" : "Out of Tokens"}
-            </DialogTitle>
-            <DialogDescription>
-              {isRTL
-                ? "פתח ניתוח נקודות חולשה ושאלות תיקון בעזרת רכישת טוקנים נוספים!"
-                : "Unlock your Weak Spot Analytics and Rescue Questions by purchasing more tokens!"}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUpsell(false)}>
-              {isRTL ? "אולי בהמשך" : "Maybe later"}
-            </Button>
-            <Button onClick={() => setShowUpsell(false)}>
-              {isRTL ? "קנה טוקנים" : "Buy Tokens"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BetaUpsellDialog open={showUpsell} onOpenChange={setShowUpsell} />
     </div>
   );
 };

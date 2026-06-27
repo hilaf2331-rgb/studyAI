@@ -36,7 +36,9 @@ export const DailyReviewPage: React.FC = () => {
   if ((error as any)?.status === 402) {
     return (
       <p className="text-muted-foreground">
-        {isRTL ? "נגמרו לך הטוקנים לסקירה היומית. קנה טוקנים נוספים כדי להמשיך." : "You're out of tokens for Today's Review. Buy more tokens to continue."}
+        {isRTL
+          ? "נגמרו לך הטוקנים לסקירה היומית. המערכת נמצאת כרגע בגרסת בטא, ואפשרות לרכישת טוקנים נוספים תתווסף בעתיד."
+          : "You're out of tokens for Today's Review. The platform is currently in a free beta phase, and the option to purchase more tokens will be added in the future."}
       </p>
     );
   }

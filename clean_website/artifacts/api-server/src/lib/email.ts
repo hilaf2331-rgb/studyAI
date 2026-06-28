@@ -5,7 +5,11 @@ import { logger } from "./logger";
 // a TCP connection out. This sends over plain HTTPS instead, which Render
 // allows like any other outbound API call.
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL || "FocusStudy Contact Form <onboarding@resend.dev>";
+// Requires focusstudy.net to be a verified sending domain in Resend (DNS
+// records below) -- sending from an unverified domain gets rejected by
+// Resend's API, so until verification completes, override
+// CONTACT_FROM_EMAIL to their onboarding@resend.dev test sender instead.
+const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL || "FocusStudy <contact@focusstudy.net>";
 const CONTACT_TO_EMAIL = process.env.CONTACT_TO_EMAIL || "focusstudy.net@gmail.com";
 
 export async function sendContactMessageEmail(input: { name: string; email: string; message: string }): Promise<void> {

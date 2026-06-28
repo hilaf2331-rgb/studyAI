@@ -22,11 +22,32 @@ const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "other", label: "אחר / לא לציין" },
 ];
 
+// Dedicated key for the form-of-address preference -- read on mount and
+// written on every change, independent of whatever the auth user object
+// happens to hold, so the choice survives a refresh even if the user record
+// itself gets refetched/overwritten without a gender field.
+const PREFERRED_GENDER_KEY = "studyai_preferred_gender";
+
+function readStoredGender(): Gender | null {
+  const raw = localStorage.getItem(PREFERRED_GENDER_KEY);
+  return raw === "male" || raw === "female" || raw === "other" ? raw : null;
+}
+
 export const ProfilePage: React.FC = () => {
   const { isRTL } = useLanguage();
   const { user, updateUser } = useAuth();
   const { data: balance, isLoading } = useGetTokenBalance();
   const { open: openPurchaseModal } = usePurchaseModal();
+
+  const [gender, setGender] = React.useState<Gender>(
+    () => readStoredGender() ?? user?.gender ?? "male",
+  );
+
+  const handleGenderChange = (value: Gender) => {
+    setGender(value);
+    localStorage.setItem(PREFERRED_GENDER_KEY, value);
+    updateUser({ gender: value });
+  };
 
   const usedPercent = balance && balance.monthlyTokenQuota > 0
     ? Math.min(100, Math.round(((balance.monthlyTokenQuota - balance.tokensRemaining) / balance.monthlyTokenQuota) * 100))
@@ -59,8 +80,8 @@ export const ProfilePage: React.FC = () => {
         </CardHeader>
         <CardContent>
           <RadioGroup
-            value={user?.gender ?? "male"}
-            onValueChange={(value) => updateUser({ gender: value as Gender })}
+            value={gender}
+            onValueChange={(value) => handleGenderChange(value as Gender)}
             className="flex flex-wrap gap-4"
           >
             {GENDER_OPTIONS.map((option) => (

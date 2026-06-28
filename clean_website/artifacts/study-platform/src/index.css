@@ -118,41 +118,41 @@
 }
 
 .dark {
-  --button-outline: rgba(255,255,255, .10);
+  --button-outline: rgba(255,255,255, .14);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 222 45% 9%;
-  --foreground: 210 30% 96%;
-  --border: 217 30% 20%;
+  --background: 240 35% 4%;
+  --foreground: 210 30% 97%;
+  --border: 240 25% 18%;
 
-  --card: 222 40% 13%;
-  --card-foreground: 210 30% 96%;
-  --card-border: 217 30% 20%;
+  --card: 240 30% 8%;
+  --card-foreground: 210 30% 97%;
+  --card-border: 240 25% 18%;
 
-  --sidebar: 222 42% 12%;
+  --sidebar: 240 32% 6%;
   --sidebar-foreground: 210 30% 96%;
-  --sidebar-border: 217 30% 18%;
-  --sidebar-primary: 28 85% 60%;
-  --sidebar-primary-foreground: 24 45% 12%;
-  --sidebar-accent: 217 35% 22%;
+  --sidebar-border: 240 25% 16%;
+  --sidebar-primary: 270 90% 70%;
+  --sidebar-primary-foreground: 240 35% 8%;
+  --sidebar-accent: 250 40% 18%;
   --sidebar-accent-foreground: 210 30% 96%;
-  --sidebar-ring: 28 85% 60%;
+  --sidebar-ring: 270 90% 70%;
 
-  --popover: 222 40% 13%;
-  --popover-foreground: 210 30% 96%;
-  --popover-border: 217 30% 20%;
+  --popover: 240 30% 8%;
+  --popover-foreground: 210 30% 97%;
+  --popover-border: 240 25% 18%;
 
-  --primary: 213 85% 65%;
-  --primary-foreground: 222 47% 11%;
+  --primary: 263 85% 66%;
+  --primary-foreground: 0 0% 100%;
 
   --secondary: 28 85% 58%;
   --secondary-foreground: 24 50% 12%;
 
-  --muted: 217 30% 18%;
-  --muted-foreground: 215 20% 70%;
+  --muted: 240 22% 14%;
+  --muted-foreground: 220 15% 70%;
 
   --accent: 28 70% 22%;
   --accent-foreground: 28 90% 85%;
@@ -160,8 +160,8 @@
   --destructive: 0 70% 45%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 217 30% 20%;
-  --ring: 213 85% 65%;
+  --input: 240 25% 18%;
+  --ring: 263 85% 66%;
 }
 
 @layer base {
@@ -202,6 +202,14 @@
 }
 .animate-spin-slow {
   animation: spin-slow 8s linear infinite;
+}
+
+@keyframes wave-drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-wave-drift {
+  animation: wave-drift 6s ease-in-out infinite;
 }
 
 @keyframes progress-shimmer {

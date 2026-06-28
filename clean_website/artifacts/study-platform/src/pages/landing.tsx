@@ -3,33 +3,37 @@ import { Link } from "wouter";
 import { ArrowLeft, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundGlow } from "@/components/background-glow";
+import { WaveField } from "@/components/wave-field";
 import { TokenGlyph, InfinityGlyph, FlashcardGlyph, RescueGlyph } from "@/components/icons";
 
 // Public marketing page — the / route for logged-out visitors (see App.tsx).
 export const LandingPage: React.FC = () => {
   return (
     <div className="relative min-h-screen flex flex-col bg-background overflow-hidden" dir="rtl">
-      {/* Top nav */}
-      <header className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-5">
-        <div className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="FocusStudy" className="w-8 h-8 object-contain" />
-          <span className="text-lg font-bold tracking-tight">FocusStudy</span>
+      {/* Top nav — pill capsule, glass-blurred over the dark background */}
+      <header className="relative z-10 px-4 sm:px-10 pt-5">
+        <div className="flex items-center justify-between gap-4 mx-auto max-w-4xl rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-2.5 shadow-lg shadow-black/20">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="FocusStudy" className="w-8 h-8 object-contain" />
+            <span className="text-lg font-bold tracking-tight">FocusStudy</span>
+          </div>
+          <Link href="/login">
+            <Button size="sm">התחברות / הרשמה</Button>
+          </Link>
         </div>
-        <Link href="/login">
-          <Button>התחברות / הרשמה</Button>
-        </Link>
       </header>
 
       <main className="relative flex-1 flex flex-col items-center px-6 sm:px-10 py-8 sm:py-12">
-        <BackgroundGlow className="top-0 left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] sm:w-[58rem] sm:h-[58rem]" />
-        <BackgroundGlow className="top-[60rem] -right-20 w-[26rem] h-[26rem] opacity-60" />
+        <BackgroundGlow className="top-0 left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] sm:w-[58rem] sm:h-[58rem] opacity-60" />
+        <BackgroundGlow className="top-[60rem] -right-20 w-[26rem] h-[26rem] opacity-40" />
+        <WaveField className="absolute top-[14rem] sm:top-[18rem] left-0 w-full h-[26rem] opacity-80" />
 
         <div className="relative z-10 w-full max-w-3xl space-y-20">
           {/* Hero */}
           <section className="text-center space-y-5 pt-4 sm:pt-8">
-            <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-[1.15]">
+            <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.1]">
               מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
-              <span className="bg-gradient-to-l from-indigo-500 via-fuchsia-500 to-amber-500 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-l from-indigo-400 via-fuchsia-500 to-cyan-400 bg-clip-text text-transparent">
                 ערכת לימוד מלאה
               </span>
               .<br className="hidden sm:block" /> תוך שניות.
@@ -40,21 +44,26 @@ export const LandingPage: React.FC = () => {
               FocusStudy בונה מזה סיכום, כרטיסיות זיכרון וחידון תרגול,
               מוכנים ללמידה כבר ברגע שהעלאתם את החומר.
             </p>
-            <div className="flex justify-center pt-2">
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Link href="/login">
-                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
+                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-fuchsia-500/40 hover:-translate-y-0.5 transition-all duration-300">
                   יאללה, מעלים חומר ראשון 🚀
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
+              <a href="#why-focusstudy">
+                <Button size="lg" variant="outline" className="text-base px-8 font-bold tracking-wide">
+                  למה FocusStudy?
+                </Button>
+              </a>
             </div>
           </section>
 
           {/* Why FocusStudy */}
-          <section className="space-y-6">
+          <section id="why-focusstudy" className="space-y-6 scroll-mt-24">
             <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">למה FocusStudy?</h2>
             <div className="grid sm:grid-cols-3 gap-4">
-              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/20 hover:border-indigo-400/50">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/20 hover:border-indigo-400/50">
                 <FlashcardGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">ערכת לימוד מיידית</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -62,7 +71,7 @@ export const LandingPage: React.FC = () => {
                   וחידון תרגול — בלי שום הגדרה נוספת.
                 </p>
               </div>
-              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/50">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/50">
                 <RescueGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">★ Rescue Questions — המורה הפרואקטיבי שלכם</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -70,7 +79,7 @@ export const LandingPage: React.FC = () => {
                   ממוקדות שתוקפות רק את הנקודות החלשות שלכם — לפני המבחן, לא אחריו.
                 </p>
               </div>
-              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
                 <RotateCw className="w-10 h-10 mx-auto text-fuchsia-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
                 <p className="text-sm font-bold tracking-wide">חזרה מרווחת שמזכירה לכם מה לחזור עליו</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -83,14 +92,14 @@ export const LandingPage: React.FC = () => {
 
           {/* Token pillars */}
           <section className="grid sm:grid-cols-2 gap-4">
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/20 hover:border-amber-400/50">
+            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/20 hover:border-amber-400/50">
               <TokenGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
                 <strong className="block mb-0.5">משלמים רק על מה שמשתמשים!</strong>
                 בלי התחייבות חודשית – קונים טוקנים לפי הצורך, ואין מגבלת שימוש יומית.
               </p>
             </div>
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-500/20 hover:border-violet-400/50">
+            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-500/20 hover:border-violet-400/50">
               <InfinityGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
                 <strong className="block mb-0.5">האם הטוקנים פגים בתוקף? לא!</strong>

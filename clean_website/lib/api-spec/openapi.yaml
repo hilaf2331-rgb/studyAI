@@ -993,6 +993,27 @@ paths:
         "404":
           description: Not found
 
+  /shared/{shareId}/save:
+    post:
+      operationId: saveSharedMaterial
+      tags: [shared]
+      summary: Clone a shared study kit (summary + flashcards) into the authenticated caller's own materials
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: New material created from the shared study kit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveSharedMaterialResult"
+        "404":
+          description: Not found
+
 components:
   schemas:
     HealthStatus:
@@ -1170,6 +1191,15 @@ components:
                 type: string
               concept:
                 type: ["string", "null"]
+
+    SaveSharedMaterialResult:
+      type: object
+      required: [ok, materialId]
+      properties:
+        ok:
+          type: boolean
+        materialId:
+          type: integer
 
     GenerationProgress:
       type: object

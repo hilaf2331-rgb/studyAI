@@ -52,6 +52,7 @@ import type {
   QuestionSet,
   SaveBitNameInput,
   SaveBitNameResult,
+  SaveSharedMaterialResult,
   SharedMaterial,
   StudyStreak,
   Summary,
@@ -3788,4 +3789,74 @@ export function useGetSharedMaterial<TData = Awaited<ReturnType<typeof getShared
 
 
 
+
+export const getSaveSharedMaterialUrl = (shareId: string,) => {
+
+
+
+
+  return `/api/shared/${shareId}/save`
+}
+
+/**
+ * @summary Clone a shared study kit (summary + flashcards) into the authenticated caller's own materials
+ */
+export const saveSharedMaterial = async (shareId: string, options?: RequestInit): Promise<SaveSharedMaterialResult> => {
+
+  return customFetch<SaveSharedMaterialResult>(getSaveSharedMaterialUrl(shareId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSaveSharedMaterialMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveSharedMaterial>>, TError,{shareId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveSharedMaterial>>, TError,{shareId: string}, TContext> => {
+
+const mutationKey = ['saveSharedMaterial'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveSharedMaterial>>, {shareId: string}> = (props) => {
+          const {shareId} = props ?? {};
+
+          return  saveSharedMaterial(shareId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveSharedMaterialMutationResult = NonNullable<Awaited<ReturnType<typeof saveSharedMaterial>>>
+
+    export type SaveSharedMaterialMutationError = ErrorType<void>
+
+    /**
+ * @summary Clone a shared study kit (summary + flashcards) into the authenticated caller's own materials
+ */
+export const useSaveSharedMaterial = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveSharedMaterial>>, TError,{shareId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveSharedMaterial>>,
+        TError,
+        {shareId: string},
+        TContext
+      > => {
+      return useMutation(getSaveSharedMaterialMutationOptions(options));
+    }
 

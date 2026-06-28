@@ -2,8 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { randomBytes } from "crypto";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
-import { eq, count, and, inArray } from "drizzle-orm";
-import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams } from "@workspace/api-zod";
+import { eq, count, and, inArray, desc } from "drizzle-orm";
+import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError, AudioDurationLimitError } from "../lib/extractor";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -331,6 +331,73 @@ router.post("/materials/:id/share", async (req, res) => {
   }
 
   res.json(await getMaterialWithCounts(id, userId));
+});
+
+// Clones a shared study kit into the caller's own materials -- the source
+// material is single-owner (materialsTable.userId), so "saving" someone
+// else's shared deck can't be a join/link onto the original row; instead
+// this copies the summary + flashcard deck/cards into a brand-new material
+// owned by the caller, who can then study/review it on their own SRS
+// schedule independent of the original.
+router.post("/shared/:shareId/save", async (req, res) => {
+  const userId = req.user!.userId;
+  const { shareId } = SaveSharedMaterialParams.parse({ shareId: req.params.shareId });
+
+  const [source] = await db.select().from(materialsTable).where(eq(materialsTable.shareId, shareId));
+  if (!source) return res.status(404).json({ error: "Not found" });
+
+  const [material] = await db.insert(materialsTable).values({
+    userId,
+    title: source.title,
+    contentType: source.contentType,
+    language: source.language,
+    status: "ready",
+    extractedText: source.extractedText,
+  }).returning();
+
+  const [summary] = await db.select().from(summariesTable)
+    .where(eq(summariesTable.materialId, source.id))
+    .orderBy(desc(summariesTable.createdAt))
+    .limit(1);
+  if (summary) {
+    await db.insert(summariesTable).values({
+      materialId: material.id,
+      summaryType: summary.summaryType,
+      language: summary.language,
+      content: summary.content,
+      keyPoints: summary.keyPoints,
+    });
+  }
+
+  const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.materialId, source.id));
+  if (deck) {
+    const [newDeck] = await db.insert(flashcardDecksTable).values({
+      materialId: material.id,
+      title: deck.title,
+      language: deck.language,
+    }).returning();
+
+    const cards = await db.select().from(flashcardsTable).where(eq(flashcardsTable.deckId, deck.id));
+    if (cards.length) {
+      await db.insert(flashcardsTable).values(cards.map(c => ({
+        deckId: newDeck.id,
+        front: c.front,
+        back: c.back,
+        difficulty: c.difficulty,
+        cardType: c.cardType,
+        concept: c.concept,
+      })));
+    }
+  }
+
+  await db.insert(activityTable).values({
+    userId,
+    activityType: "upload",
+    description: `Saved "${material.title}" from a shared link`,
+    materialTitle: material.title,
+  });
+
+  res.json({ ok: true, materialId: material.id });
 });
 
 router.get("/materials/upload-progress/:uploadId", async (req, res) => {

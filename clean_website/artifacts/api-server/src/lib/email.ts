@@ -1,5 +1,14 @@
+import dns from "node:dns";
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
+
+// Belt-and-suspenders alongside the transport's own `family: 4` below --
+// Node's default "verbatim" DNS ordering can still hand back an AAAA
+// (IPv6) record first for smtp.gmail.com on hosts where outbound IPv6 is
+// blocked (Render/Vercel), which is what kept producing ENETUNREACH even
+// after pinning the transport's connection family. This reorders results
+// process-wide so IPv4 addresses are preferred for every lookup() call.
+dns.setDefaultResultOrder("ipv4first");
 
 // Gmail SMTP, authenticated with an App Password (not the account password --
 // see https://myaccount.google.com/apppasswords). CONTACT_EMAIL_USER is the
@@ -15,7 +24,19 @@ function getTransporter() {
   if (!CONTACT_EMAIL_USER || !CONTACT_EMAIL_PASSWORD) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      service: "gmail",
+      // Port 465 / implicit TLS instead of 587 / STARTTLS -- some hosts
+      // (Render/Vercel) restrict outbound IPv6, and Node's default DNS
+      // lookup can hand back an IPv6 address for smtp.gmail.com, hanging
+      // the connection until the socket timeout. `family: 4` pins DNS
+      // resolution to IPv4 so that never happens.
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      family: 4,
+      lookup: (hostname: string, options: dns.LookupOneOptions, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) =>
+        dns.lookup(hostname, { ...options, family: 4 }, callback),
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
       auth: { user: CONTACT_EMAIL_USER, pass: CONTACT_EMAIL_PASSWORD },
     });
   }

@@ -74,7 +74,6 @@ export const DailyReviewPage: React.FC = () => {
 
   if (done) return (
     <div className="max-w-lg mx-auto text-center py-16 space-y-4">
-      <div className="text-6xl">🎉</div>
       <h2 className="text-2xl font-bold">{isRTL ? "סיימת את הסקירה היומית!" : "Daily review complete!"}</h2>
       <p className="text-muted-foreground">{isRTL ? `עברת על ${cards.length} כרטיסיות` : `You reviewed ${cards.length} cards`}</p>
       <Button onClick={() => window.history.back()}>

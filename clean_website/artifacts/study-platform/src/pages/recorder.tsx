@@ -401,7 +401,7 @@ export const RecorderPage: React.FC = () => {
   const addBookmark = () => {
     const ts = elapsedRef.current;
     setBookmarks(prev => [...prev, ts]);
-    toast({ description: `סומן בדקה ${formatDuration(ts)} 📌` });
+    toast({ description: `סומן בדקה ${formatDuration(ts)}` });
   };
 
   const performSave = useCallback(async (blob: Blob, recTitle: string) => {
@@ -661,7 +661,7 @@ export const RecorderPage: React.FC = () => {
                   className="w-full gap-2 border border-amber-300 dark:border-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-700 dark:text-amber-300"
                   onClick={addBookmark}
                 >
-                  <Bookmark className="w-5 h-5" /> סמן רגע חשוב 📌
+                  <Bookmark className="w-5 h-5" /> סמן רגע חשוב
                 </Button>
               )}
 
@@ -764,7 +764,7 @@ export const RecorderPage: React.FC = () => {
                     <Mic className="w-4 h-4" /> הקלט מחדש
                   </Button>
                   <Button onClick={handleSave} disabled={!title.trim()} className="gap-2 bg-primary">
-                    <Zap className="w-4 h-4" /> שמור וצור ערכה ⚡
+                    <Zap className="w-4 h-4" /> שמור וצור ערכה
                   </Button>
                 </div>
               )}
@@ -815,7 +815,7 @@ export const RecorderPage: React.FC = () => {
                   <CheckCircle2 className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="font-bold text-green-700 dark:text-green-400">הקלטה נשמרה וערכת הלימוד מוכנה! 🎉</p>
+                  <p className="font-bold text-green-700 dark:text-green-400">הקלטה נשמרה וערכת הלימוד מוכנה!</p>
                   <p className="text-sm text-muted-foreground">{title}</p>
                 </div>
               </div>

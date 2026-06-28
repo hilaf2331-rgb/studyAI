@@ -47,7 +47,7 @@ export const LandingPage: React.FC = () => {
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Link href="/login">
                 <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-fuchsia-500/40 hover:-translate-y-0.5 transition-all duration-300">
-                  יאללה, מעלים חומר ראשון 🚀
+                  יאללה, מעלים חומר ראשון
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
@@ -124,7 +124,7 @@ export const LandingPage: React.FC = () => {
           <section className="flex justify-center pt-2 pb-6">
             <Link href="/login">
               <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
-                יאללה, בואו נתחיל ללמוד חכם 🚀
+                יאללה, בואו נתחיל ללמוד חכם
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>

@@ -77,7 +77,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
         title={!showLabels ? (isRTL ? "טעינת טוקנים" : "Buy Tokens") : undefined}
       >
         <Coins className="w-5 h-5 shrink-0" />
-        {showLabels && <span className="truncate">{isRTL ? "טעינת טוקנים 🪙" : "Buy Tokens"}</span>}
+        {showLabels && <span className="truncate">{isRTL ? "טעינת טוקנים" : "Buy Tokens"}</span>}
       </button>
       <div className={showLabels ? "px-1 pb-1" : "py-1"}>
         <TokenWidget compact={!showLabels} />

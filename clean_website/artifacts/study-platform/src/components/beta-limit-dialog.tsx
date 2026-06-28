@@ -27,12 +27,12 @@ export function BetaLimitDialog({
       <AlertDialogContent dir={isRTL ? "rtl" : "ltr"}>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isRTL ? "🙏 תודה שעוזרים לנו!" : "🙏 Thanks for helping us test!"}
+            {isRTL ? "תודה שעוזרים לנו!" : "Thanks for helping us test!"}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {isRTL
-              ? "הגעת למגבלת הבטא החינמית! תודה שעזרת לנו לבדוק את האתר 🙏"
-              : "You've reached the free beta limit! Thanks so much for helping us test the site 🙏"}
+              ? "הגעת למגבלת הבטא החינמית! תודה שעזרת לנו לבדוק את האתר"
+              : "You've reached the free beta limit! Thanks so much for helping us test the site"}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

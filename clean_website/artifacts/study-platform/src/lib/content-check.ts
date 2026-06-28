@@ -6,17 +6,17 @@
 export const MIN_TEXT_CHARS = 50;
 
 export const NO_CONTENT_MESSAGE_HE =
-  "היי, לא נקלט תוכן בהעלאה. אנא בדוק את הקובץ או ההקלטה ונסה שוב 🙏";
+  "היי, לא נקלט תוכן בהעלאה. אנא בדוק את הקובץ או ההקלטה ונסה שוב.";
 export const NO_CONTENT_MESSAGE_EN =
-  "Hey, no content was detected in your upload. Please check the file or recording and try again 🙏";
+  "Hey, no content was detected in your upload. Please check the file or recording and try again.";
 
 // Distinct from NO_CONTENT_MESSAGE_HE -- this one is specifically for a
 // recording that *exists* but is too quiet/silent to transcribe, so the
 // copy points the user at their mic/volume rather than at the file itself.
 export const SILENT_AUDIO_MESSAGE_HE =
-  "היי... ההקלטה שקטה או בקול חלש מדי לעיבוד. אנא נסו שוב 🎙️✨";
+  "היי... ההקלטה שקטה או בקול חלש מדי לעיבוד. אנא נסו שוב.";
 export const SILENT_AUDIO_MESSAGE_EN =
-  "Hey... the recording is silent or too quiet to process. Please try again 🎙️✨";
+  "Hey... the recording is silent or too quiet to process. Please try again.";
 
 export function noContentMessage(isRTL: boolean): string {
   return isRTL ? NO_CONTENT_MESSAGE_HE : NO_CONTENT_MESSAGE_EN;

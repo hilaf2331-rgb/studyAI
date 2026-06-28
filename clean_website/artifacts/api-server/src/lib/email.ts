@@ -35,7 +35,10 @@ function getTransporter() {
       secure: false,
       requireTLS: true,
       family: 4,
-      connectionTimeout: 10_000,
+      lookup: (hostname: string, options: dns.LookupOneOptions, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) =>
+        dns.lookup(hostname, { ...options, family: 4 }, callback),
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
       auth: { user: CONTACT_EMAIL_USER, pass: CONTACT_EMAIL_PASSWORD },
     });
   }

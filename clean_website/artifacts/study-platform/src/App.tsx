@@ -10,6 +10,7 @@ import { PurchaseModalProvider } from "@/lib/purchase-modal";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
 import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
+import { PurchaseSuccessCelebration } from "@/components/purchase-success-celebration";
 import { Spinner } from "@/components/ui/spinner";
 import NotFound from "@/pages/not-found";
 import { setAuthTokenGetter, saveSharedMaterial } from "@workspace/api-client-react";
@@ -175,6 +176,7 @@ function App() {
                     <AppRoutes />
                   </WouterRouter>
                 </AppErrorBoundary>
+                <PurchaseSuccessCelebration />
                 <Toaster />
               </TooltipProvider>
             </PurchaseModalProvider>

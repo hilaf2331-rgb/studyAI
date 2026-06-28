@@ -15,7 +15,18 @@ function getTransporter() {
   if (!CONTACT_EMAIL_USER || !CONTACT_EMAIL_PASSWORD) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      service: "gmail",
+      // Explicit host/587/STARTTLS instead of `service: "gmail"` (which
+      // resolves to port 465 implicit TLS) -- some hosts (Render/Vercel)
+      // restrict outbound IPv6, and Node's default DNS lookup can hand back
+      // an IPv6 address for smtp.gmail.com, hanging the connection until the
+      // socket timeout. `family: 4` pins DNS resolution to IPv4 so that
+      // never happens.
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      family: 4,
+      connectionTimeout: 10_000,
       auth: { user: CONTACT_EMAIL_USER, pass: CONTACT_EMAIL_PASSWORD },
     });
   }

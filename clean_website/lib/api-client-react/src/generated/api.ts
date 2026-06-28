@@ -48,6 +48,8 @@ import type {
   MaterialInput,
   QuestionRequest,
   QuestionSet,
+  SaveBitNameInput,
+  SaveBitNameResult,
   SharedMaterial,
   StudyStreak,
   Summary,
@@ -3565,6 +3567,77 @@ export function useGetTokenBalance<TData = Awaited<ReturnType<typeof getTokenBal
 
 
 
+
+export const getSaveBitNameUrl = () => {
+
+
+
+
+  return `/api/billing/bit-name`
+}
+
+/**
+ * @summary Save the current user's Bit/PayBox display name, used to match incoming payments
+ */
+export const saveBitName = async (saveBitNameInput: SaveBitNameInput, options?: RequestInit): Promise<SaveBitNameResult> => {
+
+  return customFetch<SaveBitNameResult>(getSaveBitNameUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      saveBitNameInput,)
+  }
+);}
+
+
+
+
+export const getSaveBitNameMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveBitName>>, TError,{data: BodyType<SaveBitNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveBitName>>, TError,{data: BodyType<SaveBitNameInput>}, TContext> => {
+
+const mutationKey = ['saveBitName'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveBitName>>, {data: BodyType<SaveBitNameInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveBitName(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveBitNameMutationResult = NonNullable<Awaited<ReturnType<typeof saveBitName>>>
+    export type SaveBitNameMutationBody = BodyType<SaveBitNameInput>
+    export type SaveBitNameMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save the current user's Bit/PayBox display name, used to match incoming payments
+ */
+export const useSaveBitName = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveBitName>>, TError,{data: BodyType<SaveBitNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveBitName>>,
+        TError,
+        {data: BodyType<SaveBitNameInput>},
+        TContext
+      > => {
+      return useMutation(getSaveBitNameMutationOptions(options));
+    }
 
 export const getGetSharedMaterialUrl = (shareId: string,) => {
 

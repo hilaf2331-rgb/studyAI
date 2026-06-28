@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import { LanguageProvider } from "@/lib/i18n";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { PurchaseModalProvider } from "@/lib/purchase-modal";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
 import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
@@ -140,14 +141,16 @@ function App() {
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
         <LanguageProvider>
           <AuthProvider>
-            <TooltipProvider>
-              <AppErrorBoundary>
-                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                  <AppRoutes />
-                </WouterRouter>
-              </AppErrorBoundary>
-              <Toaster />
-            </TooltipProvider>
+            <PurchaseModalProvider>
+              <TooltipProvider>
+                <AppErrorBoundary>
+                  <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                    <AppRoutes />
+                  </WouterRouter>
+                </AppErrorBoundary>
+                <Toaster />
+              </TooltipProvider>
+            </PurchaseModalProvider>
           </AuthProvider>
         </LanguageProvider>
       </ThemeProvider>

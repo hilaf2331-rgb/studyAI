@@ -16,6 +16,7 @@ import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording, friendlyRecordingErrorMessage } from "@/lib/content-check";
 import { saveCachedRecording, getCachedRecording, clearCachedRecording } from "@/lib/recording-cache";
+import { TokenLimitErrorBanner, isTokenUpsellError } from "@/components/token-limit-error-banner";
 import {
   Mic, MicOff, Square, Play, Pause, Loader2, CheckCircle2,
   BookOpen, BrainCircuit, HelpCircle, Trash2, ChevronRight,
@@ -93,6 +94,7 @@ export const RecorderPage: React.FC = () => {
   const [courseId, setCourseId] = useState<string>(preselectedCourseId);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [autoStopped, setAutoStopped] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
@@ -404,6 +406,7 @@ export const RecorderPage: React.FC = () => {
 
   const performSave = useCallback(async (blob: Blob, recTitle: string) => {
     setError("");
+    setErrorCode(undefined);
     setRecState("saving");
     setSaveStep(0);
 
@@ -434,6 +437,7 @@ export const RecorderPage: React.FC = () => {
           return;
         }
         setError(friendlyRecordingErrorMessage(data));
+        setErrorCode(data.code);
         setRecState("error");
         return;
       }
@@ -745,9 +749,13 @@ export const RecorderPage: React.FC = () => {
               )}
 
               {error && (
-                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4 shrink-0" />{error}
-                </div>
+                isTokenUpsellError({ code: errorCode }) ? (
+                  <TokenLimitErrorBanner message={error} />
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
+                    <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                  </div>
+                )
               )}
 
               {!autoStopped && (

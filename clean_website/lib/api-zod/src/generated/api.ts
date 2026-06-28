@@ -963,8 +963,25 @@ export const GetDailyReviewCardsResponse = zod.object({
 export const GetTokenBalanceResponse = zod.object({
   "tokensRemaining": zod.number(),
   "monthlyTokenQuota": zod.number(),
+  "tokenBalance": zod.number(),
   "estimatedSummariesRemaining": zod.number(),
   "estimatedExamsRemaining": zod.number()
+})
+
+
+/**
+ * @summary Save the current user's Bit/PayBox display name, used to match incoming payments
+ */
+
+
+
+export const SaveBitNameBody = zod.object({
+  "bitName": zod.string().min(1)
+})
+
+export const SaveBitNameResponse = zod.object({
+  "ok": zod.boolean(),
+  "bitName": zod.string()
 })
 
 

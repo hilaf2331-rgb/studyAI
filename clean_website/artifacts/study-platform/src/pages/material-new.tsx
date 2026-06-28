@@ -19,6 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { MIN_TEXT_CHARS, noContentMessage, isAudioSilent } from "@/lib/content-check";
+import { TokenLimitErrorBanner, isTokenUpsellError } from "@/components/token-limit-error-banner";
 
 type ContentType = "text" | "youtube" | "url" | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "video";
 
@@ -143,6 +144,7 @@ export const MaterialNewPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [success, setSuccess] = useState(false);
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
@@ -220,6 +222,7 @@ export const MaterialNewPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setErrorCode(undefined);
     if (!title.trim()) { setError(isRTL ? "יש להזין כותרת" : "Title is required"); return; }
     if ((contentType === "youtube" || contentType === "url") && !sourceUrl.trim()) {
       setError(isRTL ? "יש להזין קישור" : "URL is required"); return;
@@ -290,7 +293,9 @@ export const MaterialNewPage: React.FC = () => {
           setBetaLimitOpen(true);
           return;
         }
-        throw new Error(data.error || "Failed to create material");
+        const err: any = new Error(data.error || "Failed to create material");
+        err.code = data.code;
+        throw err;
       }
 
       const material = await response.json();
@@ -301,6 +306,7 @@ export const MaterialNewPage: React.FC = () => {
       setLocation(`/materials/${material.id}?autogen=1`);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
+      setErrorCode(err.code);
     } finally {
       setIsSubmitting(false);
       setUploadId(null);
@@ -553,10 +559,14 @@ export const MaterialNewPage: React.FC = () => {
             )}
 
             {error && (
-              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
-              </div>
+              isTokenUpsellError({ code: errorCode }) ? (
+                <TokenLimitErrorBanner message={error} />
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )
             )}
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>

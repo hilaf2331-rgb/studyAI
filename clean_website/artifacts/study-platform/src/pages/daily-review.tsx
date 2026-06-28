@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { usePurchaseModal } from "@/lib/purchase-modal";
+import { ArrowLeft, RotateCcw, Coins } from "lucide-react";
 
 // Cross-material review session fed by the Today's Review queue on the
 // dashboard. Unlike flashcard-study.tsx (which studies one deck), the card
@@ -17,6 +18,7 @@ import { ArrowLeft, RotateCcw } from "lucide-react";
 // its own materialTitle for context.
 export const DailyReviewPage: React.FC = () => {
   const { isRTL } = useLanguage();
+  const { open: openPurchaseModal } = usePurchaseModal();
   const qc = useQueryClient();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -35,11 +37,17 @@ export const DailyReviewPage: React.FC = () => {
 
   if ((error as any)?.status === 402) {
     return (
-      <p className="text-muted-foreground">
-        {isRTL
-          ? "נגמרו לך הטוקנים לסקירה היומית. המערכת נמצאת כרגע בגרסת בטא, ואפשרות לרכישת טוקנים נוספים תתווסף בעתיד."
-          : "You're out of tokens for Today's Review. The platform is currently in a free beta phase, and the option to purchase more tokens will be added in the future."}
-      </p>
+      <div className="space-y-3">
+        <p className="text-muted-foreground">
+          {isRTL
+            ? "נגמרו לך הטוקנים לסקירה היומית."
+            : "You're out of tokens for Today's Review."}
+        </p>
+        <Button onClick={openPurchaseModal} className="gap-2">
+          <Coins className="w-4 h-4" />
+          {isRTL ? "טעינת טוקנים" : "Buy Tokens"}
+        </Button>
+      </div>
     );
   }
   if (isLoading || cards === null) return <div className="space-y-4">{[1, 2].map(i => <Skeleton key={i} className="h-48" />)}</div>;

@@ -144,11 +144,13 @@ router.get("/dashboard/tokens", async (req, res) => {
   const balance = await getTokenBalance(userId);
   if (!balance) return res.status(404).json({ error: "Not found" });
 
+  const total = balance.tokensRemaining + balance.tokenBalance;
   res.json({
     tokensRemaining: balance.tokensRemaining,
     monthlyTokenQuota: balance.monthlyTokenQuota,
-    estimatedSummariesRemaining: Math.floor(balance.tokensRemaining / ESTIMATED_TOKENS_PER_SUMMARY),
-    estimatedExamsRemaining: Math.floor(balance.tokensRemaining / ESTIMATED_TOKENS_PER_EXAM),
+    tokenBalance: balance.tokenBalance,
+    estimatedSummariesRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_SUMMARY),
+    estimatedExamsRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_EXAM),
   });
 });
 

@@ -7,13 +7,15 @@ import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { BackgroundGlow } from "@/components/background-glow";
 import { TokenWidget } from "@/components/token-widget";
-import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon } from "lucide-react";
+import { usePurchaseModal } from "@/lib/purchase-modal";
+import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [location] = useLocation();
   const { t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { open: openPurchaseModal } = usePurchaseModal();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -68,6 +70,14 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const renderBottomActions = (showLabels: boolean) => (
     <div className={`p-2 space-y-1 border-t border-sidebar-border mt-auto ${showLabels ? "" : "flex flex-col items-center"}`}>
+      <button
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors ${showLabels ? "" : "justify-center"}`}
+        onClick={openPurchaseModal}
+        title={!showLabels ? (isRTL ? "טעינת טוקנים" : "Buy Tokens") : undefined}
+      >
+        <Coins className="w-5 h-5 shrink-0" />
+        {showLabels && <span className="truncate">{isRTL ? "טעינת טוקנים 🪙" : "Buy Tokens"}</span>}
+      </button>
       <div className={showLabels ? "px-1 pb-1" : "py-1"}>
         <TokenWidget compact={!showLabels} />
       </div>

@@ -21,7 +21,9 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS longest_streak integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user',
       ADD COLUMN IF NOT EXISTS subscription_tier text NOT NULL DEFAULT 'free',
-      ADD COLUMN IF NOT EXISTS is_paying_customer boolean NOT NULL DEFAULT false;
+      ADD COLUMN IF NOT EXISTS is_paying_customer boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS bit_name text,
+      ADD COLUMN IF NOT EXISTS token_balance integer NOT NULL DEFAULT 0;
   `);
 
   await pool.query(`

@@ -29,37 +29,51 @@ export class InsufficientTokensError extends Error {
   }
 }
 
-export async function getTokenBalance(userId: number): Promise<{ tokensRemaining: number; monthlyTokenQuota: number } | null> {
+export async function getTokenBalance(userId: number): Promise<{ tokensRemaining: number; monthlyTokenQuota: number; tokenBalance: number } | null> {
   const [user] = await db.select({
     tokensRemaining: usersTable.tokensRemaining,
     monthlyTokenQuota: usersTable.monthlyTokenQuota,
+    tokenBalance: usersTable.tokenBalance,
   }).from(usersTable).where(eq(usersTable.id, userId));
   return user ?? null;
 }
 
 // Call right before a generation request. Throws InsufficientTokensError if
-// the user is already at (or below) zero, so a request never starts work
-// it can't afford. Admin accounts (see ADMIN_EMAILS above) always pass.
+// the user has nothing left in either pool (monthly quota + purchased
+// credits), so a request never starts work it can't afford. Admin accounts
+// (see ADMIN_EMAILS above) always pass.
 export async function requireTokenBalance(userId: number): Promise<void> {
   if (await isAdminUser(userId)) return;
   const balance = await getTokenBalance(userId);
-  if (!balance || balance.tokensRemaining <= 0) {
+  if (!balance || balance.tokensRemaining + balance.tokenBalance <= 0) {
     throw new InsufficientTokensError();
   }
 }
 
+// Spends `amount` from tokensRemaining (the monthly free quota) first, then
+// from tokenBalance (purchased credits) for whatever's left -- so a free
+// monthly refill is used up before tokens the student actually paid for.
+// Floored at 0 on both pools. Returns silently (no-op) once amount is fully
+// covered or the user has nothing left to spend.
+async function deductCombinedTokens(userId: number, amount: number): Promise<void> {
+  if (amount <= 0) return;
+  const balance = await getTokenBalance(userId);
+  if (!balance) return;
+  const fromMonthly = Math.min(balance.tokensRemaining, amount);
+  const fromPurchased = Math.min(balance.tokenBalance, amount - fromMonthly);
+  await db.update(usersTable).set({
+    tokensRemaining: balance.tokensRemaining - fromMonthly,
+    tokenBalance: balance.tokenBalance - fromPurchased,
+  }).where(eq(usersTable.id, userId));
+}
+
 // Call after a generation request succeeds, with the actual input + output
-// text that was sent to / received from Gemini. Floored at 0 -- a user can't
-// go negative, they just hit empty. Admin accounts are never deducted, so
-// their balance can't be run down by repeated testing.
+// text that was sent to / received from Gemini. Admin accounts are never
+// deducted, so their balance can't be run down by repeated testing.
 export async function deductTokensForGeneration(userId: number, inputText: string, outputText: string): Promise<void> {
   if (await isAdminUser(userId)) return;
   const used = estimateTokenCount(inputText) + estimateTokenCount(outputText);
-  if (used <= 0) return;
-  const balance = await getTokenBalance(userId);
-  if (!balance) return;
-  const next = Math.max(0, balance.tokensRemaining - used);
-  await db.update(usersTable).set({ tokensRemaining: next }).where(eq(usersTable.id, userId));
+  await deductCombinedTokens(userId, used);
 }
 
 // Beta-only hard cap on total processing actions (material uploads +
@@ -135,10 +149,8 @@ export const FEATURE_TOKEN_COSTS = {
 export async function requireAndDeductFeatureTokens(userId: number, cost: number): Promise<void> {
   if (await isAdminUser(userId)) return;
   const balance = await getTokenBalance(userId);
-  if (!balance || balance.tokensRemaining < cost) {
+  if (!balance || balance.tokensRemaining + balance.tokenBalance < cost) {
     throw new InsufficientTokensError();
   }
-  await db.update(usersTable)
-    .set({ tokensRemaining: sql`${usersTable.tokensRemaining} - ${cost}` })
-    .where(eq(usersTable.id, userId));
+  await deductCombinedTokens(userId, cost);
 }

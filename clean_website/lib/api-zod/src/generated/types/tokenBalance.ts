@@ -9,6 +9,7 @@
 export interface TokenBalance {
   tokensRemaining: number;
   monthlyTokenQuota: number;
+  tokenBalance: number;
   estimatedSummariesRemaining: number;
   estimatedExamsRemaining: number;
 }

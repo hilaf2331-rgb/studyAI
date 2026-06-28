@@ -73,6 +73,8 @@ export * from './questionRequestLanguage';
 export * from './questionRequestQuestionTypesItem';
 export * from './questionSet';
 export * from './questionSetLanguage';
+export * from './saveBitNameInput';
+export * from './saveBitNameResult';
 export * from './sharedMaterial';
 export * from './sharedMaterialFlashcardsItem';
 export * from './sharedMaterialLanguage';

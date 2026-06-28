@@ -798,8 +798,19 @@ export interface DailyReviewCards {
 export interface TokenBalance {
   tokensRemaining: number;
   monthlyTokenQuota: number;
+  tokenBalance: number;
   estimatedSummariesRemaining: number;
   estimatedExamsRemaining: number;
+}
+
+export interface SaveBitNameInput {
+  /** @minLength 1 */
+  bitName: string;
+}
+
+export interface SaveBitNameResult {
+  ok: boolean;
+  bitName: string;
 }
 
 export type ListMaterialsParams = {

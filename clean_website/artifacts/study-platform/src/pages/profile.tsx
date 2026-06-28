@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth, type Gender } from "@/lib/auth";
+import { usePurchaseModal } from "@/lib/purchase-modal";
 import { Coins, FileText, GraduationCap, User } from "lucide-react";
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
@@ -19,6 +20,7 @@ export const ProfilePage: React.FC = () => {
   const { isRTL } = useLanguage();
   const { user, updateUser } = useAuth();
   const { data: balance, isLoading } = useGetTokenBalance();
+  const { open: openPurchaseModal } = usePurchaseModal();
 
   const usedPercent = balance && balance.monthlyTokenQuota > 0
     ? Math.min(100, Math.round(((balance.monthlyTokenQuota - balance.tokensRemaining) / balance.monthlyTokenQuota) * 100))
@@ -112,6 +114,21 @@ export const ProfilePage: React.FC = () => {
                   ? "ההערכה היא משוערת בלבד ומשתנה בהתאם לאורך החומר ולסוג היצירה."
                   : "This estimate is approximate and varies with material length and generation type."}
               </p>
+
+              {balance.tokenBalance > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {isRTL
+                    ? `+ ${balance.tokenBalance.toLocaleString()} טוקנים שנרכשו, שאינם פגים בסוף החודש`
+                    : `+ ${balance.tokenBalance.toLocaleString()} purchased tokens, which never expire`}
+                </p>
+              )}
+
+              <button
+                onClick={openPurchaseModal}
+                className="w-full text-center text-sm font-medium text-primary hover:underline pt-1"
+              >
+                {isRTL ? "רוצים עוד טוקנים? לחצו כאן לטעינה" : "Want more tokens? Click here to top up"}
+              </button>
             </>
           )}
         </CardContent>

@@ -41,6 +41,16 @@ export const usersTable = pgTable("users", {
   // (lib/tokens.ts's getFreeTierAudioCapSeconds) for anyone who has ever
   // bought a token package, independent of their current token balance.
   isPayingCustomer: boolean("is_paying_customer").notNull().default(false),
+  // The display name the student uses in their Bit/PayBox app -- set by the
+  // purchase flow (POST /billing/bit-name) before they're shown the payment
+  // instructions, so the Zapier webhook (routes/billing.ts) can match an
+  // incoming `{ bitName, amount }` payment back to this account.
+  bitName: text("bit_name"),
+  // Purchased token credits, separate from tokensRemaining (the monthly free
+  // quota). Spent only after tokensRemaining is exhausted -- see
+  // lib/tokens.ts's combined-balance deduction helpers -- so a free monthly
+  // refill never "absorbs" tokens the student actually paid for.
+  tokenBalance: integer("token_balance").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

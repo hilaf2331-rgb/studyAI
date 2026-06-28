@@ -149,6 +149,10 @@ router.get("/dashboard/tokens", async (req, res) => {
     tokensRemaining: balance.tokensRemaining,
     monthlyTokenQuota: balance.monthlyTokenQuota,
     tokenBalance: balance.tokenBalance,
+    // Single combined figure -- tokensRemaining (free quota) + tokenBalance
+    // (purchased, uncapped) -- so the frontend doesn't need to recompute it
+    // and can show one accurate grand total after a purchase.
+    totalTokens: total,
     estimatedSummariesRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_SUMMARY),
     estimatedExamsRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_EXAM),
   });

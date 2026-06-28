@@ -28,6 +28,9 @@ export const ProfilePage: React.FC = () => {
   const { data: balance, isLoading } = useGetTokenBalance();
   const { open: openPurchaseModal } = usePurchaseModal();
 
+  // The free-tier quota bar only ever describes balance.tokensRemaining --
+  // it's meaningless once the user has purchased tokens (that pool is
+  // uncapped), so it's only rendered below when tokenBalance is 0.
   const usedPercent = balance && balance.monthlyTokenQuota > 0
     ? Math.min(100, Math.round(((balance.monthlyTokenQuota - balance.tokensRemaining) / balance.monthlyTokenQuota) * 100))
     : 0;
@@ -89,18 +92,43 @@ export const ProfilePage: React.FC = () => {
           ) : (
             <>
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-black">{balance.tokensRemaining.toLocaleString()}</span>
+                <span className="text-3xl font-black">{balance.totalTokens.toLocaleString()}</span>
                 <span className="text-sm text-muted-foreground">
-                  {balance.monthlyTokenQuota > FREE_TIER_MONTHLY_REFILL
-                    ? (isRTL
-                        ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} שקיבלת בהרשמה`
-                        : `of ${balance.monthlyTokenQuota.toLocaleString()} from your signup bonus`)
-                    : (isRTL
-                        ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} במכסה החינמית החודשית`
-                        : `of ${balance.monthlyTokenQuota.toLocaleString()} in this month's free tier`)}
+                  {isRTL ? "סה״כ טוקנים זמינים" : "total tokens available"}
                 </span>
               </div>
-              <Progress value={100 - usedPercent} className="h-2" />
+
+              {balance.tokenBalance > 0 ? (
+                // Once any tokens have been purchased, the free quota no
+                // longer represents a real ceiling on the total -- so it's
+                // shown as a breakdown line instead of an "out of X" bar
+                // that would otherwise imply the user is capped at 200,000.
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>
+                    {isRTL
+                      ? `${balance.tokensRemaining.toLocaleString()} מהמכסה החינמית${balance.monthlyTokenQuota > FREE_TIER_MONTHLY_REFILL ? " שקיבלת בהרשמה" : " החודשית"}`
+                      : `${balance.tokensRemaining.toLocaleString()} from your ${balance.monthlyTokenQuota > FREE_TIER_MONTHLY_REFILL ? "signup bonus" : "monthly free tier"}`}
+                  </p>
+                  <p>
+                    {isRTL
+                      ? `+ ${balance.tokenBalance.toLocaleString()} טוקנים שנרכשו, שאינם פגים`
+                      : `+ ${balance.tokenBalance.toLocaleString()} purchased tokens, which never expire`}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    {balance.monthlyTokenQuota > FREE_TIER_MONTHLY_REFILL
+                      ? (isRTL
+                          ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} שקיבלת בהרשמה`
+                          : `of ${balance.monthlyTokenQuota.toLocaleString()} from your signup bonus`)
+                      : (isRTL
+                          ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} במכסה החינמית החודשית`
+                          : `of ${balance.monthlyTokenQuota.toLocaleString()} in this month's free tier`)}
+                  </p>
+                  <Progress value={100 - usedPercent} className="h-2" />
+                </>
+              )}
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
@@ -124,14 +152,6 @@ export const ProfilePage: React.FC = () => {
                   ? "ההערכה היא משוערת בלבד ומשתנה בהתאם לאורך החומר ולסוג היצירה."
                   : "This estimate is approximate and varies with material length and generation type."}
               </p>
-
-              {balance.tokenBalance > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {isRTL
-                    ? `+ ${balance.tokenBalance.toLocaleString()} טוקנים שנרכשו, שאינם פגים בסוף החודש`
-                    : `+ ${balance.tokenBalance.toLocaleString()} purchased tokens, which never expire`}
-                </p>
-              )}
 
               <button
                 onClick={openPurchaseModal}

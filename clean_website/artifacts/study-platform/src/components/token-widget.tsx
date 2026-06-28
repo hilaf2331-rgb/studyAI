@@ -17,18 +17,20 @@ export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
 
   useEffect(() => {
     if (!balance) return undefined;
-    if (prevRef.current !== null && prevRef.current !== balance.tokensRemaining) {
-      setPulse(balance.tokensRemaining > prevRef.current ? "gain" : "spend");
+    if (prevRef.current !== null && prevRef.current !== balance.totalTokens) {
+      setPulse(balance.totalTokens > prevRef.current ? "gain" : "spend");
       const timer = setTimeout(() => setPulse(null), 1000);
-      prevRef.current = balance.tokensRemaining;
+      prevRef.current = balance.totalTokens;
       return () => clearTimeout(timer);
     }
-    prevRef.current = balance.tokensRemaining;
+    prevRef.current = balance.totalTokens;
     return undefined;
-  }, [balance?.tokensRemaining]);
+  }, [balance?.totalTokens]);
 
   if (!balance) return null;
 
+  // Meaningless once tokenBalance > 0 (that pool is uncapped), so the bar
+  // is only rendered while the user is still purely on the free tier.
   const usedPercent = balance.monthlyTokenQuota > 0
     ? Math.min(100, Math.round(((balance.monthlyTokenQuota - balance.tokensRemaining) / balance.monthlyTokenQuota) * 100))
     : 0;
@@ -42,7 +44,7 @@ export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
   if (compact) {
     return (
       <div
-        title={isRTL ? `${balance.tokensRemaining.toLocaleString()} טוקנים נותרו` : `${balance.tokensRemaining.toLocaleString()} tokens left`}
+        title={isRTL ? `${balance.totalTokens.toLocaleString()} טוקנים נותרו` : `${balance.totalTokens.toLocaleString()} tokens left`}
         className={`relative w-9 h-9 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center transition-shadow duration-500 ${pulseRing}`}
       >
         <Coins className="w-5 h-5" />
@@ -57,9 +59,9 @@ export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
           <Coins className="w-4 h-4 shrink-0" />
           <span className="text-xs font-semibold">{isRTL ? "טוקנים" : "Tokens"}</span>
         </div>
-        <span className="text-sm font-bold text-sidebar-foreground">{balance.tokensRemaining.toLocaleString()}</span>
+        <span className="text-sm font-bold text-sidebar-foreground">{balance.totalTokens.toLocaleString()}</span>
       </div>
-      <Progress value={100 - usedPercent} className="h-1.5" />
+      {balance.tokenBalance === 0 && <Progress value={100 - usedPercent} className="h-1.5" />}
     </div>
   );
 };

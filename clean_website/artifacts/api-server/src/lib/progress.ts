@@ -23,8 +23,15 @@ export interface GenerationProgress {
   // the 202 is sent until the background work finishes -- it's set up front
   // so a poll that lands before the first Gemini call still sees something
   // other than "idle". "chunking"/"extracting" remain for the existing
-  // per-call chunk tracking nested inside that job.
-  stage: "chunking" | "extracting" | "running" | "done" | "idle" | "error";
+  // per-call chunk tracking nested inside that job. "queued" is set by
+  // lib/processing-queue.ts while a request is waiting its turn behind the
+  // concurrency limit, before any extraction/generation work has started.
+  stage: "queued" | "chunking" | "extracting" | "running" | "done" | "idle" | "error";
+  // Populated only while stage is "queued" -- this request's 1-based
+  // position behind the concurrency limit, so the frontend can show "X
+  // uploads ahead of you" during exam-period traffic spikes instead of a
+  // progress bar that looks stalled at 0%.
+  queuePosition?: number;
   // Populated incrementally while stage is still "running" -- one stage's
   // worth of fields lands as soon as that stage's DB rows are committed, so
   // a poll mid-job can already see e.g. result.summary while result.deck and

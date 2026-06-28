@@ -114,6 +114,12 @@ export const RecorderPage: React.FC = () => {
   // Save progress
   const [saveStep, setSaveStep] = useState(0);
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
+  // Set only while the upload is waiting its turn behind the backend's
+  // processing-concurrency limit (see api-server's lib/processing-queue.ts)
+  // -- during exam-period spikes, several students can stop recording within
+  // the same few seconds, so this tells the student they're in line instead
+  // of the bar looking stalled at 0%.
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
   // Transcription + 3 parallel Gemini calls scale with recording length --
   // a 20-second voice memo and a 20-minute lecture shouldn't crawl at the
   // same pace, so the simulated bar's speed is derived from elapsed.
@@ -409,8 +415,24 @@ export const RecorderPage: React.FC = () => {
     setErrorCode(undefined);
     setRecState("saving");
     setSaveStep(0);
+    setQueuePosition(null);
 
     const stepInterval = setInterval(() => setSaveStep(s => Math.min(s + 1, SAVE_STEPS_HE.length - 1)), 6000);
+
+    // Polls the backend's queue/progress endpoint so a student stuck behind
+    // the concurrency limit during an exam-period rush sees "X uploads ahead
+    // of you" instead of a bar that looks stuck at 0% -- mirrors
+    // material-new.tsx's identical uploadId + poll pattern for file uploads.
+    const uploadId = crypto.randomUUID();
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(apiUrl(`/api/recordings/upload-progress/${uploadId}`), {
+          headers: { Authorization: `Bearer ${getStoredToken()}` },
+        });
+        const progress = await res.json();
+        setQueuePosition(progress.stage === "queued" ? progress.queuePosition ?? null : null);
+      } catch {}
+    }, 1000);
 
     try {
       const fd = new FormData();
@@ -418,6 +440,7 @@ export const RecorderPage: React.FC = () => {
       fd.append("title", recTitle);
       fd.append("recordedAt", recordedAtRef.current.toISOString());
       fd.append("durationSeconds", String(elapsed));
+      fd.append("uploadId", uploadId);
       if (courseId) fd.append("courseId", courseId);
       if (bookmarks.length > 0) fd.append("bookmarks", JSON.stringify(bookmarks));
 
@@ -429,6 +452,8 @@ export const RecorderPage: React.FC = () => {
       const data = await res.json();
 
       clearInterval(stepInterval);
+      clearInterval(pollInterval);
+      setQueuePosition(null);
 
       if (!res.ok) {
         if (data.code === "BETA_LIMIT_REACHED") {
@@ -452,6 +477,8 @@ export const RecorderPage: React.FC = () => {
       loadHistory();
     } catch (err: any) {
       clearInterval(stepInterval);
+      clearInterval(pollInterval);
+      setQueuePosition(null);
       setError("שמירת ההקלטה נכשלה. נסה שנית.");
       setRecState("error");
     }
@@ -778,6 +805,12 @@ export const RecorderPage: React.FC = () => {
                 <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   הקלטה נעצרה אוטומטית - הגעת למגבלת ה-20 דקות, מעבד את החומר...
+                </div>
+              )}
+              {queuePosition != null && (
+                <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-3 py-2 rounded-lg">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  עומס בשרת — יש {queuePosition} הקלטות לפניך בתור, נתחיל לעבד את שלך בעוד רגע
                 </div>
               )}
               <div className="flex items-center gap-3">

@@ -7,6 +7,7 @@ import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, Delete
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError, AudioDurationLimitError } from "../lib/extractor";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
+import { runExclusive } from "../lib/processing-queue";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
 import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds } from "../lib/tokens";
@@ -189,12 +190,21 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
       // be enforced authoritatively, against Whisper's actual measured
       // duration, inside transcribeAudio() itself.
       const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
-      const result = await transcribeAudio(
-        req.file.buffer,
-        req.file.mimetype,
-        req.file.originalname,
-        reportProgress,
-        { maxDurationSeconds: audioCapSeconds ?? undefined }
+      // Shares the same concurrency-limited queue as recordings.ts -- both
+      // routes hit the identical heavy Whisper call against the same
+      // process's CPU/memory budget, so they need one shared cap rather than
+      // two independent ones that could still add up past it.
+      const result = await runExclusive(
+        (queuePosition) => {
+          if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
+        },
+        () => transcribeAudio(
+          req.file!.buffer,
+          req.file!.mimetype,
+          req.file!.originalname,
+          reportProgress,
+          { maxDurationSeconds: audioCapSeconds ?? undefined }
+        ),
       );
       extractedText = result.text;
       duration = result.duration;

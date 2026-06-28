@@ -7,10 +7,15 @@ import { logger } from "./logger";
 // outbound API call. Brevo only requires verifying a single sender email
 // address (Settings -> Senders, no DNS records needed), unlike providers
 // that require full domain verification before they'll send anything.
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL || "contact@focusstudy.net";
-const CONTACT_FROM_NAME = process.env.CONTACT_FROM_NAME || "FocusStudy";
-const CONTACT_TO_EMAIL = process.env.CONTACT_TO_EMAIL || "focusstudy.net@gmail.com";
+const BREVO_API_KEY = process.env.BREVO_API_KEY?.trim();
+// .trim() guards against a stray trailing space/newline from pasting into
+// Render's env var editor -- Brevo does an exact string match against the
+// account's verified senders list, so even invisible whitespace here is
+// enough to produce "sender ... is not valid" despite the dashboard showing
+// the address as verified.
+const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL?.trim() || "contact@focusstudy.net";
+const CONTACT_FROM_NAME = process.env.CONTACT_FROM_NAME?.trim() || "FocusStudy";
+const CONTACT_TO_EMAIL = process.env.CONTACT_TO_EMAIL?.trim() || "focusstudy.net@gmail.com";
 
 export async function sendContactMessageEmail(input: { name: string; email: string; message: string }): Promise<void> {
   if (!BREVO_API_KEY) {
@@ -37,7 +42,10 @@ export async function sendContactMessageEmail(input: { name: string; email: stri
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    logger.error({ status: res.status, body }, "[email] Brevo API request failed");
+    // Logs the exact sender string Brevo rejected (not just that it failed)
+    // so a "sender is not valid" error can be diffed character-for-character
+    // against the dashboard's verified-senders list instead of guessing.
+    logger.error({ status: res.status, body, sentFrom: CONTACT_FROM_EMAIL }, "[email] Brevo API request failed");
     throw new Error("Failed to send contact email");
   }
 }

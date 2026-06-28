@@ -813,6 +813,18 @@ export interface SaveBitNameResult {
   bitName: string;
 }
 
+export interface ContactMessageInput {
+  /** @minLength 1 */
+  name: string;
+  email: string;
+  /** @minLength 1 */
+  message: string;
+}
+
+export interface ContactMessageResult {
+  ok: boolean;
+}
+
 export type ListMaterialsParams = {
 courseId?: number;
 };

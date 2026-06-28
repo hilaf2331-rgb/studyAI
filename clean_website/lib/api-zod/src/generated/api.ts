@@ -986,6 +986,24 @@ export const SaveBitNameResponse = zod.object({
 
 
 /**
+ * @summary Send a support message from the Contact Us page to the FocusStudy team
+ */
+
+
+
+
+export const SubmitContactMessageBody = zod.object({
+  "name": zod.string().min(1),
+  "email": zod.string().email(),
+  "message": zod.string().min(1)
+})
+
+export const SubmitContactMessageResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
  * @summary Public, unauthenticated read-only view of a shared study kit (summary + flashcards)
  */
 export const GetSharedMaterialParams = zod.object({

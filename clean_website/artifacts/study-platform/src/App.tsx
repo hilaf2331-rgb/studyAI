@@ -31,6 +31,7 @@ import { AuthPage } from "@/pages/auth";
 import { LandingPage } from "@/pages/landing";
 import { RecorderPage } from "@/pages/recorder";
 import { ProfilePage } from "@/pages/profile";
+import { ContactPage } from "@/pages/contact";
 import { TermsPage } from "@/pages/terms";
 import { PrivacyPage } from "@/pages/privacy";
 import { SharedViewPage } from "@/pages/shared-view";
@@ -129,6 +130,7 @@ function AppRoutes() {
         <Route path="/exams/:id" component={ExamTakePage} />
         <Route path="/recorder" component={RecorderPage} />
         <Route path="/profile" component={ProfilePage} />
+        <Route path="/contact" component={ContactPage} />
         <Route component={NotFound} />
       </Switch>
     </SidebarLayout>

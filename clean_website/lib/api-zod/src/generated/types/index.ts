@@ -15,6 +15,8 @@ export * from './chatMessageInput';
 export * from './chatMessageInputLanguage';
 export * from './chatMessageLanguage';
 export * from './chatMessageRole';
+export * from './contactMessageInput';
+export * from './contactMessageResult';
 export * from './course';
 export * from './courseInput';
 export * from './courseUpdate';

@@ -11,6 +11,7 @@ import dashboardRouter from "./dashboard";
 import generateAllRouter from "./generate-all";
 import recordingsRouter from "./recordings";
 import { billingAuthRouter } from "./billing";
+import contactRouter from "./contact";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(dashboardRouter);
 router.use(generateAllRouter);
 router.use(recordingsRouter);
 router.use(billingAuthRouter);
+router.use(contactRouter);
 
 export default router;

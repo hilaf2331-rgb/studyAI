@@ -953,6 +953,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/SaveBitNameResult"
 
+  /contact:
+    post:
+      operationId: submitContactMessage
+      tags: [contact]
+      summary: Send a support message from the Contact Us page to the FocusStudy team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactMessageInput"
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactMessageResult"
+
   /shared/{shareId}:
     get:
       operationId: getSharedMaterial
@@ -1778,3 +1797,24 @@ components:
           type: boolean
         bitName:
           type: string
+
+    ContactMessageInput:
+      type: object
+      required: [name, email, message]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        message:
+          type: string
+          minLength: 1
+
+    ContactMessageResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean

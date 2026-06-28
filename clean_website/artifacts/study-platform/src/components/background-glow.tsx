@@ -17,10 +17,17 @@ import { cn } from "@/lib/utils";
 // glow is mounted.
 export const BackgroundGlow: React.FC<{ className?: string }> = ({ className }) => (
   <div aria-hidden className={cn("pointer-events-none absolute -z-10", className)}>
-    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-500 via-cyan-500 to-blue-500 opacity-90 blur-3xl animate-glow-pulse dark:from-teal-400 dark:via-cyan-500 dark:to-blue-600 dark:opacity-80" />
+    {/* Plain hsl() gradient stops -- Tailwind's built-in palette utilities
+        (teal-500, cyan-500, etc.) are defined via oklch() and silently
+        render as fully transparent on browsers without CSS Color 4 support
+        (confirmed on Samsung Internet), which would make the glow vanish. */}
     <div
-      className="absolute inset-0 rounded-full bg-gradient-to-tl from-blue-400 via-teal-400 to-cyan-300 opacity-70 blur-[70px] animate-glow-pulse dark:opacity-65"
-      style={{ animationDelay: "2.4s" }}
+      className="absolute inset-0 rounded-full opacity-90 blur-3xl animate-glow-pulse dark:opacity-80"
+      style={{ backgroundImage: "linear-gradient(to bottom right, hsl(170 75% 50%), hsl(195 85% 55%), hsl(217 85% 60%))" }}
+    />
+    <div
+      className="absolute inset-0 rounded-full opacity-70 blur-[70px] animate-glow-pulse dark:opacity-65"
+      style={{ backgroundImage: "linear-gradient(to top left, hsl(217 85% 60%), hsl(180 75% 50%), hsl(195 85% 65%))", animationDelay: "2.4s" }}
     />
   </div>
 );

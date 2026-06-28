@@ -34,8 +34,8 @@ export const LandingPage: React.FC = () => {
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.1]">
               מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
               <span
-                className="bg-gradient-to-l from-teal-400 via-cyan-400 to-blue-500"
                 style={{
+                  backgroundImage: "linear-gradient(to left, hsl(170 75% 50%), hsl(195 85% 55%), hsl(217 85% 60%))",
                   backgroundClip: "text",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
@@ -54,7 +54,7 @@ export const LandingPage: React.FC = () => {
             </p>
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Link href="/login">
-                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-cyan-500/40 hover:-translate-y-0.5 transition-all duration-300">
+                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
                   יאללה, מעלים חומר ראשון
                   <ArrowLeft className="w-4 h-4" />
                 </Button>

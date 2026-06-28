@@ -90,8 +90,9 @@ export const AuthPage: React.FC = () => {
             <img src="/logo.png" alt="FocusStudy" className="w-14 h-14 object-contain" />
           </div>
           <h1
-            className="text-3xl font-black tracking-tight bg-gradient-to-l from-teal-500 via-cyan-500 to-blue-600"
+            className="text-3xl font-black tracking-tight"
             style={{
+              backgroundImage: "linear-gradient(to left, hsl(170 75% 45%), hsl(195 85% 50%), hsl(217 85% 55%))",
               backgroundClip: "text",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
@@ -103,7 +104,7 @@ export const AuthPage: React.FC = () => {
           <p className="text-muted-foreground text-sm">פלטפורמת הלמידה החכמה שלך</p>
         </div>
 
-        <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/45 backdrop-blur-md shadow-2xl shadow-cyan-500/10">
+        <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/45 backdrop-blur-md shadow-2xl shadow-primary/10">
           <CardHeader className="pb-4">
             <CardTitle>
               {mode === "login" ? "התחבר לחשבונך" : "צור חשבון חדש"}

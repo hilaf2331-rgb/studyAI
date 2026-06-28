@@ -2,9 +2,11 @@ import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-// Free monthly allotment for every user. Sized generously against the
-// chunker's CHUNK_TOKEN_LIMIT (22000) so a normal month of summaries/exams
-// doesn't run dry, while still being a finite, trackable budget.
+// One-time welcome grant on signup. Sized generously against the chunker's
+// CHUNK_TOKEN_LIMIT (22000) so a new user can try the product properly
+// before ever hitting the much smaller ongoing FREE_TIER_MONTHLY_REFILL
+// (see lib/tokens.ts) -- a hybrid model that hooks casual users without
+// giving away unlimited free generation forever.
 export const DEFAULT_MONTHLY_TOKEN_QUOTA = 200_000;
 
 export const usersTable = pgTable("users", {
@@ -13,7 +15,17 @@ export const usersTable = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
   tokensRemaining: integer("tokens_remaining").notNull().default(DEFAULT_MONTHLY_TOKEN_QUOTA),
+  // Label for whichever free-tier regime currently applies, purely for
+  // display -- DEFAULT_MONTHLY_TOKEN_QUOTA until the first monthly refill
+  // check fires (see lib/tokens.ts's maybeApplyMonthlyRefill), then pinned to
+  // FREE_TIER_MONTHLY_REFILL forever after.
   monthlyTokenQuota: integer("monthly_token_quota").notNull().default(DEFAULT_MONTHLY_TOKEN_QUOTA),
+  // Anchor for the request-time monthly-refill check in lib/tokens.ts --
+  // there's no cron on Render's free tier, so each request that reads the
+  // balance instead compares "now" against this column itself. Defaults to
+  // signup time, so a brand-new user's first refill is ~1 month out, not
+  // immediate.
+  lastTokenRefillAt: timestamp("last_token_refill_at", { withTimezone: true }).notNull().defaultNow(),
   // Beta-only hard cap on total processing actions (material uploads +
   // recordings) -- separate from the token budget above, which limits AI
   // generation cost. This caps upload volume itself so one user can't

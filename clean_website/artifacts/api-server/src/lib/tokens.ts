@@ -3,6 +3,38 @@ import { eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
 import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 
+// Ongoing free-tier trickle once the one-time signup grant (see
+// DEFAULT_MONTHLY_TOKEN_QUOTA in lib/db) is gone -- small enough to not
+// undercut the purchase flow, but enough to keep a casual user engaged
+// between top-ups. Applied by maybeApplyMonthlyRefill below.
+export const FREE_TIER_MONTHLY_REFILL = 5_000;
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Render's free tier has no shell/cron access, so there's no scheduled job
+// that resets balances on the 1st of the month. Instead, every read of a
+// user's balance (via getTokenBalance below) opportunistically checks
+// whether 30+ days have passed since their last refill and, if so, tops
+// tokensRemaining up to FREE_TIER_MONTHLY_REFILL -- but only ever up, never
+// down, so a user who still has more left from their welcome grant or a
+// purchase keeps every token of it. Once a refill has fired once,
+// monthlyTokenQuota is pinned to FREE_TIER_MONTHLY_REFILL for display, since
+// the one-time welcome-grant period is over.
+async function maybeApplyMonthlyRefill(userId: number): Promise<void> {
+  const [user] = await db.select({
+    tokensRemaining: usersTable.tokensRemaining,
+    lastTokenRefillAt: usersTable.lastTokenRefillAt,
+  }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) return;
+  if (Date.now() - user.lastTokenRefillAt.getTime() < THIRTY_DAYS_MS) return;
+
+  await db.update(usersTable).set({
+    tokensRemaining: Math.max(user.tokensRemaining, FREE_TIER_MONTHLY_REFILL),
+    monthlyTokenQuota: FREE_TIER_MONTHLY_REFILL,
+    lastTokenRefillAt: new Date(),
+  }).where(eq(usersTable.id, userId));
+}
+
 // Admin/dev accounts that bypass token-balance checks entirely -- so testing
 // large documents never burns down (or gets blocked by) the same quota a
 // real user's plan is metered against. Looked up from the DB row's email
@@ -30,6 +62,7 @@ export class InsufficientTokensError extends Error {
 }
 
 export async function getTokenBalance(userId: number): Promise<{ tokensRemaining: number; monthlyTokenQuota: number; tokenBalance: number } | null> {
+  await maybeApplyMonthlyRefill(userId);
   const [user] = await db.select({
     tokensRemaining: usersTable.tokensRemaining,
     monthlyTokenQuota: usersTable.monthlyTokenQuota,

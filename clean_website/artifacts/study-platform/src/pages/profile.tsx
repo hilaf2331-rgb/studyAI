@@ -10,6 +10,12 @@ import { useAuth, type Gender } from "@/lib/auth";
 import { usePurchaseModal } from "@/lib/purchase-modal";
 import { Coins, FileText, GraduationCap, User } from "lucide-react";
 
+// Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL -- used only to
+// tell which free-tier regime balance.monthlyTokenQuota currently reflects,
+// so the label below doesn't keep claiming the one-time signup grant is "this
+// month" forever.
+const FREE_TIER_MONTHLY_REFILL = 5_000;
+
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "male", label: "זכר" },
   { value: "female", label: "נקבה" },
@@ -85,9 +91,13 @@ export const ProfilePage: React.FC = () => {
               <div className="flex items-end justify-between">
                 <span className="text-3xl font-black">{balance.tokensRemaining.toLocaleString()}</span>
                 <span className="text-sm text-muted-foreground">
-                  {isRTL
-                    ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} בחודש`
-                    : `of ${balance.monthlyTokenQuota.toLocaleString()} this month`}
+                  {balance.monthlyTokenQuota > FREE_TIER_MONTHLY_REFILL
+                    ? (isRTL
+                        ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} שקיבלת בהרשמה`
+                        : `of ${balance.monthlyTokenQuota.toLocaleString()} from your signup bonus`)
+                    : (isRTL
+                        ? `מתוך ${balance.monthlyTokenQuota.toLocaleString()} במכסה החינמית החודשית`
+                        : `of ${balance.monthlyTokenQuota.toLocaleString()} in this month's free tier`)}
                 </span>
               </div>
               <Progress value={100 - usedPercent} className="h-2" />

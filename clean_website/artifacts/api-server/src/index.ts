@@ -16,6 +16,20 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+// Catches exactly the failure mode that sent contact-form mail silently into
+// Brevo's rejection logs: CONTACT_FROM_EMAIL pointed at an unverified
+// subdomain (contact@send.focusstudy.net) instead of the verified sender
+// (contact@focusstudy.net). Brevo accepts the API call but bounces the send
+// server-side, so there's nothing in our own logs to catch it -- this check
+// fails loudly at boot instead of waiting for a user to notice a message
+// never arrived.
+const contactFromEmail = process.env["CONTACT_FROM_EMAIL"];
+if (!contactFromEmail) {
+  logger.warn("CONTACT_FROM_EMAIL is not set -- contact form emails will use the lib/email.ts default sender.");
+} else if (!contactFromEmail.endsWith("@focusstudy.net")) {
+  logger.warn(`CONTACT_FROM_EMAIL ("${contactFromEmail}") does not end with "@focusstudy.net" -- Brevo will likely reject it as an unverified sender.`);
+}
+
 // נתיב למניעת הירדמות השרת
 app.get("/ping", (_req: any, res: any) => {
   res.status(200).send("OK");

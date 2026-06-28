@@ -3,11 +3,23 @@ import { eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
 import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 
+// Every balance is stored and spent internally in raw cost-estimation units
+// (the same scale estimateTokenCount produces, easily thousands per
+// generation) so per-request metering stays exactly as fine-grained as
+// before. RAW_UNITS_PER_TOKEN is the one conversion rate between that
+// internal scale and the simple whole "Tokens" shown to users everywhere
+// (Profile, Sidebar, Purchase Modal) -- 75,000 raw units per Token, chosen to
+// match the existing "1 Token ~= 30 min of recording" pricing-card copy
+// (150,000 raw units/hour, see routes/billing.ts, halved). Convert raw ->
+// Tokens only at API read boundaries (routes/dashboard.ts); never change how
+// deductCombinedTokens/estimateTokenCount work internally.
+export const RAW_UNITS_PER_TOKEN = 75_000;
+
 // Ongoing free-tier trickle once the one-time signup grant (see
-// DEFAULT_MONTHLY_TOKEN_QUOTA in lib/db) is gone -- small enough to not
-// undercut the purchase flow, but enough to keep a casual user engaged
-// between top-ups. Applied by maybeApplyMonthlyRefill below.
-export const FREE_TIER_MONTHLY_REFILL = 5_000;
+// DEFAULT_MONTHLY_TOKEN_QUOTA in lib/db) is gone -- one whole Token, small
+// enough to not undercut the purchase flow, but enough to keep a casual user
+// engaged between top-ups. Applied by maybeApplyMonthlyRefill below.
+export const FREE_TIER_MONTHLY_REFILL = RAW_UNITS_PER_TOKEN;
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -180,10 +192,11 @@ export async function isPayingCustomer(userId: number): Promise<boolean> {
 // Flat per-execution token cost for the advanced AI features that sit on
 // top of (not instead of) the dynamic generation-cost accounting above --
 // PAYG features users pay a small fixed amount for regardless of how much
-// the underlying AI call ends up costing. Tune these freely.
+// the underlying AI call ends up costing. Kept at exactly 1 whole Token each
+// (RAW_UNITS_PER_TOKEN) so the UI never needs to show a fraction of a Token.
 export const FEATURE_TOKEN_COSTS = {
-  targetedQuestion: 50,
-  dailyReviewQueue: 20,
+  targetedQuestion: RAW_UNITS_PER_TOKEN,
+  dailyReviewQueue: RAW_UNITS_PER_TOKEN,
 } as const;
 
 // Call right before running a PAYG-gated feature. Throws InsufficientTokensError

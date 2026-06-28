@@ -4,6 +4,7 @@ import { db, usersTable, transactionsTable } from "@workspace/db";
 import { eq, sql, ilike } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { verifyPaypalWebhookSignature, getPaypalOrderDetails } from "../lib/paypal";
+import { RAW_UNITS_PER_TOKEN } from "../lib/tokens";
 
 // Token packages sold via Bit/PayBox. Priced as a no-brainer student top-up
 // while keeping a healthy margin over the buffered real API cost per lecture
@@ -18,19 +19,17 @@ export const TOKEN_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" |
 
 export type TokenPackageId = "bronze" | "silver" | "gold";
 
-// Hour bundles sold via hosted PayPal (NCP) checkout. There's no "hours"
-// column on the user -- hours are a marketing framing over the same fungible
-// tokenBalance the Bit/PayBox packages above credit -- so this conversion
-// rate keeps the new pricing internally consistent with the legacy one
-// (300k/2h, 800k/5.5h, 2M/14h all land within a few % of 150k tokens/hour).
-const TOKENS_PER_HOUR = 150_000;
-
+// Token bundles sold via hosted PayPal (NCP) checkout -- the live, user-
+// facing purchase flow (see study-platform's purchase-modal.tsx). `tokens`
+// here is the simplified whole-Token count shown everywhere in the UI;
+// raw cost-estimation units are credited to tokenBalance via
+// RAW_UNITS_PER_TOKEN so the underlying per-request metering never changes.
 // Keyed by the ILS amount on the captured PayPal order, since that's the
 // only thing distinguishing which of the 3 hosted checkout buttons was used.
-export const PAYPAL_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" | "gold"; hours: number; tokens: number; priceILS: number }> = {
-  39: { id: "bronze", hours: 30, tokens: 30 * TOKENS_PER_HOUR, priceILS: 39 },
-  79: { id: "silver", hours: 70, tokens: 70 * TOKENS_PER_HOUR, priceILS: 79 },
-  119: { id: "gold", hours: 130, tokens: 130 * TOKENS_PER_HOUR, priceILS: 119 },
+export const PAYPAL_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" | "gold"; tokens: number; priceILS: number }> = {
+  39: { id: "bronze", tokens: 40, priceILS: 39 },
+  79: { id: "silver", tokens: 80, priceILS: 79 },
+  119: { id: "gold", tokens: 150, priceILS: 119 },
 };
 
 // Authenticated: a logged-in user saves the display name they use in their
@@ -205,19 +204,24 @@ billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
     return res.status(404).json({ error: "No user found with this payer email" });
   }
 
+  // Credit in raw cost-estimation units -- tokenBalance/transactionsTable
+  // stay denominated in the same scale per-request metering already uses;
+  // pkg.tokens is only the simplified whole-Token count shown in the UI.
+  const rawTokens = pkg.tokens * RAW_UNITS_PER_TOKEN;
+
   try {
     await db.transaction(async (tx) => {
       await tx.insert(transactionsTable).values({
         userId: user.id,
         packageId: pkg.id,
-        tokens: pkg.tokens,
+        tokens: rawTokens,
         priceIls: pkg.priceILS,
         provider: "paypal",
         providerTransactionId: captureId,
       });
       await tx.update(usersTable)
         .set({
-          tokenBalance: sql`${usersTable.tokenBalance} + ${pkg.tokens}`,
+          tokenBalance: sql`${usersTable.tokenBalance} + ${rawTokens}`,
           isPayingCustomer: true,
         })
         .where(eq(usersTable.id, user.id));
@@ -234,6 +238,6 @@ billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
     throw err;
   }
 
-  logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens, hours: pkg.hours, captureId }, "[billing] credited tokens from PayPal webhook");
-  res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens, hoursAdded: pkg.hours });
+  logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens, rawTokens, captureId }, "[billing] credited tokens from PayPal webhook");
+  res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens });
 });

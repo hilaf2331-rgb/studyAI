@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, coursesTable, materialsTable, flashcardsTable, flashcardDecksTable, examResultsTable, activityTable, usersTable } from "@workspace/db";
 import { count, avg, desc, eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
-import { getTokenBalance, isPayingCustomer, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
+import { getTokenBalance, isPayingCustomer, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS, RAW_UNITS_PER_TOKEN } from "../lib/tokens";
 
 // Today's Review queue is capped at this many cards across ALL of the
 // user's materials -- a daily review session should feel doable in one
@@ -145,14 +145,19 @@ router.get("/dashboard/tokens", async (req, res) => {
   if (!balance) return res.status(404).json({ error: "Not found" });
 
   const total = balance.tokensRemaining + balance.tokenBalance;
+  // Convert raw cost-estimation units -> simplified whole Tokens only here,
+  // at the API read boundary -- every internal check/deduction above keeps
+  // working in raw units exactly as before. Floored (never rounded up) so
+  // the UI never claims a Token the user doesn't fully have.
+  const toTokens = (raw: number) => Math.floor(raw / RAW_UNITS_PER_TOKEN);
   res.json({
-    tokensRemaining: balance.tokensRemaining,
-    monthlyTokenQuota: balance.monthlyTokenQuota,
-    tokenBalance: balance.tokenBalance,
+    tokensRemaining: toTokens(balance.tokensRemaining),
+    monthlyTokenQuota: toTokens(balance.monthlyTokenQuota),
+    tokenBalance: toTokens(balance.tokenBalance),
     // Single combined figure -- tokensRemaining (free quota) + tokenBalance
     // (purchased, uncapped) -- so the frontend doesn't need to recompute it
     // and can show one accurate grand total after a purchase.
-    totalTokens: total,
+    totalTokens: toTokens(total),
     // Lets the frontend pick the right processing-queue message (plain vs.
     // upsell) without needing its own user/billing lookup.
     isPayingCustomer: await isPayingCustomer(userId),

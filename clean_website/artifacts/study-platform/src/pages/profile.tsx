@@ -10,11 +10,11 @@ import { useAuth, type Gender } from "@/lib/auth";
 import { usePurchaseModal } from "@/lib/purchase-modal";
 import { Coins, FileText, GraduationCap, User } from "lucide-react";
 
-// Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL -- used only to
-// tell which free-tier regime balance.monthlyTokenQuota currently reflects,
-// so the label below doesn't keep claiming the one-time signup grant is "this
-// month" forever.
-const FREE_TIER_MONTHLY_REFILL = 5_000;
+// Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL (already
+// converted to whole Tokens by the API) -- used only to tell which free-tier
+// regime balance.monthlyTokenQuota currently reflects, so the label below
+// doesn't keep claiming the one-time signup grant is "this month" forever.
+const FREE_TIER_MONTHLY_REFILL = 1;
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "male", label: "זכר" },

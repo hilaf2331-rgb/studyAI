@@ -2,12 +2,14 @@ import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-// One-time welcome grant on signup. Sized generously against the chunker's
-// CHUNK_TOKEN_LIMIT (22000) so a new user can try the product properly
-// before ever hitting the much smaller ongoing FREE_TIER_MONTHLY_REFILL
-// (see lib/tokens.ts) -- a hybrid model that hooks casual users without
+// One-time welcome grant on signup, stored in raw cost-estimation units (see
+// RAW_UNITS_PER_TOKEN in api-server's lib/tokens.ts) -- 1,500,000 raw units is
+// the free-tier "20 Tokens" shown to users. Sized generously against the
+// chunker's CHUNK_TOKEN_LIMIT (22000) so a new user can try the product
+// properly before ever hitting the much smaller ongoing
+// FREE_TIER_MONTHLY_REFILL -- a hybrid model that hooks casual users without
 // giving away unlimited free generation forever.
-export const DEFAULT_MONTHLY_TOKEN_QUOTA = 200_000;
+export const DEFAULT_MONTHLY_TOKEN_QUOTA = 1_500_000;
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),

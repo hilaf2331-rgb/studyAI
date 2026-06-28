@@ -3,6 +3,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { db, usersTable, transactionsTable } from "@workspace/db";
 import { eq, sql, ilike } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { verifyPaypalWebhookSignature, getPaypalOrderDetails } from "../lib/paypal";
 
 // Token packages sold via Bit/PayBox. Priced as a no-brainer student top-up
 // while keeping a healthy margin over the buffered real API cost per lecture
@@ -16,6 +17,21 @@ export const TOKEN_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" |
 };
 
 export type TokenPackageId = "bronze" | "silver" | "gold";
+
+// Hour bundles sold via hosted PayPal (NCP) checkout. There's no "hours"
+// column on the user -- hours are a marketing framing over the same fungible
+// tokenBalance the Bit/PayBox packages above credit -- so this conversion
+// rate keeps the new pricing internally consistent with the legacy one
+// (300k/2h, 800k/5.5h, 2M/14h all land within a few % of 150k tokens/hour).
+const TOKENS_PER_HOUR = 150_000;
+
+// Keyed by the ILS amount on the captured PayPal order, since that's the
+// only thing distinguishing which of the 3 hosted checkout buttons was used.
+export const PAYPAL_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" | "gold"; hours: number; tokens: number; priceILS: number }> = {
+  39: { id: "bronze", hours: 30, tokens: 30 * TOKENS_PER_HOUR, priceILS: 39 },
+  79: { id: "silver", hours: 70, tokens: 70 * TOKENS_PER_HOUR, priceILS: 79 },
+  119: { id: "gold", hours: 130, tokens: 130 * TOKENS_PER_HOUR, priceILS: 119 },
+};
 
 // Authenticated: a logged-in user saves the display name they use in their
 // Bit/PayBox app, so the webhook below can match an incoming payment back to
@@ -114,4 +130,110 @@ billingPublicRouter.post("/webhooks/payment", async (req, res) => {
 
   logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens }, "[billing] credited tokens from Zapier payment webhook");
   res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens });
+});
+
+// Public: PayPal's own webhook delivery for the hosted (NCP) checkout
+// buttons. Verified via PayPal's own verify-webhook-signature API (see
+// lib/paypal.ts) rather than a shared secret, since that's how PayPal -- not
+// Zapier -- proves a delivery is genuinely theirs.
+billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
+  const event = req.body;
+
+  // CHECKOUT.ORDER.APPROVED can fire before money has actually moved;
+  // PAYMENT.CAPTURE.COMPLETED is PayPal's "funds captured" event and the only
+  // one that should ever result in a credit.
+  if (event?.event_type !== "PAYMENT.CAPTURE.COMPLETED") {
+    return res.json({ ok: true, ignored: true });
+  }
+
+  const transmissionId = req.headers["paypal-transmission-id"];
+  const transmissionTime = req.headers["paypal-transmission-time"];
+  const certUrl = req.headers["paypal-cert-url"];
+  const authAlgo = req.headers["paypal-auth-algo"];
+  const transmissionSig = req.headers["paypal-transmission-sig"];
+  if (
+    typeof transmissionId !== "string" || typeof transmissionTime !== "string" ||
+    typeof certUrl !== "string" || typeof authAlgo !== "string" || typeof transmissionSig !== "string"
+  ) {
+    logger.warn("[billing] paypal webhook missing required PayPal-* headers");
+    return res.status(400).json({ error: "Missing PayPal verification headers" });
+  }
+
+  const verified = await verifyPaypalWebhookSignature(
+    { transmissionId, transmissionTime, certUrl, authAlgo, transmissionSig },
+    event,
+  );
+  if (!verified) {
+    logger.warn("[billing] paypal webhook signature verification failed");
+    return res.status(401).json({ error: "Signature verification failed" });
+  }
+
+  const captureId: string | undefined = event.resource?.id;
+  const orderId: string | undefined = event.resource?.supplementary_data?.related_ids?.order_id;
+  if (!captureId || !orderId) {
+    logger.warn({ captureId, orderId }, "[billing] paypal webhook missing capture/order id");
+    return res.status(400).json({ error: "Missing capture or order id" });
+  }
+
+  // The capture event's own payload doesn't reliably carry the payer's
+  // email, so the order itself is the one authoritative source for both a
+  // confirmed amount and the payer's email together.
+  const order = await getPaypalOrderDetails(orderId);
+  if (!order || order.status !== "COMPLETED" || order.currencyCode !== "ILS") {
+    logger.warn({ orderId, order }, "[billing] paypal webhook: order not completed or wrong currency");
+    return res.status(400).json({ error: "Order not completed or unexpected currency" });
+  }
+
+  const amount = Math.round(Number(order.amountValue));
+  const pkg = PAYPAL_PACKAGES_BY_PRICE[amount];
+  if (!pkg) {
+    logger.warn({ amount, orderId }, "[billing] paypal webhook: amount matches no known package");
+    return res.status(400).json({ error: "Amount matches no known package" });
+  }
+
+  if (!order.payerEmail) {
+    logger.warn({ orderId }, "[billing] paypal webhook: order has no payer email");
+    return res.status(400).json({ error: "Order has no payer email" });
+  }
+
+  const [user] = await db.select({ id: usersTable.id })
+    .from(usersTable)
+    .where(ilike(usersTable.email, order.payerEmail));
+
+  if (!user) {
+    logger.warn({ payerEmail: order.payerEmail }, "[billing] paypal webhook: no user matches this payer email");
+    return res.status(404).json({ error: "No user found with this payer email" });
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(transactionsTable).values({
+        userId: user.id,
+        packageId: pkg.id,
+        tokens: pkg.tokens,
+        priceIls: pkg.priceILS,
+        provider: "paypal",
+        providerTransactionId: captureId,
+      });
+      await tx.update(usersTable)
+        .set({
+          tokenBalance: sql`${usersTable.tokenBalance} + ${pkg.tokens}`,
+          isPayingCustomer: true,
+        })
+        .where(eq(usersTable.id, user.id));
+    });
+  } catch (err: any) {
+    // captureId is PayPal's real, stable transaction id, so a unique-
+    // violation here means this exact capture was already credited by an
+    // earlier delivery of the same webhook -- treat the retry as a no-op
+    // rather than double-crediting or erroring.
+    if (err?.code === "23505") {
+      logger.info({ captureId }, "[billing] paypal webhook: capture already processed, ignoring retry");
+      return res.json({ ok: true, alreadyProcessed: true });
+    }
+    throw err;
+  }
+
+  logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens, hours: pkg.hours, captureId }, "[billing] credited tokens from PayPal webhook");
+  res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens, hoursAdded: pkg.hours });
 });

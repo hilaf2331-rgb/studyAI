@@ -42,9 +42,19 @@ app.use(
 const isProd = process.env.NODE_ENV === "production";
 
 // 1. הגדרת הלוגיקה של ה-Origins
+// focusstudy.net is the production frontend domain (both the bare and "www."
+// hosts -- Vercel serves the app on both) -- allowed unconditionally here
+// rather than only via CORS_ORIGINS so login/signup never breaks on Render
+// because that env var wasn't set, same treatment as *.vercel.app below.
 const allowedOrigins = isProd
   ? function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-      if (!origin || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+      if (
+        !origin ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost') ||
+        origin === 'https://focusstudy.net' ||
+        origin === 'https://www.focusstudy.net'
+      ) {
         callback(null, true);
       } else {
         const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map(d => d.trim()).filter(Boolean);

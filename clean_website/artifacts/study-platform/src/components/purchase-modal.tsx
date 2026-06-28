@@ -8,11 +8,16 @@ import { useSaveBitName } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { Coins, Clock, BookOpenText, ArrowRight, ArrowLeft, CheckCircle2, X } from "lucide-react";
+import { PaymentLauncher } from "@/components/payment-launcher";
 
-// EDIT THIS: the real Bit/PayBox payment link, once issued. Used both as
-// the tappable "Pay Now" link and as the source for the QR code rendered
-// below it, so updating this one constant updates both.
+// EDIT THIS: the real Bit/PayBox payment links, once issued. Drives both the
+// mobile deep-link buttons and the desktop QR code in PaymentLauncher below.
 const BIT_PAYMENT_LINK = "https://www.bitpay.co.il/app/me/REPLACE_WITH_REAL_BIT_LINK";
+const PAYBOX_PAYMENT_LINK = "https://payboxapp.page.link/REPLACE_WITH_REAL_PAYBOX_LINK";
+// EDIT THIS (optional): a hosted checkout page from a clearing gateway
+// (Meshulam / Cardcom / Grow by Mashash) to offer as a desktop fallback
+// instead of/alongside the QR code. Leave empty to hide that button.
+const HOSTED_CHECKOUT_URL = "";
 
 type TierId = "bronze" | "silver" | "gold";
 
@@ -131,8 +136,6 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
       },
     });
   };
-
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(BIT_PAYMENT_LINK)}`;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -255,15 +258,12 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
             </DialogHeader>
 
             <div className="flex flex-col items-center gap-4 py-2">
-              <img src={qrSrc} alt="Bit/PayBox QR" className="w-44 h-44 rounded-lg border" />
-              <a
-                href={BIT_PAYMENT_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary underline break-all text-center"
-              >
-                {BIT_PAYMENT_LINK}
-              </a>
+              <PaymentLauncher
+                bitLink={BIT_PAYMENT_LINK}
+                payboxLink={PAYBOX_PAYMENT_LINK}
+                hostedCheckoutUrl={HOSTED_CHECKOUT_URL || undefined}
+                isRTL={isRTL}
+              />
               <p className="text-xs text-muted-foreground text-center">
                 {isRTL
                   ? "נדרשים מספר רגעים לעיבוד התשלום. ניתן לסגור חלון זה."

@@ -77,6 +77,7 @@ export * from './questionSet';
 export * from './questionSetLanguage';
 export * from './saveBitNameInput';
 export * from './saveBitNameResult';
+export * from './saveSharedMaterialResult';
 export * from './sharedMaterial';
 export * from './sharedMaterialFlashcardsItem';
 export * from './sharedMaterialLanguage';

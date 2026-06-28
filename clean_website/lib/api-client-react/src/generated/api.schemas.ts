@@ -159,6 +159,11 @@ export interface SharedMaterial {
   flashcards: SharedMaterialFlashcardsItem[];
 }
 
+export interface SaveSharedMaterialResult {
+  ok: boolean;
+  materialId: number;
+}
+
 export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeof GenerationProgressStage];
 
 

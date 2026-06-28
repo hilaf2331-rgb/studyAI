@@ -1027,3 +1027,16 @@ export const GetSharedMaterialResponse = zod.object({
 }).describe('Read-only, unauthenticated preview shape for a shared study kit -- deliberately excludes internal ids, ownership info, and review\/SRS state (nextReviewAt, easeFactor, interval), since guests only ever flip through cards, never review\/schedule them.')
 
 
+/**
+ * @summary Clone a shared study kit (summary + flashcards) into the authenticated caller's own materials
+ */
+export const SaveSharedMaterialParams = zod.object({
+  "shareId": zod.coerce.string()
+})
+
+export const SaveSharedMaterialResponse = zod.object({
+  "ok": zod.boolean(),
+  "materialId": zod.number()
+})
+
+

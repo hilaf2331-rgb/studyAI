@@ -12,7 +12,9 @@ import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
 import { Spinner } from "@/components/ui/spinner";
 import NotFound from "@/pages/not-found";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { setAuthTokenGetter, saveSharedMaterial } from "@workspace/api-client-react";
+import { PENDING_SAVE_SHARE_ID_KEY } from "@/pages/shared-view";
+import { useToast } from "@/hooks/use-toast";
 
 import { Dashboard } from "@/pages/dashboard";
 import { CoursesPage } from "@/pages/courses";
@@ -49,6 +51,7 @@ const queryClient = new QueryClient({
 function AppRoutes() {
   const { user, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
+  const { toast } = useToast();
 
   // The authenticated <Switch> below has no "/login" route. Right after a
   // successful login/register, `user` flips truthy on the same render where
@@ -59,6 +62,22 @@ function AppRoutes() {
       setLocation("/");
     }
   }, [user, location, setLocation]);
+
+  // Completes the "Save to My Courses" flow for a visitor who wasn't logged
+  // in when they clicked it on the shared-view page -- that click stashed
+  // the shareId here instead of saving immediately, then sent them to
+  // "/login" to sign up. Once `user` flips truthy (signup/login resolved),
+  // fire the save automatically so they never have to find their way back
+  // to the original shared link and click the button again.
+  useEffect(() => {
+    if (!user) return;
+    const pendingShareId = localStorage.getItem(PENDING_SAVE_SHARE_ID_KEY);
+    if (!pendingShareId) return;
+    localStorage.removeItem(PENDING_SAVE_SHARE_ID_KEY);
+    saveSharedMaterial(pendingShareId)
+      .then(() => toast({ description: "הערכה נשמרה לחומרי הלימוד שלך" }))
+      .catch(() => toast({ variant: "destructive", description: "השמירה נכשלה, נסו שנית" }));
+  }, [user, toast]);
 
   // Legal pages must stay reachable with no login required -- the payment
   // gateway's approval process and logged-out visitors both need to read

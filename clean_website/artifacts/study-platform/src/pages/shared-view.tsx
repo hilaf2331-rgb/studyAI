@@ -1,15 +1,22 @@
 import React, { useState } from "react";
-import { useParams, Link } from "wouter";
-import { useGetSharedMaterial, type SharedMaterialFlashcardsItem } from "@workspace/api-client-react";
+import { useParams, Link, useLocation } from "wouter";
+import { useGetSharedMaterial, useSaveSharedMaterial, type SharedMaterialFlashcardsItem } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, Sparkles, ArrowLeft, Share2, Check } from "lucide-react";
+import { CheckCircle2, Sparkles, ArrowLeft, Share2, Check, BookmarkPlus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useToast } from "@/hooks/use-toast";
+
+// Set on the "Save to My Courses" button when the visitor isn't logged in,
+// read by App.tsx's auto-save effect once `useAuth()`'s `user` flips truthy
+// post-signup -- lets the save happen without the visitor having to find
+// and re-click the button after creating an account.
+export const PENDING_SAVE_SHARE_ID_KEY = "studyai_pending_save_share_id";
 
 // Public, unauthenticated preview of a shared study kit -- mounted outside
 // the authenticated <SidebarLayout>/<Switch> in App.tsx (same early-return
@@ -136,6 +143,42 @@ function NativeShareButton({ title, isHebrew }: { title: string; isHebrew: boole
   );
 }
 
+function SaveToCoursesButton({ shareId, isHebrew }: { shareId: string; isHebrew: boolean }) {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [saved, setSaved] = useState(false);
+  const { mutate, isPending } = useSaveSharedMaterial({
+    mutation: {
+      onSuccess: () => {
+        setSaved(true);
+        toast({ description: isHebrew ? "הערכה נשמרה לחומרי הלימוד שלך" : "Saved to your materials" });
+      },
+      onError: () => {
+        toast({ variant: "destructive", description: isHebrew ? "השמירה נכשלה, נסו שנית" : "Save failed, please try again" });
+      },
+    },
+  });
+
+  const handleClick = () => {
+    if (!user) {
+      localStorage.setItem(PENDING_SAVE_SHARE_ID_KEY, shareId);
+      setLocation("/login");
+      return;
+    }
+    mutate({ shareId });
+  };
+
+  return (
+    <Button size="sm" variant="outline" className="gap-2 shrink-0" onClick={handleClick} disabled={isPending || saved}>
+      {saved ? <Check className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+      {saved
+        ? (isHebrew ? "נשמר" : "Saved")
+        : (isHebrew ? "שמירה לחומרי הלימוד שלי" : "Save to My Courses")}
+    </Button>
+  );
+}
+
 export const SharedViewPage: React.FC = () => {
   const { shareId } = useParams<{ shareId: string }>();
   const { isRTL } = useLanguage();
@@ -177,7 +220,10 @@ export const SharedViewPage: React.FC = () => {
             <Sparkles className="w-4 h-4 text-primary" />
             {isHebrew ? "ערכת לימוד משותפת מ-FocusStudy" : "A shared FocusStudy study kit"}
           </div>
-          <NativeShareButton title={data.title} isHebrew={isHebrew} />
+          <div className="flex items-center gap-2 shrink-0">
+            <SaveToCoursesButton shareId={shareId ?? ""} isHebrew={isHebrew} />
+            <NativeShareButton title={data.title} isHebrew={isHebrew} />
+          </div>
         </div>
 
         <ConversionBanner isHebrew={isHebrew} variant="top" />

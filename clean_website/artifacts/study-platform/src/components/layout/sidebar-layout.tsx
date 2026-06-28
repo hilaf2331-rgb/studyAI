@@ -130,11 +130,11 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           ${open ? "w-64" : "w-16"}
         `}
       >
-        {/* Logo */}
-        <div className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden">
+        {/* Logo -- links to the marketing page (not "/", which renders <Dashboard> while logged in) */}
+        <Link href="/landing" className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden">
           <img src="/logo.png" alt="FocusStudy" className="w-7 h-7 shrink-0 object-contain" />
           {open && <span className="truncate">FocusStudy</span>}
-        </div>
+        </Link>
 
         {/* Toggle button */}
         <button
@@ -164,10 +164,10 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2 font-bold text-lg tracking-tight text-sidebar-primary">
+          <Link href="/landing" className="flex items-center gap-2 font-bold text-lg tracking-tight text-sidebar-primary">
             <img src="/logo.png" alt="FocusStudy" className="w-5 h-5 object-contain" />
             <span>FocusStudy</span>
-          </div>
+          </Link>
           <TokenWidget compact />
         </div>
 
@@ -184,10 +184,14 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           side={isRTL ? "right" : "left"}
           className="w-72 p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border"
         >
-          <div className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden border-b border-sidebar-border">
+          <Link
+            href="/landing"
+            onClick={() => setMobileOpen(false)}
+            className="h-16 flex items-center gap-3 px-4 font-bold text-xl tracking-tight text-sidebar-primary overflow-hidden border-b border-sidebar-border"
+          >
             <img src="/logo.png" alt="FocusStudy" className="w-7 h-7 shrink-0 object-contain" />
             <span className="truncate">FocusStudy</span>
-          </div>
+          </Link>
           {renderNav(true, () => setMobileOpen(false))}
           {renderBottomActions(true)}
         </SheetContent>

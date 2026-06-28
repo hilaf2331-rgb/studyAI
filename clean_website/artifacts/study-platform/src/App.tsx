@@ -66,6 +66,12 @@ function AppRoutes() {
   if (location === "/terms") return <PageTransition locationKey={location}><TermsPage /></PageTransition>;
   if (location === "/privacy") return <PageTransition locationKey={location}><PrivacyPage /></PageTransition>;
 
+  // Lets the logo in the authenticated sidebar jump straight to the
+  // marketing page even though "/" itself renders <Dashboard> once logged
+  // in -- without this, there'd be no way to reach <LandingPage> again
+  // without logging out first.
+  if (location === "/landing") return <PageTransition locationKey={location}><LandingPage /></PageTransition>;
+
   // Shared study-kit links are the whole point of the feature: a classmate
   // who clicks one has no FocusStudy session at all, so this has to be
   // reachable before the logged-out/loading gates below ever run. Rendered

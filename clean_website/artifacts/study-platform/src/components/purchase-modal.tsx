@@ -159,56 +159,49 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
               </DialogDescription>
             </DialogHeader>
 
-            <div className="relative -mx-1 px-1">
-              <div className="flex sm:grid sm:grid-cols-3 gap-4 pt-2 overflow-x-auto snap-x snap-mandatory scroll-px-1 pb-1 -mx-1 px-1 sm:overflow-visible sm:pb-0">
-                {TIERS.map((tier) => {
-                  const isActive = activeTierId === tier.id;
-                  return (
-                    <div
-                      key={tier.id}
-                      onClick={() => setActiveTierId(tier.id)}
-                      className={`relative flex flex-col shrink-0 basis-[78%] sm:basis-auto snap-center rounded-2xl border p-5 gap-4 bg-card transition-all duration-300 cursor-pointer hover:scale-[1.02] ${
-                        isActive ? TIER_GLOW_ACTIVE[tier.id] : TIER_GLOW[tier.id]
-                      }`}
-                    >
-                      {(tier.badgeHe || tier.badgeEn) && (
-                        <Badge className="absolute -top-3 self-center px-3" variant={tier.id === "gold" ? "default" : "secondary"}>
-                          {isRTL ? tier.badgeHe : tier.badgeEn}
-                        </Badge>
-                      )}
-                      <div className="text-center pt-2">
-                        <p className="font-bold text-lg">{isRTL ? tier.nameHe : tier.nameEn}</p>
-                        <p className="text-3xl font-black mt-1">₪{tier.priceILS}</p>
-                      </div>
-                      <div className="space-y-2 text-sm flex-1">
-                        <div className="flex items-center gap-2 text-foreground">
-                          <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span>{isRTL ? tier.hoursHe : tier.hoursEn}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <BookOpenText className="w-4 h-4 shrink-0" />
-                          <span>{isRTL ? tier.summariesHe : tier.summariesEn}</span>
-                        </div>
-                      </div>
-                      <Button
-                        className="w-full"
-                        variant={tier.id === "silver" ? "default" : "outline"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePurchaseClick(tier);
-                        }}
-                      >
-                        {isRTL ? "רכישה" : "Purchase"}
-                      </Button>
+            <div className="flex flex-col sm:grid sm:grid-cols-3 gap-4 pt-2 max-h-[60vh] sm:max-h-none overflow-y-auto sm:overflow-visible px-0.5">
+              {TIERS.map((tier) => {
+                const isActive = activeTierId === tier.id;
+                return (
+                  <div
+                    key={tier.id}
+                    onClick={() => setActiveTierId(tier.id)}
+                    className={`relative flex flex-col rounded-2xl border p-5 gap-4 bg-card transition-all duration-300 cursor-pointer hover:scale-[1.02] ${
+                      isActive ? TIER_GLOW_ACTIVE[tier.id] : TIER_GLOW[tier.id]
+                    }`}
+                  >
+                    {(tier.badgeHe || tier.badgeEn) && (
+                      <Badge className="absolute -top-3 self-center px-3" variant={tier.id === "gold" ? "default" : "secondary"}>
+                        {isRTL ? tier.badgeHe : tier.badgeEn}
+                      </Badge>
+                    )}
+                    <div className="text-center pt-2">
+                      <p className="font-bold text-lg">{isRTL ? tier.nameHe : tier.nameEn}</p>
+                      <p className="text-3xl font-black mt-1">₪{tier.priceILS}</p>
                     </div>
-                  );
-                })}
-              </div>
-              {/* Edge fade hints that the row scrolls horizontally on mobile -- hidden once the sm: grid layout kicks in. */}
-              <div className="sm:hidden pointer-events-none absolute inset-y-0 end-0 w-8 bg-gradient-to-l from-background to-transparent rtl:bg-gradient-to-r" />
-              <p className="sm:hidden text-center text-xs text-muted-foreground pt-1">
-                {isRTL ? "↔ גלילה לצפייה בכל החבילות" : "↔ Swipe to see all packages"}
-              </p>
+                    <div className="space-y-2 text-sm flex-1">
+                      <div className="flex items-center gap-2 text-foreground">
+                        <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <span>{isRTL ? tier.hoursHe : tier.hoursEn}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <BookOpenText className="w-4 h-4 shrink-0" />
+                        <span>{isRTL ? tier.summariesHe : tier.summariesEn}</span>
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full"
+                      variant={tier.id === "silver" ? "default" : "outline"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePurchaseClick(tier);
+                      }}
+                    >
+                      {isRTL ? "רכישה" : "Purchase"}
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}

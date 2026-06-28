@@ -6,23 +6,44 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, Sparkles, ArrowLeft } from "lucide-react";
+import { CheckCircle2, Sparkles, ArrowLeft, Share2, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useToast } from "@/hooks/use-toast";
 
 // Public, unauthenticated preview of a shared study kit -- mounted outside
 // the authenticated <SidebarLayout>/<Switch> in App.tsx (same early-return
 // pattern as /terms and /privacy), since a guest with this link has no
 // session at all.
+// Both variants link to "/" (the marketing landing page for a logged-out
+// visitor -- see App.tsx) rather than straight to "/login", so anyone
+// trying to do something that needs an account sees the value pitch first
+// and chooses to sign up/log in from there, instead of being dropped on a
+// bare auth form with no context.
 function ConversionBanner({ isHebrew, variant }: { isHebrew: boolean; variant: "top" | "bottom" }) {
+  if (variant === "bottom") {
+    return (
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-center gap-3 sm:justify-center text-center sm:text-start">
+        <p className="text-sm font-medium" dir={isHebrew ? "rtl" : "ltr"}>
+          {isHebrew ? "רוצים ליצור ערכות לימוד משלכם? לחצו כאן לפרטים נוספים" : "Want to create your own study sets? Click here to learn more"}
+        </p>
+        <Link href="/">
+          <Button size="sm" variant="outline" className="shrink-0 gap-2">
+            {isHebrew ? "לפרטים נוספים" : "Learn more"}
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
-    <div className={`rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-center gap-3 ${variant === "top" ? "sm:justify-between" : "sm:justify-center text-center sm:text-start"}`}>
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-center gap-3 sm:justify-between">
       <p className="text-sm font-medium" dir={isHebrew ? "rtl" : "ltr"}>
         {isHebrew
           ? "לומדים לקראת המבחן הזה? שמרו את החפיסה ועקבו אחרי ההתקדמות שלכם עם חשבון חינמי ב-FocusStudy."
           : "Studying for this exam? Save this deck and track your progress by creating a free account on FocusStudy."}
       </p>
-      <Link href="/login">
+      <Link href="/">
         <Button size="sm" className="shrink-0 gap-2">
           {isHebrew ? "צרו חשבון חינמי" : "Create a free account"}
         </Button>
@@ -83,6 +104,38 @@ function FlashcardPreview({ cards, isHebrew }: { cards: SharedMaterialFlashcards
   );
 }
 
+// navigator.share() opens the OS-native share sheet (WhatsApp, Messages,
+// etc. on iOS/Android) so a recipient can re-share the kit with a friend in
+// one tap -- falls back to a clipboard copy on desktop browsers that don't
+// implement the Web Share API.
+function NativeShareButton({ title, isHebrew }: { title: string; isHebrew: boolean }) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+      } catch {
+        // User dismissed the native share sheet -- not an error.
+      }
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    toast({ description: isHebrew ? "הקישור הועתק" : "Link copied" });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={handleShare}>
+      {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+      {isHebrew ? "שתפו" : "Share"}
+    </Button>
+  );
+}
+
 export const SharedViewPage: React.FC = () => {
   const { shareId } = useParams<{ shareId: string }>();
   const { isRTL } = useLanguage();
@@ -119,9 +172,12 @@ export const SharedViewPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto p-4 sm:p-8 space-y-6">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Sparkles className="w-4 h-4 text-primary" />
-          {isHebrew ? "ערכת לימוד משותפת מ-FocusStudy" : "A shared FocusStudy study kit"}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Sparkles className="w-4 h-4 text-primary" />
+            {isHebrew ? "ערכת לימוד משותפת מ-FocusStudy" : "A shared FocusStudy study kit"}
+          </div>
+          <NativeShareButton title={data.title} isHebrew={isHebrew} />
         </div>
 
         <ConversionBanner isHebrew={isHebrew} variant="top" />

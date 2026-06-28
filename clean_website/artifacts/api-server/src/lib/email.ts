@@ -1,61 +1,39 @@
-import dns from "node:dns";
-import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
-// Belt-and-suspenders alongside the transport's own `family: 4` below --
-// Node's default "verbatim" DNS ordering can still hand back an AAAA
-// (IPv6) record first for smtp.gmail.com on hosts where outbound IPv6 is
-// blocked (Render/Vercel), which is what kept producing ENETUNREACH even
-// after pinning the transport's connection family. This reorders results
-// process-wide so IPv4 addresses are preferred for every lookup() call.
-dns.setDefaultResultOrder("ipv4first");
-
-// Gmail SMTP, authenticated with an App Password (not the account password --
-// see https://myaccount.google.com/apppasswords). CONTACT_EMAIL_USER is the
-// sending account; defaults to the support inbox itself so a single Gmail
-// account can both send and receive contact-form mail.
-const CONTACT_EMAIL_USER = process.env.CONTACT_EMAIL_USER;
-const CONTACT_EMAIL_PASSWORD = process.env.CONTACT_EMAIL_PASSWORD;
+// Resend's HTTP API instead of SMTP -- Render blocks all outbound SMTP ports
+// (25/465/587 all ETIMEDOUT), so no Nodemailer transport config can ever get
+// a TCP connection out. This sends over plain HTTPS instead, which Render
+// allows like any other outbound API call.
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL || "FocusStudy Contact Form <onboarding@resend.dev>";
 const CONTACT_TO_EMAIL = process.env.CONTACT_TO_EMAIL || "focusstudy.net@gmail.com";
 
-let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
-
-function getTransporter() {
-  if (!CONTACT_EMAIL_USER || !CONTACT_EMAIL_PASSWORD) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      // Port 465 / implicit TLS instead of 587 / STARTTLS -- some hosts
-      // (Render/Vercel) restrict outbound IPv6, and Node's default DNS
-      // lookup can hand back an IPv6 address for smtp.gmail.com, hanging
-      // the connection until the socket timeout. `family: 4` pins DNS
-      // resolution to IPv4 so that never happens.
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      family: 4,
-      lookup: (hostname: string, options: dns.LookupOneOptions, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) =>
-        dns.lookup(hostname, { ...options, family: 4 }, callback),
-      connectionTimeout: 5_000,
-      greetingTimeout: 5_000,
-      auth: { user: CONTACT_EMAIL_USER, pass: CONTACT_EMAIL_PASSWORD },
-    });
-  }
-  return transporter;
-}
-
 export async function sendContactMessageEmail(input: { name: string; email: string; message: string }): Promise<void> {
-  const mailer = getTransporter();
-  if (!mailer) {
+  if (!RESEND_API_KEY) {
     // Fail closed rather than silently dropping the message -- same
     // reasoning as the Zapier webhook in routes/billing.ts.
-    logger.warn("[email] CONTACT_EMAIL_USER/CONTACT_EMAIL_PASSWORD not set -- rejecting contact message");
+    logger.warn("[email] RESEND_API_KEY not set -- rejecting contact message");
     throw new Error("Contact email is not configured");
   }
-  await mailer.sendMail({
-    from: `"FocusStudy Contact Form" <${CONTACT_EMAIL_USER}>`,
-    to: CONTACT_TO_EMAIL,
-    replyTo: input.email,
-    subject: `FocusStudy Contact: ${input.name}`,
-    text: `From: ${input.name} <${input.email}>\n\n${input.message}`,
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: CONTACT_FROM_EMAIL,
+      to: CONTACT_TO_EMAIL,
+      reply_to: input.email,
+      subject: `FocusStudy Contact: ${input.name}`,
+      text: `From: ${input.name} <${input.email}>\n\n${input.message}`,
+    }),
   });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    logger.error({ status: res.status, body }, "[email] Resend API request failed");
+    throw new Error("Failed to send contact email");
+  }
 }

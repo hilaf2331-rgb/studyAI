@@ -17,17 +17,19 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 // Catches exactly the failure mode that sent contact-form mail silently into
-// Brevo's rejection logs: CONTACT_FROM_EMAIL pointed at an unverified
-// subdomain (contact@send.focusstudy.net) instead of the verified sender
-// (contact@focusstudy.net). Brevo accepts the API call but bounces the send
-// server-side, so there's nothing in our own logs to catch it -- this check
-// fails loudly at boot instead of waiting for a user to notice a message
-// never arrived.
-const contactFromEmail = process.env["CONTACT_FROM_EMAIL"];
+// Brevo's rejection logs: CONTACT_FROM_EMAIL pointed at a focusstudy.net
+// address that was never domain-verified in Brevo. The only sender actually
+// verified there today is the Gmail address below, so that's the one
+// address this check treats as known-good -- Brevo accepts the API call but
+// bounces the send server-side for anything else, so there's nothing in our
+// own logs to catch it. This fails loudly at boot instead of waiting for a
+// user to notice a message never arrived.
+const VERIFIED_CONTACT_SENDER = "focusstudy.net@gmail.com";
+const contactFromEmail = process.env["CONTACT_FROM_EMAIL"]?.trim();
 if (!contactFromEmail) {
-  logger.warn("CONTACT_FROM_EMAIL is not set -- contact form emails will use the lib/email.ts default sender.");
-} else if (!contactFromEmail.endsWith("@focusstudy.net")) {
-  logger.warn(`CONTACT_FROM_EMAIL ("${contactFromEmail}") does not end with "@focusstudy.net" -- Brevo will likely reject it as an unverified sender.`);
+  logger.warn(`CONTACT_FROM_EMAIL is not set -- contact form emails will use the lib/email.ts default sender (${VERIFIED_CONTACT_SENDER}).`);
+} else if (contactFromEmail !== VERIFIED_CONTACT_SENDER) {
+  logger.warn(`CONTACT_FROM_EMAIL ("${contactFromEmail}") is not the verified Brevo sender (${VERIFIED_CONTACT_SENDER}) -- Brevo will likely reject it as an unverified sender.`);
 }
 
 // נתיב למניעת הירדמות השרת

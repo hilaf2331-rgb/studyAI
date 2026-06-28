@@ -13,7 +13,7 @@ const BREVO_API_KEY = process.env.BREVO_API_KEY?.trim();
 // account's verified senders list, so even invisible whitespace here is
 // enough to produce "sender ... is not valid" despite the dashboard showing
 // the address as verified.
-const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL?.trim() || "contact@focusstudy.net";
+const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL?.trim() || "focusstudy.net@gmail.com";
 const CONTACT_FROM_NAME = process.env.CONTACT_FROM_NAME?.trim() || "FocusStudy";
 const CONTACT_TO_EMAIL = process.env.CONTACT_TO_EMAIL?.trim() || "focusstudy.net@gmail.com";
 

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSaveBitName } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Clock, BookOpenText, ArrowRight, ArrowLeft, CheckCircle2, X } from "lucide-react";
+import { Clock, ArrowRight, ArrowLeft, CheckCircle2, X } from "lucide-react";
 import { PaymentLauncher } from "@/components/payment-launcher";
 
 // EDIT THIS: the real Bit/PayBox payment links, once issued. Drives both the
@@ -28,46 +28,46 @@ interface Tier {
   nameEn: string;
   hoursHe: string;
   hoursEn: string;
-  summariesHe: string;
-  summariesEn: string;
+  descriptionHe: string;
+  descriptionEn: string;
   badgeHe?: string;
   badgeEn?: string;
 }
 
+// "Hour Bank" (כרטיסייה) model: a fixed bucket of recording hours for the
+// semester, bought once, that doesn't reset or expire monthly.
 const TIERS: Tier[] = [
   {
     id: "bronze",
-    priceILS: 19,
-    nameHe: "ברונזה",
-    nameEn: "Bronze",
-    hoursHe: "~2 שעות הקלטה",
-    hoursEn: "~2 Lecture Hours",
-    summariesHe: "(או ~6 סיכומי קריאה)",
-    summariesEn: "(or ~6 Reading Summaries)",
+    priceILS: 39,
+    nameHe: "קורס בודד",
+    nameEn: "Single Course",
+    hoursHe: "30 שעות הקלטה",
+    hoursEn: "30 Hours of Recording",
+    descriptionHe: "מעולה לקורס אחד קשוח במיוחד. סוגר לך פינה בדיוק איפה שצריך.",
+    descriptionEn: "Great for one especially tough course. Covers exactly where you need it.",
   },
   {
     id: "silver",
-    priceILS: 39,
-    nameHe: "כסף",
-    nameEn: "Silver",
-    hoursHe: "~5.5 שעות הקלטה",
-    hoursEn: "~5.5 Lecture Hours",
-    summariesHe: "(או ~16 סיכומי קריאה)",
-    summariesEn: "(or ~16 Reading Summaries)",
+    priceILS: 79,
+    nameHe: "חצי סמסטר",
+    nameEn: "Half Semester",
+    hoursHe: "70 שעות הקלטה",
+    hoursEn: "70 Hours of Recording",
+    descriptionHe: "החבילה המושלמת לקורסים המרכזיים של הסמסטר. הכי משתלמת עבורך.",
+    descriptionEn: "The perfect bundle for your semester's core courses. Best value for you.",
     badgeHe: "הכי פופולרי",
     badgeEn: "Most Popular",
   },
   {
     id: "gold",
-    priceILS: 79,
-    nameHe: "זהב",
-    nameEn: "Gold",
-    hoursHe: "~14 שעות הקלטה",
-    hoursEn: "~14 Lecture Hours",
-    summariesHe: "(או ~40 סיכומי קריאה)",
-    summariesEn: "(or ~40 Reading Summaries)",
-    badgeHe: "הכי משתלם — סמסטר שלם",
-    badgeEn: "Best Value — Full Semester",
+    priceILS: 119,
+    nameHe: "סמסטר מלא",
+    nameEn: "Full Semester",
+    hoursHe: "130 שעות הקלטה",
+    hoursEn: "130 Hours of Recording",
+    descriptionHe: "לחרשנים האמיתיים שמקליטים כל מרצה מהרגע שהוא נכנס לכיתה. שקט נפשי לכל הסמסטר.",
+    descriptionEn: "For the true grinders who record every lecture from the moment it starts. Peace of mind for the whole semester.",
   },
 ];
 
@@ -152,13 +152,13 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
 
             <DialogHeader className="ps-10">
               <DialogTitle className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-amber-500" />
-                {isRTL ? "טעינת טוקנים" : "Buy Tokens"}
+                <Clock className="w-5 h-5 text-amber-500" />
+                {isRTL ? "כרטיסיית שעות" : "Hour Bundles"}
               </DialogTitle>
               <DialogDescription>
                 {isRTL
-                  ? "בחר/י חבילה. הטוקנים נוספים לחשבון שלך ולא יורדים בתחילת חודש חדש."
-                  : "Pick a package. Purchased tokens are added to your account and never expire at month-end."}
+                  ? "בחר/י כרטיסייה. השעות נוספות לחשבון שלך ולא יורדות בתחילת חודש חדש — נשארות לך לכל הסמסטר."
+                  : "Pick an hour bundle. Hours are added to your account and never reset at month-end — they're yours for the whole semester."}
               </DialogDescription>
             </DialogHeader>
 
@@ -183,14 +183,13 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
                       <p className="text-3xl font-black mt-1">₪{tier.priceILS}</p>
                     </div>
                     <div className="space-y-2 text-sm flex-1">
-                      <div className="flex items-center gap-2 text-foreground">
+                      <div className="flex items-center gap-2 text-foreground font-semibold">
                         <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
                         <span>{isRTL ? tier.hoursHe : tier.hoursEn}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <BookOpenText className="w-4 h-4 shrink-0" />
-                        <span>{isRTL ? tier.summariesHe : tier.summariesEn}</span>
-                      </div>
+                      <p className="text-muted-foreground leading-relaxed">
+                        {isRTL ? tier.descriptionHe : tier.descriptionEn}
+                      </p>
                     </div>
                     <Button
                       className="w-full"
@@ -252,8 +251,8 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
               </DialogTitle>
               <DialogDescription>
                 {isRTL
-                  ? `שלח/י ₪${selectedTier.priceILS} בדיוק דרך Bit או PayBox לקישור שלמטה. הטוקנים יתווספו לחשבונך אוטומטית לאחר אישור התשלום.`
-                  : `Send exactly ₪${selectedTier.priceILS} via Bit or PayBox using the link below. Tokens will be added to your account automatically once the payment is confirmed.`}
+                  ? `שלח/י ₪${selectedTier.priceILS} בדיוק דרך Bit או PayBox לקישור שלמטה. השעות יתווספו לחשבונך אוטומטית לאחר אישור התשלום.`
+                  : `Send exactly ₪${selectedTier.priceILS} via Bit or PayBox using the link below. Hours will be added to your account automatically once the payment is confirmed.`}
               </DialogDescription>
             </DialogHeader>
 

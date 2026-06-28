@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, coursesTable, materialsTable, flashcardsTable, flashcardDecksTable, examResultsTable, activityTable, usersTable } from "@workspace/db";
 import { count, avg, desc, eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
-import { getTokenBalance, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
+import { getTokenBalance, isPayingCustomer, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
 
 // Today's Review queue is capped at this many cards across ALL of the
 // user's materials -- a daily review session should feel doable in one
@@ -153,6 +153,9 @@ router.get("/dashboard/tokens", async (req, res) => {
     // (purchased, uncapped) -- so the frontend doesn't need to recompute it
     // and can show one accurate grand total after a purchase.
     totalTokens: total,
+    // Lets the frontend pick the right processing-queue message (plain vs.
+    // upsell) without needing its own user/billing lookup.
+    isPayingCustomer: await isPayingCustomer(userId),
     estimatedSummariesRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_SUMMARY),
     estimatedExamsRemaining: Math.floor(total / ESTIMATED_TOKENS_PER_EXAM),
   });

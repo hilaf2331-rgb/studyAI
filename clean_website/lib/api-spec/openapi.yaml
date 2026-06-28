@@ -1798,7 +1798,7 @@ components:
 
     TokenBalance:
       type: object
-      required: [tokensRemaining, monthlyTokenQuota, tokenBalance, totalTokens, estimatedSummariesRemaining, estimatedExamsRemaining]
+      required: [tokensRemaining, monthlyTokenQuota, tokenBalance, totalTokens, isPayingCustomer, estimatedSummariesRemaining, estimatedExamsRemaining]
       properties:
         tokensRemaining:
           type: integer
@@ -1808,6 +1808,8 @@ components:
           type: integer
         totalTokens:
           type: integer
+        isPayingCustomer:
+          type: boolean
         estimatedSummariesRemaining:
           type: integer
         estimatedExamsRemaining:

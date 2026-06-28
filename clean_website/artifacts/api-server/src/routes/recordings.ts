@@ -4,7 +4,7 @@ import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTabl
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio, AudioDurationLimitError } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
 import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, freeTierAudioLimitMessage } from "../lib/validation";
 import { runExclusive } from "../lib/processing-queue";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -124,6 +124,10 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   // the concurrency limit, instead of looking stalled during exam-period
   // traffic spikes.
   const uploadId = typeof req.body.uploadId === "string" ? req.body.uploadId : undefined;
+
+  // Paying users (and admins) cut ahead of any free-tier jobs already
+  // waiting -- see lib/processing-queue.ts's priority insertion logic.
+  const isPriority = await isPayingCustomer(userId);
 
   // The actual heavy work -- Whisper transcription plus three parallel
   // Gemini calls -- runs through the shared processing queue (see
@@ -249,6 +253,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
         return res.status(201).json({ recording, kit: null, generationError: err.message });
       }
     },
+    { isPriority },
   );
 });
 

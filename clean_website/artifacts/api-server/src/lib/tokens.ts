@@ -167,6 +167,16 @@ export async function getFreeTierAudioCapSeconds(userId: number): Promise<number
   return FREE_TIER_MAX_AUDIO_SECONDS;
 }
 
+// Whether this user gets priority treatment (e.g. jumping the processing
+// queue ahead of free-tier jobs, see lib/processing-queue.ts) -- true for
+// admins and for anyone who has ever bought a token package, same
+// isPayingCustomer flag used by getFreeTierAudioCapSeconds above.
+export async function isPayingCustomer(userId: number): Promise<boolean> {
+  if (await isAdminUser(userId)) return true;
+  const [user] = await db.select({ isPayingCustomer: usersTable.isPayingCustomer }).from(usersTable).where(eq(usersTable.id, userId));
+  return user?.isPayingCustomer ?? false;
+}
+
 // Flat per-execution token cost for the advanced AI features that sit on
 // top of (not instead of) the dynamic generation-cost accounting above --
 // PAYG features users pay a small fixed amount for regardless of how much

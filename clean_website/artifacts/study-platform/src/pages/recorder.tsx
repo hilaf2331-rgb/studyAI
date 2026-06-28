@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useSearch } from "wouter";
-import { useListCourses } from "@workspace/api-client-react";
+import { useListCourses, useGetTokenBalance } from "@workspace/api-client-react";
+import { usePurchaseModal } from "@/lib/purchase-modal";
 import { useLanguage } from "@/lib/i18n";
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
@@ -80,6 +81,8 @@ export const RecorderPage: React.FC = () => {
   const { toast } = useToast();
   const search = useSearch();
   const { data: courses } = useListCourses();
+  const { data: tokenBalance } = useGetTokenBalance();
+  const { open: openPurchaseModal } = usePurchaseModal();
 
   // Preselect the course when arriving from a specific course page, e.g. /recorder?courseId=5
   const preselectedCourseId = new URLSearchParams(search).get("courseId") || "";
@@ -810,7 +813,20 @@ export const RecorderPage: React.FC = () => {
               {queuePosition != null && (
                 <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-3 py-2 rounded-lg">
                   <Clock className="w-4 h-4 shrink-0" />
-                  עומס בשרת — יש {queuePosition} הקלטות לפניך בתור, נתחיל לעבד את שלך בעוד רגע
+                  {tokenBalance?.isPayingCustomer ? (
+                    <span>עומס בשרת — יש {queuePosition} הקלטות לפניך בתור, נתחיל לעבד את שלך בעוד רגע</span>
+                  ) : (
+                    <span>
+                      השרת שלנו עמוס כרגע, יש {queuePosition} הקלטות לפניך בתור... רוצה להיות בראש התור?{" "}
+                      <button
+                        type="button"
+                        onClick={openPurchaseModal}
+                        className="font-semibold underline underline-offset-2 hover:text-primary/80"
+                      >
+                        קנה עכשיו טוקנים!
+                      </button>
+                    </span>
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-3">

@@ -10,7 +10,7 @@ import { getGenerationProgress, setGenerationProgress, clearGenerationProgress }
 import { runExclusive } from "../lib/processing-queue";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
-import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds } from "../lib/tokens";
+import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
 
 const router = Router();
 
@@ -190,6 +190,9 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
       // be enforced authoritatively, against Whisper's actual measured
       // duration, inside transcribeAudio() itself.
       const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
+      // Paying users (and admins) cut ahead of any free-tier jobs already
+      // waiting -- see lib/processing-queue.ts's priority insertion logic.
+      const isPriority = await isPayingCustomer(userId);
       // Shares the same concurrency-limited queue as recordings.ts -- both
       // routes hit the identical heavy Whisper call against the same
       // process's CPU/memory budget, so they need one shared cap rather than
@@ -205,6 +208,7 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
           reportProgress,
           { maxDurationSeconds: audioCapSeconds ?? undefined }
         ),
+        { isPriority },
       );
       extractedText = result.text;
       duration = result.duration;

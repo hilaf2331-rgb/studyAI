@@ -17,9 +17,9 @@ export const WaveField: React.FC<{ className?: string }> = ({ className }) => {
     >
       <defs>
         <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#d946ef" />
-          <stop offset="50%" stopColor="#818cf8" />
-          <stop offset="100%" stopColor="#22d3ee" />
+          <stop offset="0%" stopColor="#0d9488" />
+          <stop offset="50%" stopColor="#0ea5e9" />
+          <stop offset="100%" stopColor="#2563eb" />
         </linearGradient>
       </defs>
       {rows.map((_, i) => {

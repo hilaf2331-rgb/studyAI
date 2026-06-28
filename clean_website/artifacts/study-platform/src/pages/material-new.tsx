@@ -120,7 +120,7 @@ const PICKER_CONFIG: Record<PickerCategory, {
     acceptAttr: ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
   image:    { icon: ImageIcon, labelHe: "תמונה",          labelEn: "Photo",         color: "bg-pink-500/10 text-pink-600",   acceptsFile: true, acceptAttr: "image/*" },
   audio:    { icon: Mic,       labelHe: "הקלטה קולית",   labelEn: "Voice / Audio", color: "bg-purple-500/10 text-purple-600", acceptsFile: true, acceptAttr: "audio/*,.mp3,.m4a,.wav,.ogg,.webm" },
-  video:    { icon: FileVideo, labelHe: "וידאו",          labelEn: "Video File",    color: "bg-indigo-500/10 text-indigo-600", acceptsFile: true, acceptAttr: "video/*,.mp4,.webm,.mov" },
+  video:    { icon: FileVideo, labelHe: "וידאו",          labelEn: "Video File",    color: "bg-cyan-500/10 text-cyan-600", acceptsFile: true, acceptAttr: "video/*,.mp4,.webm,.mov" },
 };
 
 export const MaterialNewPage: React.FC = () => {

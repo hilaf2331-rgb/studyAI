@@ -33,7 +33,15 @@ export const LandingPage: React.FC = () => {
           <section className="text-center space-y-5 pt-4 sm:pt-8">
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.1]">
               מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
-              <span className="bg-gradient-to-l from-indigo-400 via-fuchsia-500 to-cyan-400 bg-clip-text text-transparent">
+              <span
+                className="bg-gradient-to-l from-teal-400 via-cyan-400 to-blue-500"
+                style={{
+                  backgroundClip: "text",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  color: "#22d3ee",
+                }}
+              >
                 ערכת לימוד מלאה
               </span>
               .<br className="hidden sm:block" /> תוך שניות.
@@ -46,7 +54,7 @@ export const LandingPage: React.FC = () => {
             </p>
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Link href="/login">
-                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-fuchsia-500/40 hover:-translate-y-0.5 transition-all duration-300">
+                <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide hover:shadow-xl hover:shadow-cyan-500/40 hover:-translate-y-0.5 transition-all duration-300">
                   יאללה, מעלים חומר ראשון
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
@@ -63,7 +71,7 @@ export const LandingPage: React.FC = () => {
           <section id="why-focusstudy" className="space-y-6 scroll-mt-24">
             <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">למה FocusStudy?</h2>
             <div className="grid sm:grid-cols-3 gap-4">
-              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/20 hover:border-indigo-400/50">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-teal-500/20 hover:border-teal-400/50">
                 <FlashcardGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">ערכת לימוד מיידית</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -79,8 +87,8 @@ export const LandingPage: React.FC = () => {
                   ממוקדות שתוקפות רק את הנקודות החלשות שלכם — לפני המבחן, לא אחריו.
                 </p>
               </div>
-              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
-                <RotateCw className="w-10 h-10 mx-auto text-fuchsia-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/20 hover:border-blue-400/50">
+                <RotateCw className="w-10 h-10 mx-auto text-cyan-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
                 <p className="text-sm font-bold tracking-wide">חזרה מרווחת שמזכירה לכם מה לחזור עליו</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   אלגוריתם חזרה מרווחת קובע מתי הזמן הנכון לחזור על כל כרטיסייה —
@@ -99,7 +107,7 @@ export const LandingPage: React.FC = () => {
                 בלי התחייבות חודשית – קונים טוקנים לפי הצורך, ואין מגבלת שימוש יומית.
               </p>
             </div>
-            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-500/20 hover:border-violet-400/50">
+            <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/20 hover:border-blue-400/50">
               <InfinityGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
                 <strong className="block mb-0.5">האם הטוקנים פגים בתוקף? לא!</strong>

@@ -89,11 +89,21 @@ export const AuthPage: React.FC = () => {
           <div className="flex items-center justify-center">
             <img src="/logo.png" alt="FocusStudy" className="w-14 h-14 object-contain" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-l from-indigo-500 via-fuchsia-500 to-amber-500 bg-clip-text text-transparent">FocusStudy</h1>
+          <h1
+            className="text-3xl font-black tracking-tight bg-gradient-to-l from-teal-500 via-cyan-500 to-blue-600"
+            style={{
+              backgroundClip: "text",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              color: "#0891b2",
+            }}
+          >
+            FocusStudy
+          </h1>
           <p className="text-muted-foreground text-sm">פלטפורמת הלמידה החכמה שלך</p>
         </div>
 
-        <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/45 backdrop-blur-md shadow-2xl shadow-indigo-500/10">
+        <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/45 backdrop-blur-md shadow-2xl shadow-cyan-500/10">
           <CardHeader className="pb-4">
             <CardTitle>
               {mode === "login" ? "התחבר לחשבונך" : "צור חשבון חדש"}

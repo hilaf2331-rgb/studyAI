@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Hebrew:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -78,14 +78,14 @@
   --popover-foreground: 222 47% 11%;
   --popover-border: 213 40% 90%;
 
-  --primary: 217 80% 45%; /* Modern, accessible blue */
+  --primary: 195 85% 38%; /* Deep teal shifting to rich blue */
   --primary-foreground: 0 0% 100%;
 
   --secondary: 28 90% 58%; /* Subtle orange accent */
   --secondary-foreground: 24 45% 14%;
 
-  --muted: 213 55% 95%; /* Pastel blue tint */
-  --muted-foreground: 215 25% 40%;
+  --muted: 195 45% 95%; /* Pastel teal tint */
+  --muted-foreground: 215 25% 33%;
 
   --accent: 28 90% 94%; /* Soft pastel orange highlight */
   --accent-foreground: 24 60% 25%;
@@ -94,18 +94,18 @@
   --destructive-foreground: 0 0% 100%;
 
   --input: 213 40% 90%;
-  --ring: 217 80% 45%;
+  --ring: 195 85% 38%;
 
-  --sidebar: 217 70% 28%;
+  --sidebar: 200 65% 22%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 70% 22%;
-  --sidebar-primary: 28 90% 60%;
-  --sidebar-primary-foreground: 24 45% 12%;
-  --sidebar-accent: 217 60% 36%;
+  --sidebar-border: 200 65% 16%;
+  --sidebar-primary: 190 85% 55%;
+  --sidebar-primary-foreground: 200 60% 10%;
+  --sidebar-accent: 200 55% 30%;
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 28 90% 60%;
+  --sidebar-ring: 190 85% 55%;
 
-  --app-font-sans: 'IBM Plex Sans Hebrew', sans-serif;
+  --app-font-sans: 'Rubik', sans-serif;
   --radius: 0.5rem;
 
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -124,44 +124,44 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 240 35% 4%;
+  --background: 210 40% 4%;
   --foreground: 210 30% 97%;
-  --border: 240 25% 18%;
+  --border: 210 25% 18%;
 
-  --card: 240 30% 8%;
+  --card: 210 35% 8%;
   --card-foreground: 210 30% 97%;
-  --card-border: 240 25% 18%;
+  --card-border: 210 25% 18%;
 
-  --sidebar: 240 32% 6%;
+  --sidebar: 205 50% 5%;
   --sidebar-foreground: 210 30% 96%;
-  --sidebar-border: 240 25% 16%;
-  --sidebar-primary: 270 90% 70%;
-  --sidebar-primary-foreground: 240 35% 8%;
-  --sidebar-accent: 250 40% 18%;
+  --sidebar-border: 205 40% 12%;
+  --sidebar-primary: 188 90% 62%;
+  --sidebar-primary-foreground: 205 50% 8%;
+  --sidebar-accent: 200 45% 16%;
   --sidebar-accent-foreground: 210 30% 96%;
-  --sidebar-ring: 270 90% 70%;
+  --sidebar-ring: 188 90% 62%;
 
-  --popover: 240 30% 8%;
+  --popover: 210 35% 8%;
   --popover-foreground: 210 30% 97%;
-  --popover-border: 240 25% 18%;
+  --popover-border: 210 25% 18%;
 
-  --primary: 263 85% 66%;
-  --primary-foreground: 0 0% 100%;
+  --primary: 190 85% 58%;
+  --primary-foreground: 200 60% 8%;
 
   --secondary: 28 85% 58%;
   --secondary-foreground: 24 50% 12%;
 
-  --muted: 240 22% 14%;
-  --muted-foreground: 220 15% 70%;
+  --muted: 210 25% 14%;
+  --muted-foreground: 210 18% 78%;
 
-  --accent: 28 70% 22%;
-  --accent-foreground: 28 90% 85%;
+  --accent: 195 55% 20%;
+  --accent-foreground: 190 85% 88%;
 
   --destructive: 0 70% 45%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 240 25% 18%;
-  --ring: 263 85% 66%;
+  --input: 210 25% 18%;
+  --ring: 190 85% 58%;
 }
 
 @layer base {

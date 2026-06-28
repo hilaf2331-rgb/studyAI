@@ -53,7 +53,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const statCards = [
-    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: CourseGlyph, glow: "hover:shadow-indigo-500/25 hover:border-indigo-400/50" },
+    { label: t("totalCourses"), value: stats?.totalCourses ?? 0, icon: CourseGlyph, glow: "hover:shadow-cyan-500/25 hover:border-cyan-400/50" },
     { label: t("totalMaterials"), value: stats?.totalMaterials ?? 0, icon: MaterialsGlyph, glow: "hover:shadow-sky-500/25 hover:border-sky-400/50" },
     { label: t("totalFlashcards"), value: stats?.totalFlashcards ?? 0, icon: FlashcardGlyph, glow: "hover:shadow-amber-500/25 hover:border-amber-400/50" },
     { label: t("averageScore"), value: `${stats?.averageScore ?? 0}%`, icon: GradeGlyph, glow: "hover:shadow-emerald-500/25 hover:border-emerald-400/50" },

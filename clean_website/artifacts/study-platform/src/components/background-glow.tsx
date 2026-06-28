@@ -17,9 +17,9 @@ import { cn } from "@/lib/utils";
 // glow is mounted.
 export const BackgroundGlow: React.FC<{ className?: string }> = ({ className }) => (
   <div aria-hidden className={cn("pointer-events-none absolute -z-10", className)}>
-    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-amber-400 opacity-90 blur-3xl animate-glow-pulse dark:from-indigo-400 dark:via-violet-500 dark:to-fuchsia-500 dark:opacity-80" />
+    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-500 via-cyan-500 to-blue-500 opacity-90 blur-3xl animate-glow-pulse dark:from-teal-400 dark:via-cyan-500 dark:to-blue-600 dark:opacity-80" />
     <div
-      className="absolute inset-0 rounded-full bg-gradient-to-tl from-cyan-400 via-violet-500 to-pink-500 opacity-70 blur-[70px] animate-glow-pulse dark:opacity-65"
+      className="absolute inset-0 rounded-full bg-gradient-to-tl from-blue-400 via-teal-400 to-cyan-300 opacity-70 blur-[70px] animate-glow-pulse dark:opacity-65"
       style={{ animationDelay: "2.4s" }}
     />
   </div>

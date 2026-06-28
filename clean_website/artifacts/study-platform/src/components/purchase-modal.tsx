@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSaveBitName } from "@workspace/api-client-react";
 import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Clock, BookOpenText, ArrowRight, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Coins, Clock, BookOpenText, ArrowRight, ArrowLeft, CheckCircle2, X } from "lucide-react";
 
 // EDIT THIS: the real Bit/PayBox payment link, once issued. Used both as
 // the tappable "Pay Now" link and as the source for the QR code rendered
@@ -66,6 +66,28 @@ const TIERS: Tier[] = [
   },
 ];
 
+// Per-tier ambient glow, always-on at low intensity and stronger on
+// hover/selected -- bronze/silver/gold colors chosen to read as the
+// corresponding metal rather than the app's primary brand color, so the
+// three cards stay visually distinct from each other at a glance.
+const TIER_GLOW: Record<TierId, string> = {
+  bronze:
+    "border-[#b87333]/40 shadow-[0_0_22px_-4px_rgba(184,115,51,0.45)] " +
+    "hover:border-[#b87333]/80 hover:shadow-[0_0_42px_-2px_rgba(184,115,51,0.75)]",
+  silver:
+    "border-slate-300/50 shadow-[0_0_22px_-4px_rgba(203,213,225,0.45)] " +
+    "hover:border-slate-200/90 hover:shadow-[0_0_42px_-2px_rgba(226,232,240,0.85)]",
+  gold:
+    "border-amber-400/45 shadow-[0_0_26px_-4px_rgba(251,191,36,0.5)] " +
+    "hover:border-amber-300/90 hover:shadow-[0_0_55px_-2px_rgba(251,191,36,0.9)]",
+};
+
+const TIER_GLOW_ACTIVE: Record<TierId, string> = {
+  bronze: "border-[#b87333]/80 shadow-[0_0_42px_-2px_rgba(184,115,51,0.75)]",
+  silver: "border-slate-200/90 shadow-[0_0_42px_-2px_rgba(226,232,240,0.85)]",
+  gold: "border-amber-300/90 shadow-[0_0_55px_-2px_rgba(251,191,36,0.9)]",
+};
+
 type Step = "tiers" | "bit-name" | "instructions";
 
 export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boolean) => void }> = ({ open, onOpenChange }) => {
@@ -74,6 +96,7 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
   const saveBitName = useSaveBitName();
   const [step, setStep] = useState<Step>("tiers");
   const [selectedTier, setSelectedTier] = useState<Tier | null>(null);
+  const [activeTierId, setActiveTierId] = useState<TierId | null>(null);
   const [bitName, setBitName] = useState("");
 
   const BackArrow = isRTL ? ArrowRight : ArrowLeft;
@@ -81,6 +104,7 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
   const reset = () => {
     setStep("tiers");
     setSelectedTier(null);
+    setActiveTierId(null);
     setBitName("");
   };
 
@@ -112,10 +136,18 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={step === "tiers" ? "sm:max-w-3xl" : "sm:max-w-md"}>
+      <DialogContent className={`max-h-[90vh] overflow-y-auto ${step === "tiers" ? "sm:max-w-3xl" : "sm:max-w-md"}`}>
         {step === "tiers" && (
           <>
-            <DialogHeader>
+            <button
+              onClick={() => handleOpenChange(false)}
+              aria-label={isRTL ? "חזרה" : "Back"}
+              className="absolute start-4 top-4 z-10 inline-flex items-center justify-center w-8 h-8 rounded-full bg-muted text-foreground/80 hover:bg-muted/80 hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <DialogHeader className="ps-10">
               <DialogTitle className="flex items-center gap-2">
                 <Coins className="w-5 h-5 text-amber-500" />
                 {isRTL ? "טעינת טוקנים" : "Buy Tokens"}
@@ -127,42 +159,56 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid sm:grid-cols-3 gap-4 pt-2">
-              {TIERS.map((tier) => (
-                <div
-                  key={tier.id}
-                  className={`relative flex flex-col rounded-2xl border p-5 gap-4 ${
-                    tier.id === "silver" ? "border-primary shadow-lg shadow-primary/10" : "border-border"
-                  }`}
-                >
-                  {(tier.badgeHe || tier.badgeEn) && (
-                    <Badge className="absolute -top-3 self-center px-3" variant={tier.id === "gold" ? "default" : "secondary"}>
-                      {isRTL ? tier.badgeHe : tier.badgeEn}
-                    </Badge>
-                  )}
-                  <div className="text-center pt-2">
-                    <p className="font-bold text-lg">{isRTL ? tier.nameHe : tier.nameEn}</p>
-                    <p className="text-3xl font-black mt-1">₪{tier.priceILS}</p>
-                  </div>
-                  <div className="space-y-2 text-sm flex-1">
-                    <div className="flex items-center gap-2 text-foreground">
-                      <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span>{isRTL ? tier.hoursHe : tier.hoursEn}</span>
+            <div className="relative -mx-1 px-1">
+              <div className="flex sm:grid sm:grid-cols-3 gap-4 pt-2 overflow-x-auto snap-x snap-mandatory scroll-px-1 pb-1 -mx-1 px-1 sm:overflow-visible sm:pb-0">
+                {TIERS.map((tier) => {
+                  const isActive = activeTierId === tier.id;
+                  return (
+                    <div
+                      key={tier.id}
+                      onClick={() => setActiveTierId(tier.id)}
+                      className={`relative flex flex-col shrink-0 basis-[78%] sm:basis-auto snap-center rounded-2xl border p-5 gap-4 bg-card transition-all duration-300 cursor-pointer hover:scale-[1.02] ${
+                        isActive ? TIER_GLOW_ACTIVE[tier.id] : TIER_GLOW[tier.id]
+                      }`}
+                    >
+                      {(tier.badgeHe || tier.badgeEn) && (
+                        <Badge className="absolute -top-3 self-center px-3" variant={tier.id === "gold" ? "default" : "secondary"}>
+                          {isRTL ? tier.badgeHe : tier.badgeEn}
+                        </Badge>
+                      )}
+                      <div className="text-center pt-2">
+                        <p className="font-bold text-lg">{isRTL ? tier.nameHe : tier.nameEn}</p>
+                        <p className="text-3xl font-black mt-1">₪{tier.priceILS}</p>
+                      </div>
+                      <div className="space-y-2 text-sm flex-1">
+                        <div className="flex items-center gap-2 text-foreground">
+                          <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span>{isRTL ? tier.hoursHe : tier.hoursEn}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <BookOpenText className="w-4 h-4 shrink-0" />
+                          <span>{isRTL ? tier.summariesHe : tier.summariesEn}</span>
+                        </div>
+                      </div>
+                      <Button
+                        className="w-full"
+                        variant={tier.id === "silver" ? "default" : "outline"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePurchaseClick(tier);
+                        }}
+                      >
+                        {isRTL ? "רכישה" : "Purchase"}
+                      </Button>
                     </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <BookOpenText className="w-4 h-4 shrink-0" />
-                      <span>{isRTL ? tier.summariesHe : tier.summariesEn}</span>
-                    </div>
-                  </div>
-                  <Button
-                    className="w-full"
-                    variant={tier.id === "silver" ? "default" : "outline"}
-                    onClick={() => handlePurchaseClick(tier)}
-                  >
-                    {isRTL ? "רכישה" : "Purchase"}
-                  </Button>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
+              {/* Edge fade hints that the row scrolls horizontally on mobile -- hidden once the sm: grid layout kicks in. */}
+              <div className="sm:hidden pointer-events-none absolute inset-y-0 end-0 w-8 bg-gradient-to-l from-background to-transparent rtl:bg-gradient-to-r" />
+              <p className="sm:hidden text-center text-xs text-muted-foreground pt-1">
+                {isRTL ? "↔ גלילה לצפייה בכל החבילות" : "↔ Swipe to see all packages"}
+              </p>
             </div>
           </>
         )}

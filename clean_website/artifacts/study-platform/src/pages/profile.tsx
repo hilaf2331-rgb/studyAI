@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth, type Gender } from "@/lib/auth";
 import { usePurchaseModal } from "@/lib/purchase-modal";
-import { Coins, FileText, Mic, User } from "lucide-react";
+import { Coins, FileText, Mic, Sparkles, User } from "lucide-react";
 
 // Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL (already
 // converted to whole Tokens by the API) -- used only to tell which free-tier
@@ -95,6 +95,19 @@ export const ProfilePage: React.FC = () => {
                 <span className="text-3xl font-black">{balance.totalTokens.toLocaleString()}</span>
                 <span className="text-sm text-muted-foreground">
                   {isRTL ? "סה״כ טוקנים זמינים" : "total tokens available"}
+                </span>
+              </div>
+
+              {/* Under the granular ~0.3-Token-per-generation model, "2 Tokens"
+                  alone reads as scarce -- this reframes the same balance as
+                  "enough for ~6 generations" so it feels like real runway,
+                  not a number ticking down to zero. */}
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>
+                  {isRTL
+                    ? `מספיק לכ-${balance.estimatedSummariesRemaining.toLocaleString()} סיכומים, חידונים או ערכות כרטיסיות`
+                    : `Enough for ~${balance.estimatedSummariesRemaining.toLocaleString()} summaries, quizzes, or flashcard decks`}
                 </span>
               </div>
 

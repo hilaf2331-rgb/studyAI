@@ -10,9 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BetaUpsellDialog } from "@/components/beta-upsell-dialog";
 import { ArrowLeft, ChevronDown, ChevronUp, CheckCircle2, XCircle, Wand2 } from "lucide-react";
 
-// Mirrors FEATURE_TOKEN_COSTS.targetedQuestion in api-server/src/lib/tokens.ts --
-// a real flat fee (not an estimate), so it's safe to show as an exact number.
-const RESCUE_QUESTION_TOKEN_COST = 50;
+// Mirrors FEATURE_TOKEN_COSTS.targetedQuestion in api-server/src/lib/tokens.ts
+// (exactly 1 whole Token, RAW_UNITS_PER_TOKEN) -- a real flat fee (not an
+// estimate), so it's safe to show as an exact number.
+const RESCUE_QUESTION_TOKEN_COST = 1;
 
 export const QuestionsPracticePage: React.FC = () => {
   const { id: idStr } = useParams<{ id: string }>();

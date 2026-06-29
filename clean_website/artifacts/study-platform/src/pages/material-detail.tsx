@@ -169,12 +169,15 @@ const PROGRESS_STEPS_EN = ["Analyzing study material...", "Generating detailed s
 // to turn a raw token balance into "X summaries/exams remaining" -- actual
 // cost is dynamic (deductTokensForGeneration in tokens.ts, billed off real
 // input/output size), so these are deliberately framed as estimates, not a
-// flat fee.
+// flat fee. Expressed directly in whole/fractional Tokens (the same unit the
+// balance widget shows), not raw cost-estimation units -- under the granular
+// pricing model a single summary/flashcards/quiz generation costs roughly
+// 0.3 Tokens, with exams (longer output) costing about double.
 const ESTIMATED_TOKEN_COST = {
-  summary: 3000,
-  flashcards: 3000,
-  quiz: 3000,
-  exam: 6000,
+  summary: 0.3,
+  flashcards: 0.3,
+  quiz: 0.3,
+  exam: 0.6,
 } as const;
 
 interface KitResult {

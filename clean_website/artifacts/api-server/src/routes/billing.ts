@@ -6,24 +6,42 @@ import { logger } from "../lib/logger";
 import { verifyPaypalWebhookSignature, getPaypalOrderDetails } from "../lib/paypal";
 import { RAW_UNITS_PER_TOKEN } from "../lib/tokens";
 
+export type TokenPackageId = "bronze" | "silver" | "gold";
+
+// Shared shape every payment provider's package table below conforms to --
+// this is the one "modular" seam new top-up gateways plug into: define a
+// Record<priceKey, TokenPackage> for the new provider (priced in whatever
+// unit that provider's webhook reports), then call creditTokenPackage with
+// the provider's own name + its transaction id for dedup. No other billing
+// code needs to change to add a 3rd/4th provider (e.g. Stripe, a future
+// Cardcom integration) -- the same package-table + creditTokenPackage
+// pattern Gemini/OpenAI's own usage-based billing follows internally.
+export interface TokenPackage {
+  id: TokenPackageId;
+  tokens: number;
+  priceILS: number;
+}
+
 // Token packages sold via Bit/PayBox. Priced as a no-brainer student top-up
 // while keeping a healthy margin over the buffered real API cost per lecture
 // hour (Whisper + Gemini) -- see the pricing analysis this was derived from.
 // Keyed by the NIS amount Zapier reports, since that's the only thing the
 // incoming webhook payload tells us about which tier was bought.
-export const TOKEN_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" | "gold"; tokens: number; priceILS: number }> = {
+export const TOKEN_PACKAGES_BY_PRICE: Record<number, TokenPackage> = {
   19: { id: "bronze", tokens: 300_000, priceILS: 19 },
   39: { id: "silver", tokens: 800_000, priceILS: 39 },
   79: { id: "gold", tokens: 2_000_000, priceILS: 79 },
 };
 
-export type TokenPackageId = "bronze" | "silver" | "gold";
-
-// Used by the real /webhooks/paypal handler to credit a captured purchase.
-// Returns the raw-unit amount actually credited.
+// Used by the real /webhooks/paypal handler (and any future provider) to
+// credit a captured purchase. Idempotent per (provider, providerTransactionId)
+// via transactionsTable's UNIQUE constraint -- see the 23505 handling in the
+// paypal webhook below for how a retried delivery is detected and no-op'd
+// rather than double-crediting. Returns the raw-unit amount actually
+// credited.
 async function creditTokenPackage(
   userId: number,
-  pkg: { id: TokenPackageId; tokens: number; priceILS: number },
+  pkg: TokenPackage,
   provider: string,
   providerTransactionId: string,
 ): Promise<number> {
@@ -54,7 +72,7 @@ async function creditTokenPackage(
 // RAW_UNITS_PER_TOKEN so the underlying per-request metering never changes.
 // Keyed by the ILS amount on the captured PayPal order, since that's the
 // only thing distinguishing which of the 3 hosted checkout buttons was used.
-export const PAYPAL_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" | "gold"; tokens: number; priceILS: number }> = {
+export const PAYPAL_PACKAGES_BY_PRICE: Record<number, TokenPackage> = {
   39: { id: "bronze", tokens: 40, priceILS: 39 },
   79: { id: "silver", tokens: 80, priceILS: 79 },
   119: { id: "gold", tokens: 150, priceILS: 119 },

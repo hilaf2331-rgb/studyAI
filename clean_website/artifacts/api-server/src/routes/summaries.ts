@@ -5,7 +5,7 @@ import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSum
 import { generateSummary } from "../lib/ai";
 import { rejectIfTooShort } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
-import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForSummary } from "../lib/tokens";
 
 const router = Router();
 
@@ -56,7 +56,10 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
     materialId: id,
     glossaryTerms,
   });
-  await deductTokensForGeneration(userId, materialContent, result.content);
+  // Standardized rate: 1 Token per 5 "standard pages" of the SOURCE material
+  // being summarized (see lib/tokens.ts's deductTokensForSummary) -- not the
+  // generated summary's own length.
+  await deductTokensForSummary(userId, materialContent);
 
   const [summary] = await db.insert(summariesTable).values({
     materialId: id,

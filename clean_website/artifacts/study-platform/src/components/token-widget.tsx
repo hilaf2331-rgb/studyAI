@@ -3,6 +3,14 @@ import { useGetTokenBalance } from "@workspace/api-client-react";
 import { Progress } from "@/components/ui/progress";
 import { Coins } from "lucide-react";
 import { useLanguage } from "@/lib/i18n";
+import { usePurchaseModal } from "@/lib/purchase-modal";
+
+// Below this many whole Tokens, the full (non-compact) widget surfaces a
+// proactive "buy more" nudge instead of waiting for the user to actually hit
+// InsufficientTokensError mid-generation (the existing reactive 402 path, see
+// token-limit-error-banner.tsx/beta-upsell-dialog.tsx) -- catching a low
+// balance before it runs out entirely.
+const LOW_BALANCE_THRESHOLD = 3;
 
 // Visual token counter for the Sidebar/Header -- replaces a plain-text
 // balance with a glowing icon + energy bar, since "1,847 tokens" alone gives
@@ -12,6 +20,7 @@ import { useLanguage } from "@/lib/i18n";
 export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const { isRTL } = useLanguage();
   const { data: balance } = useGetTokenBalance();
+  const { open: openPurchaseModal } = usePurchaseModal();
   const prevRef = useRef<number | null>(null);
   const [pulse, setPulse] = useState<"gain" | "spend" | null>(null);
 
@@ -44,7 +53,9 @@ export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
   if (compact) {
     return (
       <div
-        title={isRTL ? `${balance.totalTokens.toLocaleString()} טוקנים נותרו` : `${balance.totalTokens.toLocaleString()} tokens left`}
+        title={isRTL
+          ? `${balance.totalTokens.toLocaleString()} טוקנים נותרו (~${balance.estimatedTranscriptionMinutesRemaining.toLocaleString()} דקות תמלול / ~${balance.estimatedSummaryPagesRemaining.toLocaleString()} עמודי סיכום)`
+          : `${balance.totalTokens.toLocaleString()} tokens left (~${balance.estimatedTranscriptionMinutesRemaining.toLocaleString()} transcription min / ~${balance.estimatedSummaryPagesRemaining.toLocaleString()} summary pages)`}
         className={`relative w-9 h-9 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center transition-shadow duration-500 ${pulseRing}`}
       >
         <Coins className="w-5 h-5" />
@@ -62,6 +73,14 @@ export const TokenWidget: React.FC<{ compact?: boolean }> = ({ compact }) => {
         <span className="text-sm font-bold text-sidebar-foreground">{balance.totalTokens.toLocaleString()}</span>
       </div>
       {balance.tokenBalance === 0 && <Progress value={100 - usedPercent} className="h-1.5" />}
+      {balance.totalTokens <= LOW_BALANCE_THRESHOLD && (
+        <button
+          onClick={openPurchaseModal}
+          className="w-full text-center text-xs font-medium text-primary hover:underline"
+        >
+          {isRTL ? "היתרה נמוכה — לטעינת טוקנים" : "Low balance — top up tokens"}
+        </button>
+      )}
     </div>
   );
 };

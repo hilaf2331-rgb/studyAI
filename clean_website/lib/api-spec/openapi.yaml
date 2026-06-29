@@ -1798,7 +1798,7 @@ components:
 
     TokenBalance:
       type: object
-      required: [tokensRemaining, monthlyTokenQuota, tokenBalance, totalTokens, isPayingCustomer, estimatedSummariesRemaining, estimatedExamsRemaining]
+      required: [tokensRemaining, monthlyTokenQuota, tokenBalance, totalTokens, isPayingCustomer, estimatedSummariesRemaining, estimatedExamsRemaining, estimatedTranscriptionMinutesRemaining, estimatedSummaryPagesRemaining]
       properties:
         tokensRemaining:
           type: integer
@@ -1813,6 +1813,10 @@ components:
         estimatedSummariesRemaining:
           type: integer
         estimatedExamsRemaining:
+          type: integer
+        estimatedTranscriptionMinutesRemaining:
+          type: integer
+        estimatedSummaryPagesRemaining:
           type: integer
 
     SaveBitNameInput:

@@ -5,7 +5,7 @@ import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitEx
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
-import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
 import { getExistingQuestionTexts } from "../lib/question-history";
 
@@ -279,10 +279,16 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       materialTitle: material.title,
     });
 
+    // Summary stage billed at the standardized page-based rate (1 Token per
+    // 5 "standard pages" of source material, see lib/tokens.ts), which
+    // already covers the source material itself -- so the flashcards/
+    // questions deduction below only charges for their own generated
+    // output, not the source material a second time.
+    await deductTokensForSummary(userId, content);
     await deductTokensForGeneration(
       userId,
-      content,
-      summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
+      "",
+      JSON.stringify(flashResult) + JSON.stringify(questionResult),
     );
 
     if (!qSet?.id) {

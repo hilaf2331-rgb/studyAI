@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth, type Gender } from "@/lib/auth";
 import { usePurchaseModal } from "@/lib/purchase-modal";
-import { Coins, FileText, GraduationCap, User } from "lucide-react";
+import { Coins, FileText, Mic, User } from "lucide-react";
 
 // Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL (already
 // converted to whole Tokens by the API) -- used only to tell which free-tier
@@ -132,25 +132,25 @@ export const ProfilePage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
-                  <FileText className="w-5 h-5 text-blue-500 shrink-0" />
+                  <Mic className="w-5 h-5 text-emerald-500 shrink-0" />
                   <div>
-                    <p className="text-lg font-bold leading-none">{balance.estimatedSummariesRemaining.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">{isRTL ? "סיכומים נוספים" : "more summaries"}</p>
+                    <p className="text-lg font-bold leading-none">{balance.estimatedTranscriptionMinutesRemaining.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">{isRTL ? "דקות תמלול נוספות" : "more transcription minutes"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
-                  <GraduationCap className="w-5 h-5 text-purple-500 shrink-0" />
+                  <FileText className="w-5 h-5 text-blue-500 shrink-0" />
                   <div>
-                    <p className="text-lg font-bold leading-none">{balance.estimatedExamsRemaining.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">{isRTL ? "מבחני תרגול נוספים" : "more practice exams"}</p>
+                    <p className="text-lg font-bold leading-none">{balance.estimatedSummaryPagesRemaining.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">{isRTL ? "עמודי סיכום נוספים" : "more summary pages"}</p>
                   </div>
                 </div>
               </div>
 
               <p className="text-xs text-muted-foreground">
                 {isRTL
-                  ? "ההערכה היא משוערת בלבד ומשתנה בהתאם לאורך החומר ולסוג היצירה."
-                  : "This estimate is approximate and varies with material length and generation type."}
+                  ? "1 טוקן = 10 דקות תמלול, או 5 עמודי סיכום של חומר מקור."
+                  : "1 Token = 10 minutes of transcription, or 5 pages of source material summarized."}
               </p>
 
               <button

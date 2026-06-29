@@ -14,4 +14,6 @@ export interface TokenBalance {
   isPayingCustomer: boolean;
   estimatedSummariesRemaining: number;
   estimatedExamsRemaining: number;
+  estimatedTranscriptionMinutesRemaining: number;
+  estimatedSummaryPagesRemaining: number;
 }

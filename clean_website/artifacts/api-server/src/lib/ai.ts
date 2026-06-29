@@ -41,10 +41,14 @@ const genAIClients = apiKeys.map((apiKey) => new GoogleGenAI({ apiKey }));
 // falling back to gemini-2.5-flash, which is still fully supported until
 // its scheduled retirement on 2026-10-16.
 const TEXT_MODEL = "gemini-2.5-flash";
-// Audio transcription (Whisper) stays on Groq — see extractor.ts, which
-// reads GROQ_API_KEY directly via a raw fetch call. This constant is kept
-// here only because extractor.ts imports it alongside other AI helpers.
-export const AUDIO_MODEL = "whisper-large-v3";
+// Audio transcription runs on OpenAI's own Whisper API (not Groq's
+// OpenAI-compatible proxy) -- see extractor.ts, which reads OPENAI_API_KEY
+// directly via a raw fetch call. whisper-1 matches the $0.006/minute cost
+// basis the token-pricing model (1 token = 10 min of audio, see
+// lib/tokens.ts's RAW_UNITS_PER_TRANSCRIPTION_MINUTE) was derived from. This
+// constant is kept here only because extractor.ts imports it alongside other
+// AI helpers.
+export const AUDIO_MODEL = "whisper-1";
 
 // gemini-1.5-flash is natively multimodal -- the same model handles this
 // image-understanding call as well as every text call above, no separate
@@ -958,10 +962,15 @@ function buildGlossaryContext(
   if (!glossaryTerms || glossaryTerms.length === 0) return "";
   const list = glossaryTerms.map((t) => `[Term: ${t.term}: ${t.definition}]`).join(", ");
 
+  // Worded as a hard constraint, not a suggestion: the course glossary is the
+  // Supreme Source of Truth for these terms, so a contradiction between it
+  // and the model's own general-knowledge sense of a word (e.g. a course-
+  // specific acronym that happens to also be a common word) must always
+  // resolve in the glossary's favor.
   if (isHe) {
-    return `\n---\nהקשר קריטי: התלמיד/ה סיפק/ה מילון מונחים מותאם-קורס. השתמש/י בהגדרות המדויקות האלה כדי לבסס את התמלול, התיקון ולוגיקת הסיכום שלך: ${list}\n\nכל פעם שאחד מהמונחים האלה (בדיוק כפי שהוגדר, או נטייה דקדוקית ברורה שלו) מופיע בסיכום שאתה כותב, עטוף אותו בתחביר Markdown הבא במקום טקסט רגיל: [המונח](glossary:מונח "ההגדרה המדויקת"), כך שיודגש ויהיה ברור לתלמיד/ה שזה מונח מהמילון שלו/ה.\n`;
+    return `\n---\nמקור האמת העליון (Supreme Source of Truth): התלמיד/ה סיפק/ה מילון מונחים מותאם-קורס. אם מונח מהטקסט מופיע במילון הזה, עליך להשתמש בהגדרה שסיפק/ה התלמיד/ה -- אסור להשתמש במשמעות כללית/מילונית חיצונית, אפילו אם היא נראית סבירה יותר (לדוגמה: אם המונח "אהבת\"י" מופיע, השתמש/י בהגדרת ראשי-התיבות הספציפית לקורס, לא במשמעות המילונית הכללית של "אהבה"). אם הידע הכללי שלך סותר את המילון, הגדרת המילון גוברת תמיד: ${list}\n\nכל פעם שאחד מהמונחים האלה (בדיוק כפי שהוגדר, או נטייה דקדוקית ברורה שלו) מופיע בסיכום שאתה כותב, עטוף אותו בתחביר Markdown הבא במקום טקסט רגיל: [המונח](glossary:מונח "ההגדרה המדויקת"), כך שיודגש ויהיה ברור לתלמיד/ה שזה מונח מהמילון שלו/ה.\n`;
   }
-  return `\n---\nCRITICAL CONTEXT: The user has provided a custom glossary of course-specific terminology. Use these exact definitions to ground your transcription, correction, and summary logic: ${list}\n\nWhenever one of these terms (exactly as defined, or an obvious inflection of it) appears in the summary you write, wrap it using this Markdown syntax instead of plain text: [TERM](glossary:term "EXACT DEFINITION"), so it gets highlighted and the student can instantly see it's a glossary term.\n`;
+  return `\n---\nSUPREME SOURCE OF TRUTH: The user has provided a custom glossary of course-specific terminology. If a term from the text appears in this glossary, you MUST use the provided definition from the student -- do not use external, general-knowledge meanings, even if they seem more plausible (e.g. if the term "אהבת\"י" appears, use the course-specific acronym definition, not the general dictionary meaning of "love"). If your general knowledge contradicts the course glossary, the glossary definition always takes precedence: ${list}\n\nWhenever one of these terms (exactly as defined, or an obvious inflection of it) appears in the summary you write, wrap it using this Markdown syntax instead of plain text: [TERM](glossary:term "EXACT DEFINITION"), so it gets highlighted and the student can instantly see it's a glossary term.\n`;
 }
 
 export function generateSummary(

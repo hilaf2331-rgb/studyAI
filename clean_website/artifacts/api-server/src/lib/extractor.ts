@@ -281,7 +281,7 @@ export async function extractOffice(buffer: Buffer, fileType: OfficeFileType, on
 // estimate) exceeds the free tier's cap -- the authoritative backstop for
 // callers like materials.ts's file-upload path, which has no pre-known
 // duration to check before transcription even starts. By this point the
-// Groq transcription cost has already been spent; there's no way to know
+// OpenAI transcription cost has already been spent; there's no way to know
 // the real duration any earlier for an uploaded file.
 export class AudioDurationLimitError extends Error {
   readonly code = "FREE_TIER_AUDIO_LIMIT";
@@ -296,7 +296,7 @@ export async function transcribeAudio(
   mimeType: string,
   filename: string,
   onProgress?: ProgressCallback,
-  options?: { maxDurationSeconds?: number }
+  options?: { maxDurationSeconds?: number; glossaryHint?: string }
 ): Promise<ExtractedContent> {
   const form = new FormData();
   form.append("file", buffer, {
@@ -306,6 +306,16 @@ export async function transcribeAudio(
   form.append("model", AUDIO_MODEL);
   form.append("response_format", "verbose_json");
   form.append("language", "he");
+  // Whisper's "prompt" field doesn't instruct the model -- it only biases
+  // word-recognition/spelling toward vocabulary that appears in it (per
+  // OpenAI's docs), so feeding it the course's own glossary terms here makes
+  // Whisper itself more likely to correctly hear/spell course-specific
+  // acronyms and jargon, instead of only correcting them after the fact in
+  // the Gemini summary stage. Capped well under Whisper's ~224-token prompt
+  // limit so a huge glossary can't silently get truncated mid-term.
+  if (options?.glossaryHint) {
+    form.append("prompt", options.glossaryHint.slice(0, 800));
+  }
 
   onProgress?.(10);
 
@@ -322,10 +332,10 @@ export async function transcribeAudio(
 
   let response;
   try {
-    response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         ...form.getHeaders(),
       },
       body: form,

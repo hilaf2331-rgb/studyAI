@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { randomBytes } from "crypto";
-import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable } from "@workspace/db";
+import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, count, and, inArray, desc } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError, AudioDurationLimitError } from "../lib/extractor";
@@ -10,7 +10,7 @@ import { getGenerationProgress, setGenerationProgress, clearGenerationProgress }
 import { runExclusive } from "../lib/processing-queue";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
-import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
+import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
 
 const router = Router();
 
@@ -193,6 +193,17 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
       // Paying users (and admins) cut ahead of any free-tier jobs already
       // waiting -- see lib/processing-queue.ts's priority insertion logic.
       const isPriority = await isPayingCustomer(userId);
+      // The glossary is the "Supreme Source of Truth" for this material's
+      // whole pipeline -- fetched up front, before transcription even starts,
+      // so Whisper itself gets a chance to recognize the course's own
+      // acronyms/jargon correctly (via the prompt hint below), instead of
+      // only being corrected after the fact in the Gemini summary stage.
+      const glossaryTerms = courseId
+        ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+            .from(glossaryTermsTable)
+            .where(eq(glossaryTermsTable.courseId, courseId))
+        : [];
+      const glossaryHint = glossaryTerms.length ? glossaryTerms.map((t) => t.term).join(", ") : undefined;
       // Shares the same concurrency-limited queue as recordings.ts -- both
       // routes hit the identical heavy Whisper call against the same
       // process's CPU/memory budget, so they need one shared cap rather than
@@ -206,12 +217,16 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
           req.file!.mimetype,
           req.file!.originalname,
           reportProgress,
-          { maxDurationSeconds: audioCapSeconds ?? undefined }
+          { maxDurationSeconds: audioCapSeconds ?? undefined, glossaryHint }
         ),
         { isPriority },
       );
       extractedText = result.text;
       duration = result.duration;
+      // Standardized rate: 1 Token per 10 minutes of audio (see
+      // lib/tokens.ts's deductTokensForTranscription), billed against
+      // Whisper's own measured duration.
+      if (duration) await deductTokensForTranscription(userId, duration);
     } else if (!extractedText && sourceUrl) {
       extractedText = sourceUrl;
     } else {

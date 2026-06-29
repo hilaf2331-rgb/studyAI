@@ -967,7 +967,9 @@ export const GetTokenBalanceResponse = zod.object({
   "totalTokens": zod.number(),
   "isPayingCustomer": zod.boolean(),
   "estimatedSummariesRemaining": zod.number(),
-  "estimatedExamsRemaining": zod.number()
+  "estimatedExamsRemaining": zod.number(),
+  "estimatedTranscriptionMinutesRemaining": zod.number(),
+  "estimatedSummaryPagesRemaining": zod.number()
 })
 
 

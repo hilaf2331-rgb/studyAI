@@ -15,6 +15,24 @@ import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 // deductCombinedTokens/estimateTokenCount work internally.
 export const RAW_UNITS_PER_TOKEN = 75_000;
 
+// Standardized, easy-to-explain cost rates (replacing ad-hoc char-count
+// estimates for the two billed-by-real-world-unit pipelines):
+//   - Transcription: 1 Token = 10 minutes of audio (~$0.06 of whisper-1 cost
+//     at OpenAI's $0.006/minute, matching the pricing this rate was derived
+//     from -- see lib/extractor.ts's transcribeAudio).
+//   - Summarization: 1 Token = 5 "standard pages" of source material, where
+//     a standard page is approximated as ~3,000 characters (~500 words),
+//     a common publishing convention for page length. Billed against the
+//     INPUT material's length (the source being summarized), not the
+//     generated output -- "5 pages of text" describes what was fed in, not
+//     how long the resulting summary is.
+// Flashcards/questions/exams/chat are NOT covered by either rate and keep
+// using the original estimateTokenCount() char-heuristic via
+// deductTokensForGeneration below.
+export const TRANSCRIPTION_SECONDS_PER_TOKEN = 10 * 60;
+export const SUMMARY_CHARS_PER_PAGE = 3_000;
+export const SUMMARY_PAGES_PER_TOKEN = 5;
+
 // Ongoing free-tier trickle once the one-time signup grant (see
 // DEFAULT_MONTHLY_TOKEN_QUOTA in lib/db) is gone -- one whole Token, small
 // enough to not undercut the purchase flow, but enough to keep a casual user
@@ -120,6 +138,32 @@ export async function deductTokensForGeneration(userId: number, inputText: strin
   if (await isAdminUser(userId)) return;
   const used = estimateTokenCount(inputText) + estimateTokenCount(outputText);
   await deductCombinedTokens(userId, used);
+}
+
+// Call after a successful Whisper transcription, with the actual measured
+// audio duration (transcribeAudio's result.duration, in seconds -- never the
+// client-supplied estimate). Billed at the standardized rate of 1 Token per
+// TRANSCRIPTION_SECONDS_PER_TOKEN of audio, independent of the char-based
+// estimateTokenCount heuristic used for AI-generated content. Admin accounts
+// are never deducted.
+export async function deductTokensForTranscription(userId: number, durationSeconds: number): Promise<void> {
+  if (await isAdminUser(userId)) return;
+  if (durationSeconds <= 0) return;
+  const raw = Math.ceil((durationSeconds / TRANSCRIPTION_SECONDS_PER_TOKEN) * RAW_UNITS_PER_TOKEN);
+  await deductCombinedTokens(userId, raw);
+}
+
+// Call after a summary generation succeeds, with the source material text
+// that was summarized (not the generated summary). Billed at the
+// standardized rate of 1 Token per SUMMARY_PAGES_PER_TOKEN "standard pages"
+// (SUMMARY_CHARS_PER_PAGE chars each) of source material -- independent of
+// the char-based estimateTokenCount heuristic used for flashcards/questions/
+// exams/chat. Admin accounts are never deducted.
+export async function deductTokensForSummary(userId: number, sourceText: string): Promise<void> {
+  if (await isAdminUser(userId)) return;
+  const pages = sourceText.length / SUMMARY_CHARS_PER_PAGE;
+  const raw = Math.ceil((pages / SUMMARY_PAGES_PER_TOKEN) * RAW_UNITS_PER_TOKEN);
+  await deductCombinedTokens(userId, raw);
 }
 
 // Beta-only hard cap on total processing actions (material uploads +

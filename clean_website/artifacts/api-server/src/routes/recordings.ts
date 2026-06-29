@@ -4,7 +4,7 @@ import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTabl
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio, AudioDurationLimitError } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
 import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, freeTierAudioLimitMessage } from "../lib/validation";
 import { runExclusive } from "../lib/processing-queue";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -129,6 +129,19 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   // waiting -- see lib/processing-queue.ts's priority insertion logic.
   const isPriority = await isPayingCustomer(userId);
 
+  // The glossary is the "Supreme Source of Truth" for this material's whole
+  // pipeline -- fetched once, up front, BEFORE transcription even starts (not
+  // just before the summary call below), so Whisper itself gets a chance to
+  // recognize the course's own acronyms/jargon correctly (via the prompt
+  // hint passed into transcribeAudio), instead of only being corrected after
+  // the fact in the Gemini summary stage.
+  const glossaryTerms = courseId
+    ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+        .from(glossaryTermsTable)
+        .where(eq(glossaryTermsTable.courseId, courseId))
+    : [];
+  const glossaryHint = glossaryTerms.length ? glossaryTerms.map((t) => t.term).join(", ") : undefined;
+
   // The actual heavy work -- Whisper transcription plus three parallel
   // Gemini calls -- runs through the shared processing queue (see
   // lib/processing-queue.ts) so at most MAX_CONCURRENT_PROCESSING of these
@@ -142,12 +155,15 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
       if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 10, stage: "extracting" });
 
       let extractedText = "";
+      let transcribedDurationSeconds: number | undefined;
       let transcriptionError: string | undefined;
       try {
         const result = await transcribeAudio(req.file!.buffer, mimeType, `recording.webm`, undefined, {
           maxDurationSeconds: audioCapSeconds ?? undefined,
+          glossaryHint,
         });
         extractedText = result.text;
+        transcribedDurationSeconds = result.duration;
       } catch (err: any) {
         if (err instanceof AudioDurationLimitError) {
           if (uploadId) clearGenerationProgress(uploadId);
@@ -173,6 +189,15 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
           minLength: MIN_AUDIO_TRANSCRIPT_LENGTH,
           receivedLength: extractedText.trim().length,
         });
+      }
+
+      // Standardized rate: 1 Token per 10 minutes of audio (see
+      // lib/tokens.ts's deductTokensForTranscription), billed against
+      // Whisper's own measured duration -- never the client-supplied
+      // durationSeconds -- and only once a usable transcript exists (a
+      // rejected silent/near-empty recording above never reaches here).
+      if (!transcriptionError && transcribedDurationSeconds) {
+        await deductTokensForTranscription(userId, transcribedDurationSeconds);
       }
 
       const [material] = await db.insert(materialsTable).values({
@@ -210,25 +235,25 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
       try {
         await requireTokenBalance(userId);
 
-        // Course-specific terminology the student pre-defined (see glossary.ts)
-        // -- grounds the summary against the student's own definitions instead
-        // of guessing at course-specific jargon in the live transcript.
-        const glossaryTerms = courseId
-          ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
-              .from(glossaryTermsTable)
-              .where(eq(glossaryTermsTable.courseId, courseId))
-          : [];
-
+        // glossaryTerms is already fetched above (before transcription) so
+        // Whisper's prompt hint and this summary call ground against the
+        // exact same course-specific terminology, queried only once.
         const [summaryResult, flashResult, questionResult] = await Promise.all([
           generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds, glossaryTerms }),
           generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
           generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
         ]);
 
+        // Summary stage billed at the standardized page-based rate (1 Token
+        // per 5 "standard pages" of source material -- here, the Whisper
+        // transcript -- see lib/tokens.ts), which already covers the
+        // transcript text itself; flashcards/questions below only charge
+        // for their own generated output.
+        await deductTokensForSummary(userId, content);
         await deductTokensForGeneration(
           userId,
-          content,
-          summaryResult.content + JSON.stringify(flashResult) + JSON.stringify(questionResult),
+          "",
+          JSON.stringify(flashResult) + JSON.stringify(questionResult),
         );
 
         const [[summary], [deck], [qSet]] = await Promise.all([

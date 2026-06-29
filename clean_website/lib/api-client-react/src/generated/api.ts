@@ -30,6 +30,7 @@ import type {
   ConvertCourseMaterialInput,
   Course,
   CourseAsset,
+  CourseAssetWithCourse,
   CourseInput,
   CourseUpdate,
   DailyReviewCards,
@@ -1037,6 +1038,83 @@ export const useDeleteCourseMedia = <TError = ErrorType<void>,
       > => {
       return useMutation(getDeleteCourseMediaMutationOptions(options));
     }
+
+export const getListAllCourseMediaUrl = () => {
+
+
+
+
+  return `/api/podcasts`
+}
+
+/**
+ * @summary List all course media (podcasts) across all of the user's courses, joined with course name
+ */
+export const listAllCourseMedia = async ( options?: RequestInit): Promise<CourseAssetWithCourse[]> => {
+
+  return customFetch<CourseAssetWithCourse[]>(getListAllCourseMediaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAllCourseMediaQueryKey = () => {
+    return [
+    `/api/podcasts`
+    ] as const;
+    }
+
+
+export const getListAllCourseMediaQueryOptions = <TData = Awaited<ReturnType<typeof listAllCourseMedia>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAllCourseMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAllCourseMediaQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAllCourseMedia>>> = ({ signal }) => listAllCourseMedia({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAllCourseMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAllCourseMediaQueryResult = NonNullable<Awaited<ReturnType<typeof listAllCourseMedia>>>
+export type ListAllCourseMediaQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all course media (podcasts) across all of the user's courses, joined with course name
+ */
+
+export function useListAllCourseMedia<TData = Awaited<ReturnType<typeof listAllCourseMedia>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAllCourseMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAllCourseMediaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getListMaterialsUrl = (params?: ListMaterialsParams,) => {
   const normalizedParams = new URLSearchParams();

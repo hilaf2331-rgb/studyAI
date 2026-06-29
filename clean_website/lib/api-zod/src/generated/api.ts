@@ -219,6 +219,27 @@ export const DeleteCourseMediaParams = zod.object({
 
 
 /**
+ * @summary List all course media (podcasts) across all of the user's courses, joined with course name
+ */
+export const ListAllCourseMediaResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "materialId": zod.number().nullish(),
+  "kind": zod.enum(['material_convert', 'lecture_upload']),
+  "title": zod.string(),
+  "storageUrl": zod.string(),
+  "mimeType": zod.string(),
+  "durationSeconds": zod.number().nullish(),
+  "sizeBytes": zod.number().nullish(),
+  "status": zod.enum(['processing', 'ready', 'error']),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "courseName": zod.string()
+}))
+export const ListAllCourseMediaResponse = zod.array(ListAllCourseMediaResponseItem)
+
+
+/**
  * @summary List materials, optionally filtered by courseId
  */
 export const ListMaterialsQueryParams = zod.object({

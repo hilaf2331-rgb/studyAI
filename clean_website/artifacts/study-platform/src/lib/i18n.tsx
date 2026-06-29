@@ -13,6 +13,7 @@ const translations: Record<string, string> = {
   profile: "פרופיל",
   courses: "קורסים",
   materials: "חומרי לימוד",
+  podcasts: "פודקאסטים",
   settings: "הגדרות",
   newCourse: "קורס חדש",
   newMaterial: "חומר חדש",

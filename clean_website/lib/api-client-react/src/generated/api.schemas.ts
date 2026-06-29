@@ -91,6 +91,10 @@ export interface CourseAsset {
   createdAt: string;
 }
 
+export type CourseAssetWithCourse = CourseAsset & {
+  courseName: string;
+};
+
 /**
  * Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text.
  */

@@ -8,7 +8,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { BackgroundGlow } from "@/components/background-glow";
 import { TokenWidget } from "@/components/token-widget";
 import { usePurchaseModal } from "@/lib/purchase-modal";
-import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins, Mail } from "lucide-react";
+import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins, Mail, Headphones } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [location] = useLocation();
@@ -29,6 +29,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
     { href: "/", label: "dashboard", icon: Home },
     { href: "/courses", label: "courses", icon: BookOpen },
     { href: "/materials", label: "materials", icon: BookText },
+    { href: "/podcasts", label: "podcasts", icon: Headphones },
     { href: "/recorder", label: "הקלטות", icon: Mic },
     { href: "/profile", label: "profile", icon: UserIcon },
     { href: "/contact", label: "צור קשר", icon: Mail },

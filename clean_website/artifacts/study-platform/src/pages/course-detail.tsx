@@ -146,7 +146,7 @@ function GlossarySection({ courseId, isRTL }: { courseId: number; isRTL: boolean
   );
 }
 
-function CourseMediaSection({ courseId, isRTL }: { courseId: number; isRTL: boolean }) {
+function CourseMediaSection({ courseId, isRTL, courseName }: { courseId: number; isRTL: boolean; courseName?: string }) {
   const qc = useQueryClient();
   const { data: assets, isLoading } = useListCourseMedia(courseId);
   const { data: materials } = useListMaterials({ courseId });
@@ -252,7 +252,7 @@ function CourseMediaSection({ courseId, isRTL }: { courseId: number; isRTL: bool
                   </button>
                 </div>
                 {asset.status === "ready" ? (
-                  <AudioPlayer src={asset.storageUrl} />
+                  <AudioPlayer src={asset.storageUrl} title={asset.title} artist={courseName} />
                 ) : (
                   <p className="text-xs text-muted-foreground">{isRTL ? "מעבד..." : "Processing..."}</p>
                 )}
@@ -434,7 +434,7 @@ export const CourseDetailPage: React.FC = () => {
 
       <GlossarySection courseId={courseId} isRTL={isRTL} />
 
-      <CourseMediaSection courseId={courseId} isRTL={isRTL} />
+      <CourseMediaSection courseId={courseId} isRTL={isRTL} courseName={course.name} />
 
       {loadingMaterials ? (
         <div className="space-y-3">

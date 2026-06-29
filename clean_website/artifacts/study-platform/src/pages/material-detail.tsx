@@ -748,8 +748,6 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setFlashOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצרה ערכת כרטיסיות לחומר זה" : "No flashcard deck generated for this material yet"}
-          disabled={material.tooShortForGeneration}
-          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
           costEstimate={ESTIMATED_TOKEN_COST.flashcards}
         />
         <ContentSection
@@ -760,8 +758,6 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setQAOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר חידון לחומר זה" : "No quiz generated for this material yet"}
-          disabled={material.tooShortForGeneration}
-          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
           costEstimate={ESTIMATED_TOKEN_COST.quiz}
         />
         <ContentSection
@@ -772,8 +768,6 @@ export const MaterialDetailPage: React.FC = () => {
           onAddNew={() => setExamOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר מבחן לחומר זה" : "No exam generated for this material yet"}
-          disabled={material.tooShortForGeneration}
-          disabledReason={isRTL ? "הטקסט קצר מדי בשביל לייצר מבחן" : "The text is too short to generate an exam"}
           costEstimate={ESTIMATED_TOKEN_COST.exam}
         />
       </div>

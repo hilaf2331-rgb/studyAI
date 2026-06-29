@@ -59,7 +59,7 @@ const ADMIN_EMAILS = new Set<string>([
   "hilaf2331@gmail.com",
 ]);
 
-export async function isAdminUser(userId: number): Promise<boolean> {
+async function isAdminUser(userId: number): Promise<boolean> {
   const [user] = await db.select({ email: usersTable.email, role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId));
   return !!user && (user.role === "admin" || ADMIN_EMAILS.has(user.email.toLowerCase()));
 }

@@ -7,10 +7,9 @@ interface PurchaseCelebrationContextValue {
 
 const PurchaseCelebrationContext = createContext<PurchaseCelebrationContextValue | null>(null);
 
-// Mounted once near the app root (see App.tsx) so both the real PayPal
-// return-redirect (parsed from the URL below) and the admin Test Mode
-// bypass (purchase-modal.tsx, a same-page fetch with no redirect at all) can
-// trigger the exact same success modal through one shared show() call.
+// Mounted once near the app root (see App.tsx) so the real PayPal
+// return-redirect (parsed from the URL below) can trigger the success modal
+// through one shared show() call.
 export function PurchaseCelebrationProvider({ children }: { children: React.ReactNode }) {
   const [tokensAdded, setTokensAdded] = useState<number | null>(null);
   const show = useCallback((tokens: number) => setTokensAdded(tokens), []);

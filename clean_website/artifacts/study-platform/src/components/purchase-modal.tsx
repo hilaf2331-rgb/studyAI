@@ -1,20 +1,9 @@
 import React, { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { getGetTokenBalanceQueryKey } from "@workspace/api-client-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/lib/i18n";
-import { useAuth } from "@/lib/auth";
-import { apiUrl } from "@/lib/api-base";
-import { usePurchaseCelebration } from "@/lib/purchase-celebration";
-import { Coins, Sparkles, X, CheckCircle2 } from "lucide-react";
-
-// EDIT THIS: same admin email gate as the server-side check in
-// api-server/src/lib/tokens.ts (ADMIN_EMAILS). Only cosmetic/UX branching --
-// the real security boundary is the server checking isAdminUser(userId) on
-// every /billing/test-purchase request, so this can't be spoofed from here.
-const ADMIN_TEST_MODE_EMAILS = new Set(["hila@gmail.com", "hilaf2331@gmail.com"]);
+import { Coins, Sparkles, X } from "lucide-react";
 
 type TierId = "bronze" | "silver" | "gold";
 
@@ -122,60 +111,19 @@ const TIER_GLOW_ACTIVE: Record<TierId, string> = {
 
 export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boolean) => void }> = ({ open, onOpenChange }) => {
   const { isRTL } = useLanguage();
-  const { user, token } = useAuth();
-  const queryClient = useQueryClient();
-  const { show: showCelebration } = usePurchaseCelebration();
   const [activeTierId, setActiveTierId] = useState<TierId | null>(null);
-  const [testPurchaseState, setTestPurchaseState] = useState<{ tierId: TierId; status: "pending" | "success" | "error" } | null>(null);
-
-  const isTestModeAdmin = !!user?.email && ADMIN_TEST_MODE_EMAILS.has(user.email.toLowerCase());
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setActiveTierId(null);
-      setTestPurchaseState(null);
     }
     onOpenChange(next);
-  };
-
-  // Admin-only "Test Mode" bypass: instead of redirecting to the live PayPal
-  // checkout, call the server's /billing/test-purchase endpoint directly --
-  // it runs the exact same crediting logic as the real PAYMENT.CAPTURE.COMPLETED
-  // webhook handler (see api-server/src/routes/billing.ts), so this proves the
-  // whole flow end-to-end against the real database without a real payment.
-  // Temporary: remove this branch (and the server route) once verified.
-  const runTestModePurchase = async (tier: Tier) => {
-    setTestPurchaseState({ tierId: tier.id, status: "pending" });
-    try {
-      const response = await fetch(apiUrl("/api/billing/test-purchase"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ packageId: tier.id }),
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const data: { tokensAdded: number } = await response.json();
-      await queryClient.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
-      setTestPurchaseState({ tierId: tier.id, status: "success" });
-      // Close the bundle picker and hand off to the same celebration modal a
-      // real customer sees on their PayPal return-redirect (see
-      // lib/purchase-celebration.tsx), so Test Mode exercises the identical
-      // end-of-flow UX, not just the crediting logic.
-      handleOpenChange(false);
-      showCelebration(data.tokensAdded);
-    } catch (err) {
-      console.error("[purchase-modal] test-mode purchase failed", err);
-      setTestPurchaseState({ tierId: tier.id, status: "error" });
-    }
   };
 
   // Synchronous, same-tab redirect triggered directly inside the click
   // handler -- keeps it a genuine user gesture so mobile browsers don't
   // block it, and lands the student straight on the hosted PayPal checkout.
   const handlePurchaseClick = (tier: Tier) => {
-    if (isTestModeAdmin) {
-      void runTestModePurchase(tier);
-      return;
-    }
     window.location.href = tier.paypalUrl;
   };
 
@@ -209,19 +157,9 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
             : "A fixed token bundle — your tokens never expire at month-end and stay with you for the whole semester, across every type of study material!"}
         </div>
 
-        {isTestModeAdmin && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700 dark:text-amber-300">
-            <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
-            {isRTL
-              ? "מצב בדיקה למנהל: לחיצה על \"רכישה\" תזכה את החשבון בפועל (ללא תשלום אמיתי) — אותו לוגיקת זיכוי כמו ב-Webhook החי."
-              : "Admin test mode: \"Buy Now\" will credit your real account (no real payment) using the same crediting logic as the live webhook."}
-          </div>
-        )}
-
         <div className="flex flex-col sm:grid sm:grid-cols-3 gap-4 pt-5 max-h-[60vh] sm:max-h-none overflow-y-auto sm:overflow-visible px-0.5">
           {TIERS.map((tier) => {
             const isActive = activeTierId === tier.id;
-            const testState = testPurchaseState?.tierId === tier.id ? testPurchaseState.status : null;
             return (
               <div
                 key={tier.id}
@@ -251,31 +189,16 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
                     {isRTL ? tier.breakdownHe : tier.breakdownEn}
                   </p>
                 </div>
-                {testState === "success" ? (
-                  <div className="flex items-center justify-center gap-1.5 rounded-md border border-emerald-400/50 bg-emerald-500/10 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4" />
-                    {isRTL ? "הטוקנים נוספו!" : "Tokens added!"}
-                  </div>
-                ) : (
-                  <Button
-                    className="w-full"
-                    variant={tier.id === "silver" ? "default" : "outline"}
-                    disabled={testState === "pending"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePurchaseClick(tier);
-                    }}
-                  >
-                    {testState === "pending"
-                      ? isRTL ? "מזכה..." : "Crediting..."
-                      : isRTL ? "רכישה" : "Buy Now"}
-                  </Button>
-                )}
-                {testState === "error" && (
-                  <p className="text-xs text-center font-medium text-destructive">
-                    {isRTL ? "משהו נכשל, נסה/י שוב" : "Something failed, try again"}
-                  </p>
-                )}
+                <Button
+                  className="w-full"
+                  variant={tier.id === "silver" ? "default" : "outline"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePurchaseClick(tier);
+                  }}
+                >
+                  {isRTL ? "רכישה" : "Buy Now"}
+                </Button>
               </div>
             );
           })}

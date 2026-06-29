@@ -4,9 +4,8 @@ import { useLanguage } from "@/lib/i18n";
 import { useGetTokenBalance, getGetTokenBalanceQueryKey } from "@workspace/api-client-react";
 
 // Purely presentational -- driven by usePurchaseCelebration().show() (see
-// lib/purchase-celebration.tsx), which both the real PayPal return-redirect
-// and the admin Test Mode bypass call into, so every successful purchase
-// (real or test) ends up showing this exact same "feel-good" moment.
+// lib/purchase-celebration.tsx), called by the real PayPal return-redirect
+// once a purchase completes, to show this "feel-good" moment.
 export const PurchaseSuccessCelebration: React.FC<{ tokensAdded: number | null; onClose: () => void }> = ({ tokensAdded, onClose }) => {
   const { isRTL } = useLanguage();
   // Refetches on every open so the total shown is never the stale

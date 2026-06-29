@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "wouter";
-import { ArrowLeft, RotateCw } from "lucide-react";
+import { ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundGlow } from "@/components/background-glow";
 import { WaveField } from "@/components/wave-field";
@@ -113,6 +113,71 @@ export const LandingPage: React.FC = () => {
                 <strong className="block mb-0.5">האם הטוקנים פגים בתוקף? לא!</strong>
                 אם שילמתם ותיכנסו גם אחרי שנה, הטוקנים שלכם עדיין יחכו לכם באותו המצב.
               </p>
+            </div>
+          </section>
+
+          {/* Accuracy & Glossary — trust section: the AI is grounded strictly
+              in the user's own uploaded materials/glossary, never guessing
+              or inventing facts from general knowledge. */}
+          <section className="space-y-6 scroll-mt-24">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
+              דיוק מוחלט — אפס ניחושים
+            </h2>
+            <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-6 sm:p-8">
+              <div className="grid sm:grid-cols-2 gap-6 items-center">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-7 h-7 text-emerald-500 shrink-0" strokeWidth={1.75} />
+                    <p className="text-lg font-bold tracking-tight">
+                      הסיכום מבוסס רק על מה שהעליתם
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    בניגוד לצ'אטבוטים כלליים שמשלימים פערים מהידע הכללי שלהם,
+                    FocusStudy לא מנחש. הוא קורא בקפידה את החומר שהעליתם — ההרצאה,
+                    המאמר, המצגת — ובונה את הסיכום, הכרטיסיות והשאלות אך ורק
+                    מהמקור הזה.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5 rounded-xl bg-emerald-500/10 border border-emerald-400/30 p-4">
+                  <BookMarked className="w-7 h-7 text-emerald-500 shrink-0" strokeWidth={1.75} />
+                  <p className="text-sm leading-relaxed">
+                    <strong className="block mb-0.5">המינוח של המרצה שלכם — לא מינוח כללי</strong>
+                    מעלים את הגלוסר או רשימת המושגים של הקורס, ו-FocusStudy
+                    ישתמש בדיוק במונחים ובהגדרות שלכם, כדי שהסיכום ידבר באותה
+                    שפה שתידרשו לה במבחן.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Community Sharing — promotes saveSharedMaterial/shared-view.tsx,
+              the existing feature that lets a classmate save someone else's
+              shared study kit straight into their own materials. */}
+          <section className="space-y-6 scroll-mt-24">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
+              לומדים ביחד, חוסכים ביחד
+            </h2>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-500/20 hover:border-violet-400/50">
+                <Users className="w-9 h-9 text-violet-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
+                <p className="text-sm font-bold tracking-wide">שולחים לחברים בלינק אחד</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  כל ערכת לימוד שיצרתם אפשר לשתף עם חבר/ה לקורס בלינק פשוט —
+                  הם נכנסים, רואים את הסיכום, הכרטיסיות והחידון, ושומרים אותם
+                  ישר לחומרי הלימוד שלהם בלחיצה אחת.
+                </p>
+              </div>
+              <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
+                <FileCheck2 className="w-9 h-9 text-pink-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
+                <p className="text-sm font-bold tracking-wide">בונים מאגר קורס ביחד</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  כשכל הכיתה משתפת את הסיכומים שלה, נוצר מאגר חומרים מצטבר
+                  לכל הקורס — פעם אחת מעלים את ההרצאה, וכולם נהנים מערכת
+                  לימוד מלאה עליה.
+                </p>
+              </div>
             </div>
           </section>
 

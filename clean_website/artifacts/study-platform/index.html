@@ -3,20 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <script>
+      // Must mirror App.tsx's <ThemeProvider defaultTheme="dark" enableSystem={false}>
+      // exactly -- next-themes ignores OS preference entirely (enableSystem is
+      // off), so falling back to matchMedia here (as this used to) would paint
+      // a light-OS visitor's first frame light, then have next-themes flip it
+      // to dark a moment later once it mounts. That flip -- not a missing
+      // background-color -- was the actual "white flash": this script runs
+      // synchronously before first paint, so as long as its fallback agrees
+      // with next-themes' own default, the class it sets here is never
+      // corrected/flipped after the fact.
       (function () {
         try {
           var theme = localStorage.getItem("theme");
-          var resolved =
-            theme === "light" || theme === "dark"
-              ? theme
-              : window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light";
+          var resolved = theme === "light" || theme === "dark" ? theme : "dark";
           if (resolved === "dark") document.documentElement.classList.add("dark");
           document.documentElement.style.colorScheme = resolved;
         } catch (e) {}
       })();
     </script>
+    <style>
+      /* Belt-and-suspenders: paints the exact theme background (matching
+         src/index.css's --background tokens) inline, so the very first frame
+         is correct even before the bundled stylesheet finishes downloading --
+         the script above only adds a class, which is inert until that
+         external CSS (defining what .dark actually means) has loaded. */
+      html, body { background-color: hsl(210 45% 99%); }
+      html.dark, html.dark body { background-color: hsl(210 40% 4%); }
+    </style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>FocusStudy — פלטפורמת הלמידה החכמה</title>
     <meta name="description" content="FocusStudy — פלטפורמת למידה חכמה מבוססת AI." />

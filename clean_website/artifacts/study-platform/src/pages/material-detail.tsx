@@ -31,6 +31,7 @@ import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
+import { shortContentMessage, isInsufficientContentError } from "@/lib/content-check";
 
 function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress, costEstimate
@@ -369,7 +370,14 @@ export const MaterialDetailPage: React.FC = () => {
         throw new Error(response.status >= 500 ? "Generation timed out. The server is working hard, please try again." : "Unexpected response from server.");
       }
 
-      if (!response.ok) throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
+      if (!response.ok) {
+        if (isInsufficientContentError(payload)) {
+          toast({ description: shortContentMessage(isRTL), variant: "destructive" });
+          setKitLoading(false);
+          return;
+        }
+        throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
+      }
 
       // 202 just confirms the background job started -- it carries no
       // summary/deck/questionSet yet. The actual result (or failure) shows
@@ -377,14 +385,7 @@ export const MaterialDetailPage: React.FC = () => {
       // finishes, since Render's proxy would 502 long before this request
       // could ever wait for that itself. kitLoading stays true until then.
     } catch (err: any) {
-      if (err.message && err.message.includes("insufficient_content")) {
-        setKitError(isRTL
-          ? "היי! חומר הלימוד קצר מדי בשביל ליצור ערכה מלאה ומדויקת. אנא הוסיפי עוד תוכן."
-          : "Hey! The provided material is too short to generate a full study kit. Please provide more content to ensure accuracy."
-        );
-      } else {
-        setKitError(err.message || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
-      }
+      setKitError(err.message || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
       setKitLoading(false);
     }
   };
@@ -408,6 +409,17 @@ export const MaterialDetailPage: React.FC = () => {
     }
   }, [search, material]);
 
+  // A genuinely-too-short document (no vocabulary-list structure to bypass
+  // the backend's floor -- see api-server's looksLikeVocabularyList) surfaces
+  // here as a 400 "insufficient_content" error. Shown as a friendly toast
+  // bubble instead of the raw backend error/message, which other failures
+  // still fall back to via each dialog's inline generationError() text.
+  const notifyIfInsufficientContent = (err: any): boolean => {
+    if (!isInsufficientContentError(err?.response?.data)) return false;
+    toast({ description: shortContentMessage(isRTL), variant: "destructive" });
+    return true;
+  };
+
   const handleGenerateSummary = () => {
     genSummary.mutate(
       { id, data: { summaryType: summaryType as any, language: summaryLang } },
@@ -417,6 +429,7 @@ export const MaterialDetailPage: React.FC = () => {
           qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
           setSummaryOpen(false);
         },
+        onError: notifyIfInsufficientContent,
       }
     );
   };
@@ -430,6 +443,7 @@ export const MaterialDetailPage: React.FC = () => {
           qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
           setFlashOpen(false);
         },
+        onError: notifyIfInsufficientContent,
       }
     );
   };
@@ -447,6 +461,7 @@ export const MaterialDetailPage: React.FC = () => {
           qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
           setQAOpen(false);
         },
+        onError: notifyIfInsufficientContent,
       }
     );
   };
@@ -474,7 +489,14 @@ export const MaterialDetailPage: React.FC = () => {
         throw new Error(response.status >= 500 ? "Generation timed out. The server is working hard, please try again." : "Unexpected response from server.");
       }
 
-      if (!response.ok) throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
+      if (!response.ok) {
+        if (isInsufficientContentError(payload)) {
+          toast({ description: shortContentMessage(isRTL), variant: "destructive" });
+          setExamLoading(false);
+          return;
+        }
+        throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
+      }
 
       // 202 just confirms the background job started -- the actual exam (or
       // failure) shows up via the generationProgress poll effect above once

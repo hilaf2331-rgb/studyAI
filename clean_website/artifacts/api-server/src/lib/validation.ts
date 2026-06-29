@@ -21,7 +21,32 @@ export function getTrimmedLength(text: string | null | undefined): number {
   return (text || "").trim().length;
 }
 
+// A vocabulary/glossary upload ("word - definition", "word: definition", or
+// tab/multi-space-separated columns, one pair per line) packs real, useful
+// content into very few characters per entry -- a 20-word list is easily
+// under MIN_CONTENT_LENGTH even though it's exactly the kind of source
+// material flashcards/exams are best at. Matched per-line rather than as one
+// regex over the whole text so a list interspersed with blank lines or a
+// header row still qualifies. Hebrew and English both flow through this
+// (Unicode-aware `.` matches Hebrew letters fine) -- no separate per-language
+// pattern is needed.
+const VOCAB_LINE_PATTERN = /^[^\n]{1,60}?[ \t]*[-:–—\t][ \t]*[^\n]{1,200}$/;
+
+// Requires a minimum number of matching lines (not just a high ratio) so a
+// single stray "Q: A" line in an otherwise-prose document can't flip the
+// whole upload into bypassing the floor.
+const MIN_VOCAB_LINES = 5;
+const MIN_VOCAB_LINE_RATIO = 0.6;
+
+export function looksLikeVocabularyList(text: string | null | undefined): boolean {
+  const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length < MIN_VOCAB_LINES) return false;
+  const matching = lines.filter((l) => VOCAB_LINE_PATTERN.test(l)).length;
+  return matching >= MIN_VOCAB_LINES && matching / lines.length >= MIN_VOCAB_LINE_RATIO;
+}
+
 export function isContentTooShort(text: string | null | undefined): boolean {
+  if (looksLikeVocabularyList(text)) return false;
   return getTrimmedLength(text) < MIN_CONTENT_LENGTH;
 }
 
@@ -92,6 +117,11 @@ export function rejectIfTooShort(
   text: string | null | undefined,
   language: "he" | "en" = "he"
 ): boolean {
+  // A short vocabulary/glossary list is valuable, legitimate source material
+  // for flashcards/exams even when it's under MIN_CONTENT_LENGTH -- see
+  // looksLikeVocabularyList above -- so it bypasses the floor entirely
+  // instead of being rejected as if it were just thin prose.
+  if (looksLikeVocabularyList(text)) return false;
   const trimmedLength = getTrimmedLength(text);
   if (trimmedLength < MIN_CONTENT_LENGTH) {
     res.status(400).json({

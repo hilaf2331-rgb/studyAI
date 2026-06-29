@@ -38,6 +38,25 @@ export function friendlyRecordingErrorMessage(data: { error?: string; message?: 
   return data?.message || "שמירת ההקלטה נכשלה. נסה שנית.";
 }
 
+// Backend's "insufficient_content" code (rejectIfTooShort/MIN_CONTENT_LENGTH
+// in api-server's lib/validation.ts) means the document is genuinely too
+// thin to generate from -- a short vocabulary/glossary list is already
+// exempted server-side, so any document that still gets this code really is
+// too short. Shown as a friendly toast bubble instead of the raw backend
+// error/message, since that backend copy is written to be precise, not warm.
+export const SHORT_CONTENT_MESSAGE_HE =
+  "חומר הלימוד קצר מדי, כדאי להוסיף עוד תוכן כדי לייצר חומרי למידה איכותיים.";
+export const SHORT_CONTENT_MESSAGE_EN =
+  "This study material is a bit short — try adding more content to generate high-quality study materials.";
+
+export function shortContentMessage(isRTL: boolean): string {
+  return isRTL ? SHORT_CONTENT_MESSAGE_HE : SHORT_CONTENT_MESSAGE_EN;
+}
+
+export function isInsufficientContentError(data: { error?: string } | null | undefined): boolean {
+  return data?.error === "insufficient_content";
+}
+
 // Decodes the audio and checks its RMS amplitude against a near-silence
 // threshold. Best-effort: an undecodable blob (corrupt/unsupported codec)
 // resolves to "not silent" so an inconclusive check never blocks a

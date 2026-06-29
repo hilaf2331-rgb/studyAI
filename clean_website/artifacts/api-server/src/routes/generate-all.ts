@@ -3,7 +3,7 @@ import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTabl
 import { eq, and } from "drizzle-orm";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
-import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
+import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
@@ -354,8 +354,11 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
 
     // Length & sufficiency check — run BEFORE any Gemini calls. There is no
     // point burning API calls (and risking hallucinated filler content) on
-    // material that's too thin to generate a meaningful study kit from.
-    if (content.trim().length < MIN_CONTENT_LENGTH) {
+    // material that's too thin to generate a meaningful study kit from. A
+    // short vocabulary/glossary list bypasses this floor entirely -- see
+    // looksLikeVocabularyList -- since it's valuable, legitimate source
+    // material even when very short.
+    if (!looksLikeVocabularyList(content) && content.trim().length < MIN_CONTENT_LENGTH) {
       return res.status(400).json({
         error: "insufficient_content",
         message: insufficientContentMessage(language),

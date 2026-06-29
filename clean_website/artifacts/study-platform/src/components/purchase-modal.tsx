@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
+import { usePurchaseCelebration } from "@/lib/purchase-celebration";
 import { Coins, Sparkles, X, CheckCircle2 } from "lucide-react";
 
 // EDIT THIS: same admin email gate as the server-side check in
@@ -20,6 +21,7 @@ type TierId = "bronze" | "silver" | "gold";
 interface Tier {
   id: TierId;
   priceILS: number;
+  tokens: number;
   nameHe: string;
   nameEn: string;
   tokensHe: string;
@@ -39,10 +41,21 @@ interface Tier {
 // slides, etc), not just audio, so the copy below deliberately avoids
 // "hours" or anything audio-specific. Each tier links directly to its own
 // hosted PayPal (NCP) checkout page.
+//
+// PAYPAL DASHBOARD SETUP (one-time, per button, not code): in each NCP
+// button's settings, under the "after payment" / "return to website"
+// option, set the return URL so the student lands back on the site with
+// the celebration modal (see lib/purchase-celebration.tsx) already showing
+// the right Token count instead of staring at a bare PayPal confirmation
+// screen:
+//   bronze (₪39 / 40 tokens): https://<your-domain>/?purchase=success&tokens=40
+//   silver (₪79 / 80 tokens): https://<your-domain>/?purchase=success&tokens=80
+//   gold   (₪119 / 150 tokens): https://<your-domain>/?purchase=success&tokens=150
 const TIERS: Tier[] = [
   {
     id: "bronze",
     priceILS: 39,
+    tokens: 40,
     nameHe: "קורס בודד",
     nameEn: "Single Course",
     tokensHe: "40 טוקנים",
@@ -56,6 +69,7 @@ const TIERS: Tier[] = [
   {
     id: "silver",
     priceILS: 79,
+    tokens: 80,
     nameHe: "חצי סמסטר",
     nameEn: "Half Semester",
     tokensHe: "80 טוקנים",
@@ -71,6 +85,7 @@ const TIERS: Tier[] = [
   {
     id: "gold",
     priceILS: 119,
+    tokens: 150,
     nameHe: "סמסטר מלא",
     nameEn: "Full Semester",
     tokensHe: "150 טוקנים",
@@ -109,6 +124,7 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
   const { isRTL } = useLanguage();
   const { user, token } = useAuth();
   const queryClient = useQueryClient();
+  const { show: showCelebration } = usePurchaseCelebration();
   const [activeTierId, setActiveTierId] = useState<TierId | null>(null);
   const [testPurchaseState, setTestPurchaseState] = useState<{ tierId: TierId; status: "pending" | "success" | "error" } | null>(null);
 
@@ -137,8 +153,15 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
         body: JSON.stringify({ packageId: tier.id }),
       });
       if (!response.ok) throw new Error(await response.text());
+      const data: { tokensAdded: number } = await response.json();
       await queryClient.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
       setTestPurchaseState({ tierId: tier.id, status: "success" });
+      // Close the bundle picker and hand off to the same celebration modal a
+      // real customer sees on their PayPal return-redirect (see
+      // lib/purchase-celebration.tsx), so Test Mode exercises the identical
+      // end-of-flow UX, not just the crediting logic.
+      handleOpenChange(false);
+      showCelebration(data.tokensAdded);
     } catch (err) {
       console.error("[purchase-modal] test-mode purchase failed", err);
       setTestPurchaseState({ tierId: tier.id, status: "error" });

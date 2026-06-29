@@ -28,6 +28,28 @@ async function withSignedUrls<T extends { storagePath: string }>(assets: T[]): P
 const MAX_LECTURE_UPLOAD_BYTES = 25 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_LECTURE_UPLOAD_BYTES } });
 
+// A client-supplied Content-Type/mimetype is just a request header -- it's
+// trivial to relabel any file (e.g. a script or HTML payload) as "audio/mpeg"
+// before uploading. This sniffs the first few bytes for a real, known audio
+// container/frame signature so an upload that merely *claims* to be audio
+// (but isn't) gets rejected before it's ever written to the bucket or handed
+// back to another user's browser as a "podcast".
+function isLikelyAudioBuffer(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  // MP3: "ID3" tag, or a raw frame sync (0xFFE0-0xFFFF range, MPEG layer bits set)
+  if (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) return true;
+  if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return true;
+  // WAV: "RIFF"....\"WAVE\"
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WAVE") return true;
+  // OGG (e.g. Opus)
+  if (buffer.toString("ascii", 0, 4) === "OggS") return true;
+  // WebM/Matroska (browser MediaRecorder default container)
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) return true;
+  // MP4/M4A: "ftyp" box starting at byte 4
+  if (buffer.length >= 12 && buffer.toString("ascii", 4, 8) === "ftyp") return true;
+  return false;
+}
+
 async function getOwnedCourseId(courseId: number, userId: number): Promise<number | null> {
   const [course] = await db.select({ id: coursesTable.id }).from(coursesTable)
     .where(and(eq(coursesTable.id, courseId), eq(coursesTable.userId, userId)));
@@ -140,6 +162,9 @@ router.post("/courses/:id/media/upload", upload.single("file"), async (req, res)
 
   if (req.file && req.file.mimetype.startsWith("audio/")) {
     if (req.file.size === 0) return res.status(400).json({ error: "Audio file is empty" });
+    if (!isLikelyAudioBuffer(req.file.buffer)) {
+      return res.status(400).json({ error: "File content does not look like a valid audio file" });
+    }
     const extension = (req.file.originalname.split(".").pop() || "webm").toLowerCase();
     const { storagePath, storageUrl } = await uploadCourseAudio(courseId, req.file.buffer, req.file.mimetype, extension);
     const [asset] = await db.insert(courseAssetsTable).values({

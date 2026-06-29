@@ -19,7 +19,7 @@ const SKIP_SECONDS = 15;
 // who never touch the podcast feature.
 export const MiniPlayer: React.FC = () => {
   const { isRTL } = useLanguage();
-  const { track, isPlaying, currentTime, duration, speed, loadError, togglePlay, seek, skip, cycleSpeed, close } = useAudioPlayer();
+  const { track, isPlaying, currentTime, duration, speed, loadError, togglePlay, seek, skip, cycleSpeed, close, retry } = useAudioPlayer();
 
   if (!track) return null;
 
@@ -35,20 +35,28 @@ export const MiniPlayer: React.FC = () => {
         </div>
 
         {loadError ? (
-          <div className="flex items-center gap-2 text-xs text-destructive flex-1">
+          <div className="flex items-center gap-2 text-xs text-destructive flex-1 min-w-0">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="truncate">{isRTL ? "טעינת השמע נכשלה" : "Failed to load audio"}</span>
+            <Button size="sm" variant="outline" className="h-7 px-2 text-xs shrink-0" onClick={retry}>
+              {isRTL ? "ניסיון חוזר" : "Retry"}
+            </Button>
           </div>
         ) : (
           <>
+            {/* Skip buttons sized for a comfortable thumb tap (>=40px) on
+                mobile, slightly smaller on desktop where a mouse pointer is
+                more precise -- previously these were desktop-only
+                (hidden below the sm breakpoint), which broke the core
+                "listen on the go" mobile use case. */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => skip(-SKIP_SECONDS)}>
+              <Button size="icon" variant="outline" className="h-10 w-10 sm:h-8 sm:w-8" onClick={() => skip(-SKIP_SECONDS)}>
                 <RotateCcw className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="default" className="h-9 w-9" onClick={togglePlay}>
+              <Button size="icon" variant="default" className="h-11 w-11 sm:h-9 sm:w-9" onClick={togglePlay}>
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               </Button>
-              <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => skip(SKIP_SECONDS)}>
+              <Button size="icon" variant="outline" className="h-10 w-10 sm:h-8 sm:w-8" onClick={() => skip(SKIP_SECONDS)}>
                 <RotateCw className="w-4 h-4" />
               </Button>
             </div>

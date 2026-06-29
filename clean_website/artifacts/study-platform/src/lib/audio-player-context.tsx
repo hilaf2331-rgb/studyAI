@@ -33,6 +33,7 @@ interface AudioPlayerContextValue extends AudioPlayerState {
   skip: (deltaSeconds: number) => void;
   cycleSpeed: () => void;
   close: () => void;
+  retry: () => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -128,6 +129,21 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setLoadError(null);
   }, []);
 
+  // Re-attempts the currently loaded track without a full page refresh --
+  // re-sets `src` (in case the failure was a one-off network blip) and lets
+  // the browser try fetching again from the same signed URL.
+  const retry = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !track) return;
+    setLoadError(null);
+    audio.src = track.src;
+    audio.load();
+    audio.play().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error("[AudioPlayer] retry play() rejected", { src: track.src, err });
+    });
+  }, [track]);
+
   const handleError = useCallback(() => {
     const audio = audioRef.current;
     const mediaError = audio?.error;
@@ -200,6 +216,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     skip,
     cycleSpeed,
     close,
+    retry,
   };
 
   return (

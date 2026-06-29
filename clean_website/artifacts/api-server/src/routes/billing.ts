@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { db, usersTable, transactionsTable } from "@workspace/db";
 import { eq, sql, ilike } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -150,28 +150,46 @@ billingPublicRouter.post("/webhooks/payment", async (req, res) => {
   }
 
   // Zapier's payload carries no transaction ID, so there's no natural key to
-  // dedupe an identical retry against (unlike a real payment gateway) --
-  // providerTransactionId is still UNIQUE+NOT NULL on the table, so a random
-  // one is generated per credit. This means a Zapier retry of the same
-  // notification would double-credit; that tradeoff is accepted since Zapier
-  // Filter/dedup steps are expected to prevent the automation from firing
-  // twice for the same notification in the first place.
-  await db.transaction(async (tx) => {
-    await tx.insert(transactionsTable).values({
-      userId: user.id,
-      packageId: pkg.id,
-      tokens: pkg.tokens,
-      priceIls: pkg.priceILS,
-      provider: "zapier",
-      providerTransactionId: randomUUID(),
+  // dedupe an identical retry against (unlike a real payment gateway, whose
+  // own transaction id is used directly -- see creditTokenPackage above).
+  // Instead, derive a deterministic key from (bitName, amount, a 5-minute
+  // time bucket) -- a retried delivery of the *same* notification lands in
+  // the same bucket and hashes to the same providerTransactionId, so the
+  // table's UNIQUE constraint (and the 23505 handling below, same pattern as
+  // the PayPal webhook) catches it as "already processed" instead of
+  // double-crediting. A genuinely new payment from the same person for the
+  // same amount more than 5 minutes later gets its own bucket and is
+  // credited normally.
+  const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+  const timeBucket = Math.floor(Date.now() / DEDUPE_WINDOW_MS);
+  const idempotencyKey = createHash("sha256")
+    .update(`zapier:${bitName.toLowerCase()}:${amount}:${timeBucket}`)
+    .digest("hex");
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(transactionsTable).values({
+        userId: user.id,
+        packageId: pkg.id,
+        tokens: pkg.tokens,
+        priceIls: pkg.priceILS,
+        provider: "zapier",
+        providerTransactionId: idempotencyKey,
+      });
+      await tx.update(usersTable)
+        .set({
+          tokenBalance: sql`${usersTable.tokenBalance} + ${pkg.tokens}`,
+          isPayingCustomer: true,
+        })
+        .where(eq(usersTable.id, user.id));
     });
-    await tx.update(usersTable)
-      .set({
-        tokenBalance: sql`${usersTable.tokenBalance} + ${pkg.tokens}`,
-        isPayingCustomer: true,
-      })
-      .where(eq(usersTable.id, user.id));
-  });
+  } catch (err: any) {
+    if (err?.code === "23505" || err?.cause?.code === "23505") {
+      logger.info({ bitName, amount }, "[billing] zapier webhook: duplicate notification within dedupe window, ignoring retry");
+      return res.json({ ok: true, alreadyProcessed: true });
+    }
+    throw err;
+  }
 
   logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens }, "[billing] credited tokens from Zapier payment webhook");
   res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens });

@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import authRouter from "./routes/auth";
@@ -18,6 +19,42 @@ const app: Express = express();
 // req.ip resolves to the proxy's address instead of the real client —
 // collapsing the rate limiter into a single shared bucket for all users.
 app.set("trust proxy", 1);
+
+// Sets the standard security-headers baseline (HSTS, X-Content-Type-Options,
+// X-Frame-Options, Referrer-Policy, etc.) that a "security headers" grader
+// checks for. This API only ever serves JSON, never HTML, so its own CSP is
+// mostly inert here -- the directives below exist so the same policy is
+// documented in one place and ready to reuse verbatim if this server (or
+// any future one) ever does serve HTML directly. The actual frontend
+// (focusstudy.net) is a separate static site on Vercel, so its CSP/security
+// headers are configured there too -- see vercel.json's `headers` block --
+// since helmet here has no effect on responses that site itself serves.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        fontSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", "https:"],
+        // GCS-hosted course audio is fetched/played directly by the browser
+        // from signed storage.googleapis.com URLs, not proxied through this
+        // API -- mediaSrc/connectSrc need to explicitly allow that origin.
+        mediaSrc: ["'self'", "https://storage.googleapis.com"],
+        connectSrc: ["'self'", "https://storage.googleapis.com"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'self'"],
+      },
+    },
+    // This API is called cross-origin by the frontend (see the CORS
+    // whitelist below) and never embeds itself in a frame, so the
+    // cross-origin-resource-policy default of "same-origin" would needlessly
+    // block legitimate cross-origin fetches of its JSON responses.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 // TEMPORARY DIAGNOSTIC — remove once the 405 is resolved.
 app.use((req, res, next) => {

@@ -57,6 +57,57 @@ export interface GlossaryTermInput {
   definition: string;
 }
 
+export type CourseAssetKind = typeof CourseAssetKind[keyof typeof CourseAssetKind];
+
+
+export const CourseAssetKind = {
+  material_convert: 'material_convert',
+  lecture_upload: 'lecture_upload',
+} as const;
+
+export type CourseAssetStatus = typeof CourseAssetStatus[keyof typeof CourseAssetStatus];
+
+
+export const CourseAssetStatus = {
+  processing: 'processing',
+  ready: 'ready',
+  error: 'error',
+} as const;
+
+export interface CourseAsset {
+  id: number;
+  courseId: number;
+  /** @nullable */
+  materialId?: number | null;
+  kind: CourseAssetKind;
+  title: string;
+  storageUrl: string;
+  mimeType: string;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  sizeBytes?: number | null;
+  status: CourseAssetStatus;
+  createdAt: string;
+}
+
+/**
+ * Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text.
+ */
+export type ConvertCourseMaterialInputSource = typeof ConvertCourseMaterialInputSource[keyof typeof ConvertCourseMaterialInputSource];
+
+
+export const ConvertCourseMaterialInputSource = {
+  summary: 'summary',
+  extracted_text: 'extracted_text',
+} as const;
+
+export interface ConvertCourseMaterialInput {
+  materialId: number;
+  /** Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text. */
+  source?: ConvertCourseMaterialInputSource;
+}
+
 export type MaterialContentType = typeof MaterialContentType[keyof typeof MaterialContentType];
 
 

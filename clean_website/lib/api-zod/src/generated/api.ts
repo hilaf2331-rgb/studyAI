@@ -174,6 +174,51 @@ export const DeleteGlossaryTermParams = zod.object({
 
 
 /**
+ * @summary List course media (generated podcast/lecture audio) for a course
+ */
+export const ListCourseMediaParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCourseMediaResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "materialId": zod.number().nullish(),
+  "kind": zod.enum(['material_convert', 'lecture_upload']),
+  "title": zod.string(),
+  "storageUrl": zod.string(),
+  "mimeType": zod.string(),
+  "durationSeconds": zod.number().nullish(),
+  "sizeBytes": zod.number().nullish(),
+  "status": zod.enum(['processing', 'ready', 'error']),
+  "createdAt": zod.coerce.date()
+})
+export const ListCourseMediaResponse = zod.array(ListCourseMediaResponseItem)
+
+
+/**
+ * @summary Convert an existing course material/summary into a podcast-style audio asset
+ */
+export const ConvertCourseMaterialToAudioParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ConvertCourseMaterialToAudioBody = zod.object({
+  "materialId": zod.number(),
+  "source": zod.enum(['summary', 'extracted_text']).optional().describe('Which text of the material to convert; defaults to the material\'s summary if one exists, otherwise its extracted text.')
+})
+
+
+/**
+ * @summary Delete a course media asset (and its storage object)
+ */
+export const DeleteCourseMediaParams = zod.object({
+  "id": zod.coerce.number(),
+  "assetId": zod.coerce.number()
+})
+
+
+/**
  * @summary List materials, optionally filtered by courseId
  */
 export const ListMaterialsQueryParams = zod.object({

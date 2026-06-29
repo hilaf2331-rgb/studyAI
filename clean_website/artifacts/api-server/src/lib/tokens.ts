@@ -242,6 +242,7 @@ export async function isPayingCustomer(userId: number): Promise<boolean> {
 export const FEATURE_TOKEN_COSTS = {
   targetedQuestion: RAW_UNITS_PER_TOKEN,
   dailyReviewQueue: RAW_UNITS_PER_TOKEN,
+  audioGeneration: RAW_UNITS_PER_TOKEN,
 } as const;
 
 // Call right before running a PAYG-gated feature. Throws InsufficientTokensError

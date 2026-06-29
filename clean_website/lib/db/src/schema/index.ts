@@ -10,3 +10,4 @@ export * from "./activity";
 export * from "./recordings";
 export * from "./glossary";
 export * from "./transactions";
+export * from "./course-assets";

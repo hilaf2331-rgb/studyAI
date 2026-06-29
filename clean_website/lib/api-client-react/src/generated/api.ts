@@ -27,7 +27,9 @@ import type {
   ChatMessageInput,
   ContactMessageInput,
   ContactMessageResult,
+  ConvertCourseMaterialInput,
   Course,
+  CourseAsset,
   CourseInput,
   CourseUpdate,
   DailyReviewCards,
@@ -813,6 +815,227 @@ export const useDeleteGlossaryTerm = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteGlossaryTermMutationOptions(options));
+    }
+
+export const getListCourseMediaUrl = (id: number,) => {
+
+
+
+
+  return `/api/courses/${id}/media`
+}
+
+/**
+ * @summary List course media (generated podcast/lecture audio) for a course
+ */
+export const listCourseMedia = async (id: number, options?: RequestInit): Promise<CourseAsset[]> => {
+
+  return customFetch<CourseAsset[]>(getListCourseMediaUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCourseMediaQueryKey = (id: number,) => {
+    return [
+    `/api/courses/${id}/media`
+    ] as const;
+    }
+
+
+export const getListCourseMediaQueryOptions = <TData = Awaited<ReturnType<typeof listCourseMedia>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCourseMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCourseMediaQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCourseMedia>>> = ({ signal }) => listCourseMedia(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCourseMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCourseMediaQueryResult = NonNullable<Awaited<ReturnType<typeof listCourseMedia>>>
+export type ListCourseMediaQueryError = ErrorType<void>
+
+
+/**
+ * @summary List course media (generated podcast/lecture audio) for a course
+ */
+
+export function useListCourseMedia<TData = Awaited<ReturnType<typeof listCourseMedia>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCourseMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCourseMediaQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getConvertCourseMaterialToAudioUrl = (id: number,) => {
+
+
+
+
+  return `/api/courses/${id}/media/convert`
+}
+
+/**
+ * @summary Convert an existing course material/summary into a podcast-style audio asset
+ */
+export const convertCourseMaterialToAudio = async (id: number,
+    convertCourseMaterialInput: ConvertCourseMaterialInput, options?: RequestInit): Promise<CourseAsset> => {
+
+  return customFetch<CourseAsset>(getConvertCourseMaterialToAudioUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      convertCourseMaterialInput,)
+  }
+);}
+
+
+
+
+export const getConvertCourseMaterialToAudioMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof convertCourseMaterialToAudio>>, TError,{id: number;data: BodyType<ConvertCourseMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof convertCourseMaterialToAudio>>, TError,{id: number;data: BodyType<ConvertCourseMaterialInput>}, TContext> => {
+
+const mutationKey = ['convertCourseMaterialToAudio'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof convertCourseMaterialToAudio>>, {id: number;data: BodyType<ConvertCourseMaterialInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  convertCourseMaterialToAudio(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConvertCourseMaterialToAudioMutationResult = NonNullable<Awaited<ReturnType<typeof convertCourseMaterialToAudio>>>
+    export type ConvertCourseMaterialToAudioMutationBody = BodyType<ConvertCourseMaterialInput>
+    export type ConvertCourseMaterialToAudioMutationError = ErrorType<void>
+
+    /**
+ * @summary Convert an existing course material/summary into a podcast-style audio asset
+ */
+export const useConvertCourseMaterialToAudio = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof convertCourseMaterialToAudio>>, TError,{id: number;data: BodyType<ConvertCourseMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof convertCourseMaterialToAudio>>,
+        TError,
+        {id: number;data: BodyType<ConvertCourseMaterialInput>},
+        TContext
+      > => {
+      return useMutation(getConvertCourseMaterialToAudioMutationOptions(options));
+    }
+
+export const getDeleteCourseMediaUrl = (id: number,
+    assetId: number,) => {
+
+
+
+
+  return `/api/courses/${id}/media/${assetId}`
+}
+
+/**
+ * @summary Delete a course media asset (and its storage object)
+ */
+export const deleteCourseMedia = async (id: number,
+    assetId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteCourseMediaUrl(id,assetId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCourseMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCourseMedia>>, TError,{id: number;assetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCourseMedia>>, TError,{id: number;assetId: number}, TContext> => {
+
+const mutationKey = ['deleteCourseMedia'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCourseMedia>>, {id: number;assetId: number}> = (props) => {
+          const {id,assetId} = props ?? {};
+
+          return  deleteCourseMedia(id,assetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCourseMediaMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCourseMedia>>>
+
+    export type DeleteCourseMediaMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a course media asset (and its storage object)
+ */
+export const useDeleteCourseMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCourseMedia>>, TError,{id: number;assetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCourseMedia>>,
+        TError,
+        {id: number;assetId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCourseMediaMutationOptions(options));
     }
 
 export const getListMaterialsUrl = (params?: ListMaterialsParams,) => {

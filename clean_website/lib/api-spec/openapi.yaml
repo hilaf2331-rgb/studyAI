@@ -25,6 +25,8 @@ tags:
     description: AI tutor chat
   - name: dashboard
     description: Dashboard & analytics
+  - name: course-media
+    description: Course media (audio/podcast) library
 
 paths:
   /healthz:
@@ -221,6 +223,79 @@ paths:
           schema:
             type: integer
         - name: termId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Course Media (audio/podcast) ────────────────────────────────────────
+  /courses/{id}/media:
+    get:
+      operationId: listCourseMedia
+      tags: [course-media]
+      summary: List course media (generated podcast/lecture audio) for a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of course media assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CourseAsset"
+        "404":
+          description: Not found
+
+  /courses/{id}/media/convert:
+    post:
+      operationId: convertCourseMaterialToAudio
+      tags: [course-media]
+      summary: Convert an existing course material/summary into a podcast-style audio asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConvertCourseMaterialInput"
+      responses:
+        "201":
+          description: Created (or existing matching asset reused)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseAsset"
+        "404":
+          description: Not found
+
+  /courses/{id}/media/{assetId}:
+    delete:
+      operationId: deleteCourseMedia
+      tags: [course-media]
+      summary: Delete a course media asset (and its storage object)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: assetId
           in: path
           required: true
           schema:
@@ -1204,6 +1279,48 @@ components:
         definition:
           type: string
           minLength: 1
+
+    # ── Course Media ─────────────────────────────────────────────────────────
+    CourseAsset:
+      type: object
+      required: [id, courseId, kind, title, storageUrl, mimeType, status, createdAt]
+      properties:
+        id:
+          type: integer
+        courseId:
+          type: integer
+        materialId:
+          type: ["integer", "null"]
+        kind:
+          type: string
+          enum: [material_convert, lecture_upload]
+        title:
+          type: string
+        storageUrl:
+          type: string
+        mimeType:
+          type: string
+        durationSeconds:
+          type: ["integer", "null"]
+        sizeBytes:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [processing, ready, error]
+        createdAt:
+          type: string
+          format: date-time
+
+    ConvertCourseMaterialInput:
+      type: object
+      required: [materialId]
+      properties:
+        materialId:
+          type: integer
+        source:
+          type: string
+          enum: [summary, extracted_text]
+          description: Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text.
 
     # ── Material ─────────────────────────────────────────────────────────────
     Material:

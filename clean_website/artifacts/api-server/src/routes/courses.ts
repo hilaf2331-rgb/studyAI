@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { db, coursesTable, materialsTable, glossaryTermsTable } from "@workspace/db";
+import { db, coursesTable, materialsTable, glossaryTermsTable, courseAssetsTable } from "@workspace/db";
 import { eq, count, and } from "drizzle-orm";
+import { deleteCourseAudio } from "../lib/storage";
 import {
   CreateCourseBody, UpdateCourseBody, GetCourseParams, UpdateCourseParams, DeleteCourseParams,
   ListGlossaryTermsParams, CreateGlossaryTermParams, CreateGlossaryTermBody,
@@ -59,10 +60,21 @@ router.patch("/courses/:id", async (req, res) => {
 router.delete("/courses/:id", async (req, res) => {
   const userId = req.user!.userId;
   const { id } = DeleteCourseParams.parse({ id: Number(req.params.id) });
+
+  // Storage objects are cleaned up BEFORE the course row is deleted -- the
+  // DB-level cascade on course_assets.course_id only removes the rows, it
+  // has no way to also delete the corresponding bucket objects, so that has
+  // to happen here at the application layer or the bucket accumulates
+  // orphaned (still-billed) audio files.
+  const orphanedAssets = await db.select({ storagePath: courseAssetsTable.storagePath }).from(courseAssetsTable)
+    .where(and(eq(courseAssetsTable.courseId, id), eq(courseAssetsTable.userId, userId)));
+
   const [deleted] = await db.delete(coursesTable)
     .where(and(eq(coursesTable.id, id), eq(coursesTable.userId, userId)))
     .returning({ id: coursesTable.id });
   if (!deleted) return res.status(404).json({ error: "Not found" });
+
+  await Promise.all(orphanedAssets.map((a) => deleteCourseAudio(a.storagePath)));
   res.status(204).end();
 });
 

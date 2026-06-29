@@ -1,15 +1,28 @@
 // Thin wrapper around Google Cloud Storage (also the backing store behind
 // Firebase Storage buckets) for the Course Media / audio-podcast feature.
-// Audio binaries never touch Postgres -- only the storagePath/storageUrl
-// this module returns gets persisted in courseAssetsTable. Credentials and
-// bucket name come exclusively from environment variables (never hardcoded)
-// so the same code runs unmodified across environments.
+// Audio binaries never touch Postgres -- only the storagePath this module
+// returns gets persisted in courseAssetsTable. Credentials and bucket name
+// come exclusively from environment variables (never hardcoded) so the same
+// code runs unmodified across environments.
 //
-// The bucket also needs a CORS config applied (objects being public-read
-// doesn't imply CORS headers) -- see ../../gcs-cors.json and apply with:
+// The bucket is kept fully private (no allUsers/public-read grant) for user
+// privacy -- playback URLs are short-lived V4 signed URLs minted per-request
+// by getSignedAudioUrl(), never a permanent public link.
+//
+// The bucket still needs a CORS config applied even though it's private:
+// CORS governs which origins may read a *successful* cross-origin response,
+// which is a separate browser check from GCS's own request authorization.
+// A signed URL satisfies authorization but the <audio> element's range
+// request will still be blocked client-side (most strictly by Safari/iOS)
+// without it. See ../../gcs-cors.json and apply with:
 //   gsutil cors set gcs-cors.json gs://<GCS_BUCKET_NAME>
 import { Storage } from "@google-cloud/storage";
 import { randomUUID } from "crypto";
+
+// How long a signed playback URL stays valid once minted. Long enough to
+// listen through a full lecture/podcast without needing a mid-playback
+// refresh, short enough that a leaked URL is only a temporary exposure.
+const SIGNED_URL_TTL_MS = 60 * 60 * 1000;
 
 let storageClient: Storage | undefined;
 
@@ -34,14 +47,17 @@ function getBucketName(): string {
 
 export interface UploadedAudio {
   storagePath: string;
+  // A gs:// URI for record-keeping/debugging only -- never used to serve
+  // the file to a client. The bucket has no public-read grant, so this URL
+  // does not resolve directly; playback always goes through
+  // getSignedAudioUrl() instead.
   storageUrl: string;
 }
 
 // Uploads an already-compressed audio buffer (MP3/AAC) under a per-course
-// prefix so a course's media is easy to locate/bulk-delete, and makes the
-// object publicly readable via a uniform bucket-level access rule (set on
-// the bucket itself) rather than per-object ACLs -- the cheaper, simpler
-// option for a free-tier/pay-as-you-go bucket.
+// prefix so a course's media is easy to locate/bulk-delete. The bucket is
+// private -- no per-object or bucket-level public-read grant -- so nothing
+// here makes the object reachable without a signed URL.
 export async function uploadCourseAudio(
   courseId: number,
   buffer: Buffer,
@@ -52,8 +68,24 @@ export async function uploadCourseAudio(
   const storagePath = `course-media/${courseId}/${randomUUID()}.${extension}`;
   const file = bucket.file(storagePath);
   await file.save(buffer, { contentType, resumable: false });
-  const storageUrl = `https://storage.googleapis.com/${getBucketName()}/${storagePath}`;
+  const storageUrl = `gs://${getBucketName()}/${storagePath}`;
   return { storagePath, storageUrl };
+}
+
+// Mints a short-lived V4 signed URL granting temporary read access to one
+// object, without making the bucket or object public. Requires either a
+// service-account key (GCS_CREDENTIALS_JSON / GOOGLE_APPLICATION_CREDENTIALS)
+// so the SDK can sign locally, or a runtime identity with the
+// "iam.serviceAccounts.signBlob" permission if using attached/ambient
+// credentials (e.g. Workload Identity) instead of a key file.
+export async function getSignedAudioUrl(storagePath: string): Promise<string> {
+  const file = getStorageClient().bucket(getBucketName()).file(storagePath);
+  const [url] = await file.getSignedUrl({
+    version: "v4",
+    action: "read",
+    expires: Date.now() + SIGNED_URL_TTL_MS,
+  });
+  return url;
 }
 
 // Best-effort delete -- called whenever a course_asset row (or its parent

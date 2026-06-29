@@ -4,10 +4,22 @@ import { db, coursesTable, courseAssetsTable, materialsTable, summariesTable } f
 import { eq, and, desc } from "drizzle-orm";
 import { ListCourseMediaParams, ConvertCourseMaterialToAudioParams, ConvertCourseMaterialToAudioBody, DeleteCourseMediaParams } from "@workspace/api-zod";
 import { generateSpeech, hashSourceText } from "../lib/tts";
-import { uploadCourseAudio, deleteCourseAudio } from "../lib/storage";
+import { uploadCourseAudio, deleteCourseAudio, getSignedAudioUrl } from "../lib/storage";
 import { requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
 
 const router = Router();
+
+// The bucket is private -- the storageUrl persisted in the DB is a
+// non-resolving gs:// reference, never a playable link. Every response that
+// hands an asset to the client replaces storageUrl with a fresh short-lived
+// signed URL, minted on demand rather than stored, so it's never stale and
+// never outlives the request that issued it.
+async function withSignedUrl<T extends { storagePath: string }>(asset: T): Promise<T> {
+  return { ...asset, storageUrl: await getSignedAudioUrl(asset.storagePath) };
+}
+async function withSignedUrls<T extends { storagePath: string }>(assets: T[]): Promise<T[]> {
+  return Promise.all(assets.map(withSignedUrl));
+}
 
 // A student's own recorded/uploaded lecture file is already a reasonably
 // compressed browser format (webm/opus, m4a, mp3) -- there's no separate
@@ -34,6 +46,7 @@ router.get("/podcasts", async (req, res) => {
     materialId: courseAssetsTable.materialId,
     kind: courseAssetsTable.kind,
     title: courseAssetsTable.title,
+    storagePath: courseAssetsTable.storagePath,
     storageUrl: courseAssetsTable.storageUrl,
     mimeType: courseAssetsTable.mimeType,
     durationSeconds: courseAssetsTable.durationSeconds,
@@ -45,7 +58,7 @@ router.get("/podcasts", async (req, res) => {
     .innerJoin(coursesTable, eq(courseAssetsTable.courseId, coursesTable.id))
     .where(eq(courseAssetsTable.userId, userId))
     .orderBy(desc(courseAssetsTable.createdAt));
-  res.json(assets);
+  res.json(await withSignedUrls(assets));
 });
 
 router.get("/courses/:id/media", async (req, res) => {
@@ -55,7 +68,7 @@ router.get("/courses/:id/media", async (req, res) => {
   const assets = await db.select().from(courseAssetsTable)
     .where(eq(courseAssetsTable.courseId, id))
     .orderBy(desc(courseAssetsTable.createdAt));
-  res.json(assets);
+  res.json(await withSignedUrls(assets));
 });
 
 // Converts an existing material's summary (or extracted text, as a
@@ -89,7 +102,7 @@ router.post("/courses/:id/media/convert", async (req, res) => {
   const sourceTextHash = hashSourceText(sourceText);
   const [existing] = await db.select().from(courseAssetsTable)
     .where(and(eq(courseAssetsTable.materialId, materialId), eq(courseAssetsTable.sourceTextHash, sourceTextHash)));
-  if (existing) return res.status(201).json(existing);
+  if (existing) return res.status(201).json(await withSignedUrl(existing));
 
   await requireAndDeductFeatureTokens(userId, FEATURE_TOKEN_COSTS.audioGeneration);
 
@@ -110,7 +123,7 @@ router.post("/courses/:id/media/convert", async (req, res) => {
     status: "ready",
   }).returning();
 
-  res.status(201).json(asset);
+  res.status(201).json(await withSignedUrl(asset));
 });
 
 // Multipart route for "Upload New Lecture" -- deliberately kept outside the
@@ -140,7 +153,7 @@ router.post("/courses/:id/media/upload", upload.single("file"), async (req, res)
       sizeBytes: req.file.buffer.length,
       status: "ready",
     }).returning();
-    return res.status(201).json(asset);
+    return res.status(201).json(await withSignedUrl(asset));
   }
 
   if (text && text.trim()) {
@@ -159,7 +172,7 @@ router.post("/courses/:id/media/upload", upload.single("file"), async (req, res)
       sourceTextHash: hashSourceText(text),
       status: "ready",
     }).returning();
-    return res.status(201).json(asset);
+    return res.status(201).json(await withSignedUrl(asset));
   }
 
   return res.status(400).json({ error: "Either an audio file or lecture text is required" });

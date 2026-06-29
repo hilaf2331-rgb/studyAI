@@ -7,10 +7,11 @@ import {
   UpdateFlashcardDeckStudiedParams, UpdateFlashcardDeckStudiedBody
 } from "@workspace/api-zod";
 import { generateFlashcardsAI } from "../lib/ai";
-import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 import { recordStudyActivity } from "../lib/streaks";
+import { parseVocabEntries, generateVocabFlashcards } from "../lib/vocab";
 
 const router = Router();
 
@@ -57,14 +58,22 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
 
   await requireTokenBalance(userId);
 
-  const cards = await generateFlashcardsAI({
-    language: body.language as "he" | "en",
-    materialContent,
-    materialTitle: material.title,
-    cardCount,
-    cardTypes,
-    materialId: id,
-  });
+  // Vocab-Kit "Smart Vocabulary Mode": term/definition word lists skip the
+  // general-purpose AI flashcard generator entirely -- a card here is just
+  // the literal term/definition pair, re-shuffled fresh on every generation,
+  // never an AI paraphrase that risks drifting from the exact wording the
+  // student needs to learn.
+  const vocabEntries = looksLikeVocabularyList(materialContent) ? parseVocabEntries(materialContent) : [];
+  const cards = vocabEntries.length > 0
+    ? generateVocabFlashcards(vocabEntries)
+    : await generateFlashcardsAI({
+        language: body.language as "he" | "en",
+        materialContent,
+        materialTitle: material.title,
+        cardCount,
+        cardTypes,
+        materialId: id,
+      });
   await deductTokensForGeneration(userId, materialContent, JSON.stringify(cards));
 
   const [deck] = await db.insert(flashcardDecksTable).values({

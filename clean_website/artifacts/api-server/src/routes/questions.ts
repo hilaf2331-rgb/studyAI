@@ -8,9 +8,10 @@ import {
   UpdateQuestionSetStudiedParams, UpdateQuestionSetStudiedBody
 } from "@workspace/api-zod";
 import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
-import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
+import { parseVocabEntries, generateVocabQuiz } from "../lib/vocab";
 
 const router = Router();
 
@@ -59,15 +60,22 @@ router.post("/materials/:id/question-sets", generationRateLimiter, async (req, r
 
   await requireTokenBalance(userId);
 
-  const generated = await generateQuestionsAI({
-    language: body.language as "he" | "en",
-    materialContent,
-    materialTitle: material.title,
-    questionCount,
-    questionTypes: body.questionTypes?.length ? body.questionTypes : ["open", "multiple_choice"],
-    difficulty: body.difficulty || "mixed",
-    materialId: id,
-  });
+  // Vocab-Kit "Dynamic Matching" quiz: term/definition word lists get a
+  // deterministic multiple-choice quiz (one word, 4 options, randomized
+  // EN<->HE direction) instead of the general-purpose AI question
+  // generator -- see lib/vocab.ts for why an LLM adds no value here.
+  const vocabEntries = looksLikeVocabularyList(materialContent) ? parseVocabEntries(materialContent) : [];
+  const generated = vocabEntries.length > 0
+    ? generateVocabQuiz(vocabEntries, questionCount)
+    : await generateQuestionsAI({
+        language: body.language as "he" | "en",
+        materialContent,
+        materialTitle: material.title,
+        questionCount,
+        questionTypes: body.questionTypes?.length ? body.questionTypes : ["open", "multiple_choice"],
+        difficulty: body.difficulty || "mixed",
+        materialId: id,
+      });
   await deductTokensForGeneration(userId, materialContent, JSON.stringify(generated));
 
   const [set] = await db.insert(questionSetsTable).values({

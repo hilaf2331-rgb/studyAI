@@ -3,7 +3,7 @@ import { db, summariesTable, materialsTable, activityTable, glossaryTermsTable }
 import { eq, and } from "drizzle-orm";
 import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams, UpdateSummaryStudiedParams, UpdateSummaryStudiedBody } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
-import { rejectIfTooShort } from "../lib/validation";
+import { rejectIfTooShort, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForSummary } from "../lib/tokens";
 
@@ -35,6 +35,20 @@ router.post("/materials/:id/summaries", generationRateLimiter, async (req, res) 
   if (!material) return res.status(404).json({ error: "Not found" });
 
   if (rejectIfTooShort(res, material.extractedText, body.language === "en" ? "en" : "he")) return;
+
+  // Vocab-Kit: a plain term/definition word list has no narrative to
+  // summarize -- a general-purpose summary would just restate or paraphrase
+  // terms the student needs verbatim, adding no value. Flashcards/quiz/exam
+  // generation for these materials goes through the deterministic vocab.ts
+  // path instead (see flashcards.ts, questions.ts, exams.ts).
+  if (looksLikeVocabularyList(material.extractedText)) {
+    return res.status(400).json({
+      error: "vocab_list_no_summary",
+      message: body.language === "en"
+        ? "This material is a vocabulary list -- summaries aren't useful for word lists. Try flashcards, a quiz, or an exam instead."
+        : "החומר הזה הוא רשימת מילים -- סיכום לא רלוונטי לרשימות מילים. נסו כרטיסיות, חידון או מבחן במקום.",
+    });
+  }
 
   await requireTokenBalance(userId);
 

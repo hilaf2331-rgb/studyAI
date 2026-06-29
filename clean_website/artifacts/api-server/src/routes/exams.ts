@@ -6,14 +6,15 @@ import {
   GetExamParams, DeleteExamParams, SubmitExamParams, SubmitExamBody, GetExamResultParams,
   UpdateExamStudiedParams, UpdateExamStudiedBody
 } from "@workspace/api-zod";
-import { generateExamAI, gradeAnswer } from "../lib/ai";
-import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { generateExamAI, gradeAnswer, generateVocabFillInBlanksAI } from "../lib/ai";
+import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
 import { getExistingQuestionTexts } from "../lib/question-history";
 import { setGenerationProgress } from "../lib/progress";
 import { logger } from "../lib/logger";
 import { recordStudyActivity } from "../lib/streaks";
+import { parseVocabEntries, generateVocabQuiz, pickEntriesForFillInBlank, pickDistractors, shuffle, VocabEntry } from "../lib/vocab";
 
 // Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
 // meant to feel like one real quiz/exam rather than an attempt to exhaust
@@ -45,6 +46,59 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
         reject(err);
       });
   });
+}
+
+// Vocab-Kit "Advanced Exam": the MC quiz questions (same dual-directionality
+// EN<->HE logic as questions.ts's "Dynamic Matching" quiz) plus a
+// fill-in-the-blank section -- a sentence with the target word blanked out
+// and 4 word options to pick from. The MC half is fully deterministic; the
+// fill-in-blank half needs one AI call (generateVocabFillInBlanksAI, see
+// lib/ai.ts) to write the example sentences, but the actual 4-option
+// distractor set is still built here deterministically from the same
+// vocabulary pool, never trusted from the AI's own output.
+const VOCAB_FILL_IN_BLANK_SHARE = 0.4;
+
+async function generateVocabExamQuestions(
+  entries: VocabEntry[],
+  language: "he" | "en",
+  materialTitle: string,
+  questionCount: number,
+  materialId: number,
+): Promise<Array<{ questionType: string; question: string; answer: string; explanation?: string; options: string[]; difficulty: string; concept?: string; modelAnswer?: string; optionExplanations?: (string | null)[] }>> {
+  const fillInBlankCount = Math.max(1, Math.round(questionCount * VOCAB_FILL_IN_BLANK_SHARE));
+  const mcCount = Math.max(1, questionCount - fillInBlankCount);
+
+  const mcQuestions = generateVocabQuiz(entries, mcCount);
+
+  const allTerms = entries.map((e) => e.term);
+  const fillInEntries = pickEntriesForFillInBlank(entries, fillInBlankCount);
+  const sentences = fillInEntries.length > 0
+    ? await generateVocabFillInBlanksAI({
+        language,
+        words: fillInEntries.map((e) => e.term),
+        materialTitle,
+        materialId,
+      })
+    : [];
+
+  const fillInBlankQuestions = sentences
+    .map(({ word, sentence }) => {
+      const distractors = pickDistractors(allTerms, word, 3);
+      if (distractors.length < 3) return null;
+      const options = shuffle([word, ...distractors]);
+      return {
+        questionType: "fill_blank",
+        question: sentence,
+        answer: word,
+        explanation: language === "he" ? `המילה החסרה היא "${word}".` : `The missing word is "${word}".`,
+        options,
+        difficulty: "medium",
+        concept: word,
+      };
+    })
+    .filter((q): q is NonNullable<typeof q> => q !== null);
+
+  return shuffle([...mcQuestions, ...fillInBlankQuestions]);
 }
 
 const router = Router();
@@ -89,22 +143,30 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
   const materialContent = material.extractedText || "";
 
   try {
-    const excludeQuestions = await getExistingQuestionTexts(materialId);
-    const generated = await withTimeout(
-      generateExamAI({
-        language: body.language as "he" | "en",
-        materialContent,
-        materialTitle: material.title,
-        questionCount,
-        examType: body.examType,
-        difficulty: body.difficulty || "mixed",
-        topics: body.topics,
-        materialId,
-        excludeQuestions,
-      }),
-      AI_TASK_TIMEOUT_MS,
-      "generateExamAI",
-    );
+    const vocabEntries = looksLikeVocabularyList(materialContent) ? parseVocabEntries(materialContent) : [];
+    const generated = vocabEntries.length > 0
+      ? await generateVocabExamQuestions(
+          vocabEntries,
+          body.language as "he" | "en",
+          material.title,
+          questionCount,
+          materialId,
+        )
+      : await withTimeout(
+          generateExamAI({
+            language: body.language as "he" | "en",
+            materialContent,
+            materialTitle: material.title,
+            questionCount,
+            examType: body.examType,
+            difficulty: body.difficulty || "mixed",
+            topics: body.topics,
+            materialId,
+            excludeQuestions: await getExistingQuestionTexts(materialId),
+          }),
+          AI_TASK_TIMEOUT_MS,
+          "generateExamAI",
+        );
 
     // Coerce/sanitize every row right at the DB boundary -- ai.ts already
     // filters out structurally invalid questions, but this is the last line
@@ -272,7 +334,7 @@ router.post("/exams/:id/submit", generationRateLimiter, async (req, res) => {
       const qType = question.questionType;
       let correct = false;
       let explanation = question.explanation || "";
-      if (qType === "multiple_choice" || qType === "true_false") {
+      if (qType === "multiple_choice" || qType === "true_false" || qType === "fill_blank") {
         correct = answer.answer.toLowerCase().trim() === question.answer.toLowerCase().trim();
       } else {
         const graded = await gradeAnswer(question.question, question.answer, answer.answer, exam.language as "he" | "en");

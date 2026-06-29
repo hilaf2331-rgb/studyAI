@@ -22,6 +22,32 @@ async function getOwnedCourseId(courseId: number, userId: number): Promise<numbe
   return course ? course.id : null;
 }
 
+// Global "All Podcasts" view -- aggregates course media across every course
+// the requesting user owns, joined with the course name. Registered as a
+// distinct top-level path (not nested under /courses/:id) so there's no
+// Express route-ordering ambiguity with the per-course /courses/:id/media route.
+router.get("/podcasts", async (req, res) => {
+  const userId = req.user!.userId;
+  const assets = await db.select({
+    id: courseAssetsTable.id,
+    courseId: courseAssetsTable.courseId,
+    materialId: courseAssetsTable.materialId,
+    kind: courseAssetsTable.kind,
+    title: courseAssetsTable.title,
+    storageUrl: courseAssetsTable.storageUrl,
+    mimeType: courseAssetsTable.mimeType,
+    durationSeconds: courseAssetsTable.durationSeconds,
+    sizeBytes: courseAssetsTable.sizeBytes,
+    status: courseAssetsTable.status,
+    createdAt: courseAssetsTable.createdAt,
+    courseName: coursesTable.name,
+  }).from(courseAssetsTable)
+    .innerJoin(coursesTable, eq(courseAssetsTable.courseId, coursesTable.id))
+    .where(eq(courseAssetsTable.userId, userId))
+    .orderBy(desc(courseAssetsTable.createdAt));
+  res.json(assets);
+});
+
 router.get("/courses/:id/media", async (req, res) => {
   const userId = req.user!.userId;
   const { id } = ListCourseMediaParams.parse({ id: Number(req.params.id) });

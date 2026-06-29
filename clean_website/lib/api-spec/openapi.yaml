@@ -306,6 +306,21 @@ paths:
         "404":
           description: Not found
 
+  /podcasts:
+    get:
+      operationId: listAllCourseMedia
+      tags: [course-media]
+      summary: List all course media (podcasts) across all of the user's courses, joined with course name
+      responses:
+        "200":
+          description: List of course media assets across all courses, with course name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CourseAssetWithCourse"
+
   /materials:
     get:
       operationId: listMaterials
@@ -1310,6 +1325,15 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    CourseAssetWithCourse:
+      allOf:
+        - $ref: "#/components/schemas/CourseAsset"
+        - type: object
+          required: [courseName]
+          properties:
+            courseName:
+              type: string
 
     ConvertCourseMaterialInput:
       type: object

@@ -21,6 +21,7 @@ import { Dashboard } from "@/pages/dashboard";
 import { CoursesPage } from "@/pages/courses";
 import { CourseDetailPage } from "@/pages/course-detail";
 import { MaterialsPage } from "@/pages/materials";
+import { PodcastsPage } from "@/pages/podcasts";
 import { MaterialNewPage } from "@/pages/material-new";
 import { MaterialDetailPage } from "@/pages/material-detail";
 import { SummaryViewPage } from "@/pages/summary-view";
@@ -145,6 +146,7 @@ function AppRoutes() {
         <Route path="/courses" component={CoursesPage} />
         <Route path="/courses/:id" component={CourseDetailPage} />
         <Route path="/materials" component={MaterialsPage} />
+        <Route path="/podcasts" component={PodcastsPage} />
         <Route path="/materials/new" component={MaterialNewPage} />
         <Route path="/materials/:id" component={MaterialDetailPage} />
         <Route path="/materials/:id/chat" component={ChatPage} />

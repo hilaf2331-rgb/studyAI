@@ -23,6 +23,7 @@ export * from './course';
 export * from './courseAsset';
 export * from './courseAssetKind';
 export * from './courseAssetStatus';
+export * from './courseAssetWithCourse';
 export * from './courseInput';
 export * from './courseUpdate';
 export * from './dailyReviewCard';

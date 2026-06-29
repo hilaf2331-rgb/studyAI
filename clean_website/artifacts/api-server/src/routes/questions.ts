@@ -11,7 +11,7 @@ import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/a
 import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS } from "../lib/tokens";
-import { parseVocabEntries, generateVocabQuiz } from "../lib/vocab";
+import { parseVocabEntries, generateVocabQuiz } from "../lib/prompts/vocab";
 
 const router = Router();
 

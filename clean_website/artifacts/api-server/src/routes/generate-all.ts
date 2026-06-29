@@ -8,7 +8,7 @@ import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
 import { getExistingQuestionTexts } from "../lib/question-history";
-import { parseVocabEntries, generateVocabFlashcards, generateVocabQuiz } from "../lib/vocab";
+import { parseVocabEntries, generateVocabFlashcards, generateVocabQuiz } from "../lib/prompts/vocab";
 
 const router = Router();
 

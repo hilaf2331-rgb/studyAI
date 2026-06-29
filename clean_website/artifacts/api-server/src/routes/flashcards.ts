@@ -11,7 +11,7 @@ import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from 
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 import { recordStudyActivity } from "../lib/streaks";
-import { parseVocabEntries, generateVocabFlashcards } from "../lib/vocab";
+import { parseVocabEntries, generateVocabFlashcards } from "../lib/prompts/vocab";
 
 const router = Router();
 

@@ -14,7 +14,7 @@ import { getExistingQuestionTexts } from "../lib/question-history";
 import { setGenerationProgress } from "../lib/progress";
 import { logger } from "../lib/logger";
 import { recordStudyActivity } from "../lib/streaks";
-import { parseVocabEntries, generateVocabQuiz, pickEntriesForFillInBlank, pickDistractors, shuffle, VocabEntry } from "../lib/vocab";
+import { parseVocabEntries, generateVocabQuiz, pickEntriesForFillInBlank, pickDistractors, shuffle, VocabEntry } from "../lib/prompts/vocab";
 
 // Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
 // meant to feel like one real quiz/exam rather than an attempt to exhaust

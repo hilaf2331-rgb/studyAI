@@ -27,7 +27,17 @@ function formatTime(seconds: number): string {
 // matching CORS config on the bucket would make playback *fail* instead of
 // just degrading -- the browser starts enforcing CORS the moment that
 // attribute is present.
+//
+// `src` is a short-lived GCS signed URL, re-minted by the backend on every
+// fetch of the asset list -- a React Query background refetch (e.g. window
+// refocus) would otherwise hand this component a brand new URL string for
+// the *same* underlying file mid-playback, and swapping <audio src> resets
+// playback to 0. The signed URL's ~1hr TTL comfortably outlasts a normal
+// listening session, so the fix is simply to lock onto whichever URL was
+// current the first time this asset was rendered and ignore later prop
+// updates -- a remount (e.g. navigating away and back) picks up a fresh one.
 export function AudioPlayer({ src }: { src: string }) {
+  const [lockedSrc] = useState(src);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -41,20 +51,13 @@ export function AudioPlayer({ src }: { src: string }) {
     audio.playbackRate = speed;
   }, [speed]);
 
-  // Reset any stale error state whenever the URL changes, so switching
-  // between assets (or a successful retry) doesn't keep showing an old
-  // failure.
-  useEffect(() => {
-    setLoadError(null);
-  }, [src]);
-
   const handleError = () => {
     const audio = audioRef.current;
     const mediaError = audio?.error;
     const codeName = mediaError ? MEDIA_ERROR_NAMES[mediaError.code] ?? `code ${mediaError.code}` : "unknown";
     // eslint-disable-next-line no-console
     console.error("[AudioPlayer] failed to load audio", {
-      src,
+      src: lockedSrc,
       errorCode: mediaError?.code,
       errorName: codeName,
       networkState: audio?.networkState,
@@ -71,10 +74,10 @@ export function AudioPlayer({ src }: { src: string }) {
       return;
     }
     // eslint-disable-next-line no-console
-    console.log("[AudioPlayer] play requested", { src });
+    console.log("[AudioPlayer] play requested", { src: lockedSrc });
     audio.play().catch((err) => {
       // eslint-disable-next-line no-console
-      console.error("[AudioPlayer] play() rejected", { src, err });
+      console.error("[AudioPlayer] play() rejected", { src: lockedSrc, err });
     });
   };
 
@@ -102,7 +105,7 @@ export function AudioPlayer({ src }: { src: string }) {
     <div className="flex items-center gap-2 w-full">
       <audio
         ref={audioRef}
-        src={src}
+        src={lockedSrc}
         preload="metadata"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}

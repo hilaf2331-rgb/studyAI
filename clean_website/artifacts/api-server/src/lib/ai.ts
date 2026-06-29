@@ -2,6 +2,7 @@ import { GoogleGenAI, type Content } from "@google/genai";
 import pLimit from "p-limit";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
+import { getSystemPrompt, inferStudyMode } from "./prompts";
 
 // Caps how many heavy, chunked document-generation pipelines (summary,
 // flashcards, questions, exam) can run their Gemini calls concurrently across
@@ -213,6 +214,51 @@ const JSON_ONLY_SUFFIX_EN = `\n\nOutput must be a valid JSON object only — do 
 // summary synthesis) -- the persona plus the strict JSON-only directive.
 const SMART_STUDENT_SYSTEM_HE = SMART_STUDENT_PERSONA_HE + JSON_ONLY_SUFFIX_HE;
 const SMART_STUDENT_SYSTEM_EN = SMART_STUDENT_PERSONA_EN + JSON_ONLY_SUFFIX_EN;
+
+// Safety/quality guardrails carried over from SMART_STUDENT_PERSONA_HE/EN --
+// these must survive the Dispatcher's category-specific system prompt swap
+// (Vocabulary/STEM/Literature/History/General) below, since they're what
+// stops hallucination, duplicate cards/questions, and blank-material
+// fabrication regardless of which category prompt is selected.
+const RESPONSE_GUARDRAILS_HE = `
+
+חוקי תפעול מחייבים (הפרה תשבור את המערכת):
+1. STRICT TRUTH: הסתמך אך ורק על הטקסט או התמליל שסופק. אל תוסיף ידע חיצוני.
+2. ZERO DUPLICATION: אל תיצור את אותה שאלה, מושג או תשובה יותר מפעם אחת. כל כרטיסייה/שאלה חייבת לבדוק עובדה שונה לחלוטין.
+3. DIVERSITY: אם כבר נשאלת שאלה על נושא מסוים, אסור לשאול עליו שוב, אפילו בניסוח אחר.
+4. QUALITY OVER QUANTITY: אל תשאף למספר גבוה של כרטיסיות/שאלות על חשבון חזרתיות או תוכן מומצא. עדיף תוכן מצומצם וייחודי מהרבה וחזרתי.
+5. STRICT GROUNDING: אסור להמציא או לבדות מידע. אם הטקסט שטחי, אל תמתח או תמציא מושגים.
+6. MISSING CONTEXT: אם הטקסט המסופק ריק, לא קריא או קצר/פגום מכדי להכיל תוכן לימודי אמיתי, אל תמציא תוכן מידע כללי. החזר תוכן שמסביר שהחומר לא נקרא כראוי ומבקש מהמשתמש להעלות אותו מחדש.
+
+ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.`;
+const RESPONSE_GUARDRAILS_EN = `
+
+STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
+1. STRICT TRUTH: Rely strictly on the provided text or transcript only. Do not add outside knowledge.
+2. ZERO DUPLICATION: Never generate the same question, concept, or answer more than once. Every card/question must test a completely different fact.
+3. DIVERSITY: If a topic was already covered, never ask about it again, even rephrased.
+4. QUALITY OVER QUANTITY: Do not chase a high count at the cost of repetition or invented filler. Fewer unique items beat many repetitive ones.
+5. STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts.
+6. MISSING CONTEXT: If the provided text is empty, unreadable, or too short/corrupted to contain real study content, do not invent content from general knowledge. Return content that explicitly states the material could not be read and asks the user to re-upload it.
+
+Always respond in clear English only.`;
+
+// Wires the Dispatcher (lib/prompts) into every Summary/Flashcards/
+// Questions/Exam generation call: picks the category-specific system prompt
+// from the material's content, appends the same safety guardrails every
+// route always had, then appends the JSON-only suffix for jsonMode calls.
+// `mode` (emergency/general/undefined) is inferred per-route from existing
+// request fields by inferStudyMode() -- see prompts/index.ts.
+function buildDispatcherSystemInstruction(
+  materialContent: string,
+  isHe: boolean,
+  mode: ReturnType<typeof inferStudyMode>,
+  withJsonSuffix: boolean,
+): string {
+  const { systemInstruction } = getSystemPrompt(materialContent, mode);
+  const guarded = systemInstruction + (isHe ? RESPONSE_GUARDRAILS_HE : RESPONSE_GUARDRAILS_EN);
+  return withJsonSuffix ? guarded + (isHe ? JSON_ONLY_SUFFIX_HE : JSON_ONLY_SUFFIX_EN) : guarded;
+}
 
 // 20,000 chars was cutting into the aggregated, already chunk-summarized
 // content fed to the final synthesis calls -- on an 84-page document that
@@ -1107,7 +1153,7 @@ Return ONLY JSON matching this structure:
 
     const { keyPoints, executiveSummary } = await callGeminiJsonWithValidation(
       {
-        systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+        systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true),
         contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
         temperature: 0.4,
         jsonMode: true,
@@ -1181,7 +1227,7 @@ Return ONLY JSON matching this structure:
 
   const { content, keyPoints } = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1287,7 +1333,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, undefined, true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1420,7 +1466,7 @@ Return ONLY JSON matching this structure:
 
   const cards = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, undefined, true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1526,7 +1572,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1683,7 +1729,7 @@ Return ONLY JSON matching this structure:
 
   const questions = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1791,7 +1837,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1946,7 +1992,7 @@ Return ONLY JSON matching this structure:
 
   const questions = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,

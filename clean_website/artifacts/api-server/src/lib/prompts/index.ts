@@ -95,3 +95,17 @@ export function getSystemPrompt(content: string, mode?: StudyMode): SystemPrompt
   const systemInstruction = appendGlobalModifier(SYSTEM_INSTRUCTIONS[category], mode);
   return { category, systemInstruction };
 }
+
+// Infers a StudyMode from existing request-body fields instead of requiring
+// a new dedicated API field -- keeps the API contract clean per product
+// decision. Emergency wins if both would otherwise match (e.g. exam_focused).
+export interface ModeInferenceInput {
+  summaryType?: string;
+  difficulty?: string;
+}
+
+export function inferStudyMode(input: ModeInferenceInput): StudyMode | undefined {
+  if (input.summaryType === "quick" || input.summaryType === "exam_focused") return "emergency";
+  if (input.summaryType === "detailed" || input.difficulty === "hard") return "general";
+  return undefined;
+}

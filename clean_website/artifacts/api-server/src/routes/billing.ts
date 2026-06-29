@@ -230,8 +230,10 @@ billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
     // captureId is PayPal's real, stable transaction id, so a unique-
     // violation here means this exact capture was already credited by an
     // earlier delivery of the same webhook -- treat the retry as a no-op
-    // rather than double-crediting or erroring.
-    if (err?.code === "23505") {
+    // rather than double-crediting or erroring. drizzle-orm wraps the raw pg
+    // error in a DrizzleQueryError, so the original error code lives on
+    // `.cause`, not directly on the thrown error.
+    if (err?.code === "23505" || err?.cause?.code === "23505") {
       logger.info({ captureId }, "[billing] paypal webhook: capture already processed, ignoring retry");
       return res.json({ ok: true, alreadyProcessed: true });
     }

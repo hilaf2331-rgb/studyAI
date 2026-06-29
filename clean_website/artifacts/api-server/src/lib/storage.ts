@@ -4,6 +4,10 @@
 // this module returns gets persisted in courseAssetsTable. Credentials and
 // bucket name come exclusively from environment variables (never hardcoded)
 // so the same code runs unmodified across environments.
+//
+// The bucket also needs a CORS config applied (objects being public-read
+// doesn't imply CORS headers) -- see ../../gcs-cors.json and apply with:
+//   gsutil cors set gcs-cors.json gs://<GCS_BUCKET_NAME>
 import { Storage } from "@google-cloud/storage";
 import { randomUUID } from "crypto";
 

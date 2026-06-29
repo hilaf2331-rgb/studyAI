@@ -81,7 +81,7 @@ export const PodcastsPage: React.FC = () => {
                   </Badge>
                 </div>
                 {asset.status === "ready" ? (
-                  <AudioPlayer src={asset.storageUrl} />
+                  <AudioPlayer src={asset.storageUrl} title={asset.title} artist={asset.courseName} />
                 ) : (
                   <p className="text-xs text-muted-foreground">{isRTL ? "מעבד..." : "Processing..."}</p>
                 )}

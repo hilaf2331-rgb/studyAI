@@ -3,7 +3,8 @@ import { db, examsTable, questionsTable, examResultsTable, materialsTable, activ
 import { eq, and } from "drizzle-orm";
 import {
   ListExamsParams, GenerateExamParams, GenerateExamBody,
-  GetExamParams, DeleteExamParams, SubmitExamParams, SubmitExamBody, GetExamResultParams
+  GetExamParams, DeleteExamParams, SubmitExamParams, SubmitExamBody, GetExamResultParams,
+  UpdateExamStudiedParams, UpdateExamStudiedBody
 } from "@workspace/api-zod";
 import { generateExamAI, gradeAnswer } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
@@ -227,6 +228,22 @@ router.get("/exams/:id", async (req, res) => {
   if (!exam) return res.status(404).json({ error: "Not found" });
   if (!await assertMaterialOwner(exam.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
   res.json(exam);
+});
+
+router.patch("/exams/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateExamStudiedParams.parse({ id: Number(req.params.id) });
+  const body = UpdateExamStudiedBody.parse(req.body);
+
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, id));
+  if (!exam) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(exam.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+
+  await db.update(examsTable)
+    .set({ studied: body.studied, studiedAt: body.studied ? new Date() : null })
+    .where(eq(examsTable.id, id));
+
+  res.json(await getExamWithQuestions(id));
 });
 
 router.delete("/exams/:id", async (req, res) => {

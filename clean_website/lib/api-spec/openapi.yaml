@@ -469,6 +469,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Summary"
+    patch:
+      operationId: updateSummaryStudied
+      tags: [summaries]
+      summary: Mark a summary as studied/unstudied
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudiedInput"
+      responses:
+        "200":
+          description: Updated summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+        "404":
+          description: Not found
     delete:
       operationId: deleteSummary
       tags: [summaries]
@@ -546,6 +571,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FlashcardDeck"
+    patch:
+      operationId: updateFlashcardDeckStudied
+      tags: [flashcards]
+      summary: Mark a flashcard deck as studied/unstudied
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudiedInput"
+      responses:
+        "200":
+          description: Updated deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardDeck"
+        "404":
+          description: Not found
     delete:
       operationId: deleteFlashcardDeck
       tags: [flashcards]
@@ -673,6 +723,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QuestionSet"
+    patch:
+      operationId: updateQuestionSetStudied
+      tags: [questions]
+      summary: Mark a question set as studied/unstudied
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudiedInput"
+      responses:
+        "200":
+          description: Updated question set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestionSet"
+        "404":
+          description: Not found
     delete:
       operationId: deleteQuestionSet
       tags: [questions]
@@ -750,6 +825,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Exam"
+    patch:
+      operationId: updateExamStudied
+      tags: [exams]
+      summary: Mark an exam as studied/unstudied
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudiedInput"
+      responses:
+        "200":
+          description: Updated exam
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exam"
+        "404":
+          description: Not found
     delete:
       operationId: deleteExam
       tags: [exams]
@@ -1293,6 +1393,13 @@ components:
           type: ["string", "null"]
           format: date-time
 
+    StudiedInput:
+      type: object
+      required: [studied]
+      properties:
+        studied:
+          type: boolean
+
     BulkDeleteMaterialsInput:
       type: object
       required: [ids]
@@ -1334,6 +1441,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        studied:
+          type: boolean
+        studiedAt:
+          type: ["string", "null"]
+          format: date-time
 
     SummaryRequest:
       type: object
@@ -1372,6 +1484,11 @@ components:
             $ref: "#/components/schemas/Flashcard"
         createdAt:
           type: string
+          format: date-time
+        studied:
+          type: boolean
+        studiedAt:
+          type: ["string", "null"]
           format: date-time
 
     Flashcard:
@@ -1448,6 +1565,11 @@ components:
             $ref: "#/components/schemas/Question"
         createdAt:
           type: string
+          format: date-time
+        studied:
+          type: boolean
+        studiedAt:
+          type: ["string", "null"]
           format: date-time
 
     Question:
@@ -1575,6 +1697,11 @@ components:
             $ref: "#/components/schemas/Question"
         createdAt:
           type: string
+          format: date-time
+        studied:
+          type: boolean
+        studiedAt:
+          type: ["string", "null"]
           format: date-time
 
     ExamRequest:

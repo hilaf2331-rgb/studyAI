@@ -265,6 +265,10 @@ export interface UpdateMaterialInput {
   examDate?: string | null;
 }
 
+export interface StudiedInput {
+  studied: boolean;
+}
+
 export interface BulkDeleteMaterialsInput {
   /** @minItems 1 */
   ids: number[];
@@ -302,6 +306,9 @@ export interface Summary {
   content: string;
   keyPoints?: string[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type SummaryRequestSummaryType = typeof SummaryRequestSummaryType[keyof typeof SummaryRequestSummaryType];
@@ -381,6 +388,9 @@ export interface FlashcardDeck {
   masteredCount?: number;
   cards?: Flashcard[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type FlashcardRequestLanguage = typeof FlashcardRequestLanguage[keyof typeof FlashcardRequestLanguage];
@@ -476,6 +486,9 @@ export interface QuestionSet {
   questionCount?: number;
   questions?: Question[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type QuestionRequestLanguage = typeof QuestionRequestLanguage[keyof typeof QuestionRequestLanguage];
@@ -598,6 +611,9 @@ export interface Exam {
   difficulty?: ExamDifficulty;
   questions?: Question[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type ExamRequestLanguage = typeof ExamRequestLanguage[keyof typeof ExamRequestLanguage];

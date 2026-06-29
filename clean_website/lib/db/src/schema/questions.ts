@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { materialsTable } from "./materials";
@@ -9,6 +9,9 @@ export const questionSetsTable = pgTable("question_sets", {
   title: text("title").notNull(),
   language: text("language").notNull().default("en"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Manual "I've gone through this quiz" progress marker.
+  studied: boolean("studied").notNull().default(false),
+  studiedAt: timestamp("studied_at", { withTimezone: true }),
 });
 
 export const questionsTable = pgTable("questions", {

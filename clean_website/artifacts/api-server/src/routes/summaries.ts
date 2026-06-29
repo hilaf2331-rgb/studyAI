@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, summariesTable, materialsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams } from "@workspace/api-zod";
+import { ListSummariesParams, GenerateSummaryParams, GenerateSummaryBody, GetSummaryParams, DeleteSummaryParams, UpdateSummaryStudiedParams, UpdateSummaryStudiedBody } from "@workspace/api-zod";
 import { generateSummary } from "../lib/ai";
 import { rejectIfTooShort } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
@@ -90,6 +90,25 @@ router.get("/summaries/:id", async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
   res.json(summary);
+});
+
+router.patch("/summaries/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateSummaryStudiedParams.parse({ id: Number(req.params.id) });
+  const body = UpdateSummaryStudiedBody.parse(req.body);
+
+  const [summary] = await db.select().from(summariesTable).where(eq(summariesTable.id, id));
+  if (!summary) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(summary.materialId, userId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const [updated] = await db.update(summariesTable)
+    .set({ studied: body.studied, studiedAt: body.studied ? new Date() : null })
+    .where(eq(summariesTable.id, id))
+    .returning();
+
+  res.json(updated);
 });
 
 router.delete("/summaries/:id", async (req, res) => {

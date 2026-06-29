@@ -16,4 +16,7 @@ export interface Summary {
   content: string;
   keyPoints?: string[];
   createdAt: Date;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: Date | null;
 }

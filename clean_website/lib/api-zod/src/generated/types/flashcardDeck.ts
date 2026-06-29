@@ -17,4 +17,7 @@ export interface FlashcardDeck {
   masteredCount?: number;
   cards?: Flashcard[];
   createdAt: Date;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: Date | null;
 }

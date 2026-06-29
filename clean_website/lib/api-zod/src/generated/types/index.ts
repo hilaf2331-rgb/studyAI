@@ -82,6 +82,7 @@ export * from './sharedMaterial';
 export * from './sharedMaterialFlashcardsItem';
 export * from './sharedMaterialLanguage';
 export * from './sharedMaterialSummary';
+export * from './studiedInput';
 export * from './studyStreak';
 export * from './summary';
 export * from './summaryLanguage';

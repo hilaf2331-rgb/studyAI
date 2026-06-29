@@ -3,7 +3,8 @@ import { db, flashcardDecksTable, flashcardsTable, materialsTable, activityTable
 import { eq, count, and } from "drizzle-orm";
 import {
   ListFlashcardDecksParams, GenerateFlashcardsParams, GenerateFlashcardsBody,
-  GetFlashcardDeckParams, DeleteFlashcardDeckParams, ReviewFlashcardParams, ReviewFlashcardBody
+  GetFlashcardDeckParams, DeleteFlashcardDeckParams, ReviewFlashcardParams, ReviewFlashcardBody,
+  UpdateFlashcardDeckStudiedParams, UpdateFlashcardDeckStudiedBody
 } from "@workspace/api-zod";
 import { generateFlashcardsAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
@@ -102,6 +103,22 @@ router.get("/flashcard-decks/:id", async (req, res) => {
   if (!deck) return res.status(404).json({ error: "Not found" });
   if (!await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
   res.json(deck);
+});
+
+router.patch("/flashcard-decks/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateFlashcardDeckStudiedParams.parse({ id: Number(req.params.id) });
+  const body = UpdateFlashcardDeckStudiedBody.parse(req.body);
+
+  const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.id, id));
+  if (!deck) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+
+  await db.update(flashcardDecksTable)
+    .set({ studied: body.studied, studiedAt: body.studied ? new Date() : null })
+    .where(eq(flashcardDecksTable.id, id));
+
+  res.json(await getDeckWithCards(id));
 });
 
 router.delete("/flashcard-decks/:id", async (req, res) => {

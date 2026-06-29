@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { materialsTable } from "./materials";
@@ -9,6 +9,10 @@ export const flashcardDecksTable = pgTable("flashcard_decks", {
   title: text("title").notNull(),
   language: text("language").notNull().default("en"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Manual "I've gone through this deck" marker, separate from each card's
+  // own spaced-repetition reviewCount/nextReviewAt below.
+  studied: boolean("studied").notNull().default(false),
+  studiedAt: timestamp("studied_at", { withTimezone: true }),
 });
 
 export const flashcardsTable = pgTable("flashcards", {

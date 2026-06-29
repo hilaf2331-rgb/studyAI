@@ -4,7 +4,8 @@ import { eq, and } from "drizzle-orm";
 import {
   ListQuestionSetsParams, GenerateQuestionsParams, GenerateQuestionsBody,
   GetQuestionSetParams, DeleteQuestionSetParams,
-  GenerateTargetedQuestionParams, GenerateTargetedQuestionBody
+  GenerateTargetedQuestionParams, GenerateTargetedQuestionBody,
+  UpdateQuestionSetStudiedParams, UpdateQuestionSetStudiedBody
 } from "@workspace/api-zod";
 import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
@@ -147,6 +148,22 @@ router.get("/question-sets/:id", async (req, res) => {
   if (!set) return res.status(404).json({ error: "Not found" });
   if (!await assertMaterialOwner(set.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
   res.json(set);
+});
+
+router.patch("/question-sets/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateQuestionSetStudiedParams.parse({ id: Number(req.params.id) });
+  const body = UpdateQuestionSetStudiedBody.parse(req.body);
+
+  const [set] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, id));
+  if (!set) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(set.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+
+  await db.update(questionSetsTable)
+    .set({ studied: body.studied, studiedAt: body.studied ? new Date() : null })
+    .where(eq(questionSetsTable.id, id));
+
+  res.json(await getSetWithQuestions(id));
 });
 
 router.delete("/question-sets/:id", async (req, res) => {

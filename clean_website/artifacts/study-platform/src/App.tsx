@@ -8,6 +8,7 @@ import { LanguageProvider } from "@/lib/i18n";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { PurchaseModalProvider } from "@/lib/purchase-modal";
 import { PurchaseCelebrationProvider } from "@/lib/purchase-celebration";
+import { AudioPlayerProvider } from "@/lib/audio-player-context";
 import { SidebarLayout } from "@/components/layout/sidebar-layout";
 import { PageTransition } from "@/components/page-transition";
 import { AppErrorBoundary } from "@/components/error-boundary";
@@ -174,11 +175,13 @@ function App() {
             <PurchaseCelebrationProvider>
               <PurchaseModalProvider>
                 <TooltipProvider>
-                  <AppErrorBoundary>
-                    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                      <AppRoutes />
-                    </WouterRouter>
-                  </AppErrorBoundary>
+                  <AudioPlayerProvider>
+                    <AppErrorBoundary>
+                      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                        <AppRoutes />
+                      </WouterRouter>
+                    </AppErrorBoundary>
+                  </AudioPlayerProvider>
                   <Toaster />
                 </TooltipProvider>
               </PurchaseModalProvider>

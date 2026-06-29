@@ -252,7 +252,7 @@ function CourseMediaSection({ courseId, isRTL, courseName }: { courseId: number;
                   </button>
                 </div>
                 {asset.status === "ready" ? (
-                  <AudioPlayer src={asset.storageUrl} title={asset.title} artist={courseName} />
+                  <AudioPlayer id={String(asset.id)} src={asset.storageUrl} title={asset.title} artist={courseName} />
                 ) : (
                   <p className="text-xs text-muted-foreground">{isRTL ? "מעבד..." : "Processing..."}</p>
                 )}

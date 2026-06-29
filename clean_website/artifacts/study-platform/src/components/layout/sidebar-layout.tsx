@@ -8,6 +8,8 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { BackgroundGlow } from "@/components/background-glow";
 import { TokenWidget } from "@/components/token-widget";
 import { usePurchaseModal } from "@/lib/purchase-modal";
+import { MiniPlayer } from "@/components/mini-player";
+import { useAudioPlayer } from "@/lib/audio-player-context";
 import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins, Mail, Headphones } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -19,6 +21,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { track } = useAudioPlayer();
 
   const handleLogout = () => {
     queryClient.clear();
@@ -172,12 +175,14 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           <TokenWidget compact />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 ${track ? "pb-24 sm:pb-20" : ""}`}>
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
         </div>
       </main>
+
+      <MiniPlayer />
 
       {/* Mobile nav drawer */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

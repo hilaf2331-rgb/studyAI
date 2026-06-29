@@ -57,6 +57,57 @@ export interface GlossaryTermInput {
   definition: string;
 }
 
+export type CourseAssetKind = typeof CourseAssetKind[keyof typeof CourseAssetKind];
+
+
+export const CourseAssetKind = {
+  material_convert: 'material_convert',
+  lecture_upload: 'lecture_upload',
+} as const;
+
+export type CourseAssetStatus = typeof CourseAssetStatus[keyof typeof CourseAssetStatus];
+
+
+export const CourseAssetStatus = {
+  processing: 'processing',
+  ready: 'ready',
+  error: 'error',
+} as const;
+
+export interface CourseAsset {
+  id: number;
+  courseId: number;
+  /** @nullable */
+  materialId?: number | null;
+  kind: CourseAssetKind;
+  title: string;
+  storageUrl: string;
+  mimeType: string;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  sizeBytes?: number | null;
+  status: CourseAssetStatus;
+  createdAt: string;
+}
+
+/**
+ * Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text.
+ */
+export type ConvertCourseMaterialInputSource = typeof ConvertCourseMaterialInputSource[keyof typeof ConvertCourseMaterialInputSource];
+
+
+export const ConvertCourseMaterialInputSource = {
+  summary: 'summary',
+  extracted_text: 'extracted_text',
+} as const;
+
+export interface ConvertCourseMaterialInput {
+  materialId: number;
+  /** Which text of the material to convert; defaults to the material's summary if one exists, otherwise its extracted text. */
+  source?: ConvertCourseMaterialInputSource;
+}
+
 export type MaterialContentType = typeof MaterialContentType[keyof typeof MaterialContentType];
 
 
@@ -265,6 +316,10 @@ export interface UpdateMaterialInput {
   examDate?: string | null;
 }
 
+export interface StudiedInput {
+  studied: boolean;
+}
+
 export interface BulkDeleteMaterialsInput {
   /** @minItems 1 */
   ids: number[];
@@ -302,6 +357,9 @@ export interface Summary {
   content: string;
   keyPoints?: string[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type SummaryRequestSummaryType = typeof SummaryRequestSummaryType[keyof typeof SummaryRequestSummaryType];
@@ -381,6 +439,9 @@ export interface FlashcardDeck {
   masteredCount?: number;
   cards?: Flashcard[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type FlashcardRequestLanguage = typeof FlashcardRequestLanguage[keyof typeof FlashcardRequestLanguage];
@@ -476,6 +537,9 @@ export interface QuestionSet {
   questionCount?: number;
   questions?: Question[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type QuestionRequestLanguage = typeof QuestionRequestLanguage[keyof typeof QuestionRequestLanguage];
@@ -598,6 +662,9 @@ export interface Exam {
   difficulty?: ExamDifficulty;
   questions?: Question[];
   createdAt: string;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: string | null;
 }
 
 export type ExamRequestLanguage = typeof ExamRequestLanguage[keyof typeof ExamRequestLanguage];

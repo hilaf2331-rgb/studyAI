@@ -2,6 +2,7 @@ import { GoogleGenAI, type Content } from "@google/genai";
 import pLimit from "p-limit";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
+import { getSystemPrompt, inferStudyMode } from "./prompts";
 
 // Caps how many heavy, chunked document-generation pipelines (summary,
 // flashcards, questions, exam) can run their Gemini calls concurrently across
@@ -213,6 +214,51 @@ const JSON_ONLY_SUFFIX_EN = `\n\nOutput must be a valid JSON object only — do 
 // summary synthesis) -- the persona plus the strict JSON-only directive.
 const SMART_STUDENT_SYSTEM_HE = SMART_STUDENT_PERSONA_HE + JSON_ONLY_SUFFIX_HE;
 const SMART_STUDENT_SYSTEM_EN = SMART_STUDENT_PERSONA_EN + JSON_ONLY_SUFFIX_EN;
+
+// Safety/quality guardrails carried over from SMART_STUDENT_PERSONA_HE/EN --
+// these must survive the Dispatcher's category-specific system prompt swap
+// (Vocabulary/STEM/Literature/History/General) below, since they're what
+// stops hallucination, duplicate cards/questions, and blank-material
+// fabrication regardless of which category prompt is selected.
+const RESPONSE_GUARDRAILS_HE = `
+
+חוקי תפעול מחייבים (הפרה תשבור את המערכת):
+1. STRICT TRUTH: הסתמך אך ורק על הטקסט או התמליל שסופק. אל תוסיף ידע חיצוני.
+2. ZERO DUPLICATION: אל תיצור את אותה שאלה, מושג או תשובה יותר מפעם אחת. כל כרטיסייה/שאלה חייבת לבדוק עובדה שונה לחלוטין.
+3. DIVERSITY: אם כבר נשאלת שאלה על נושא מסוים, אסור לשאול עליו שוב, אפילו בניסוח אחר.
+4. QUALITY OVER QUANTITY: אל תשאף למספר גבוה של כרטיסיות/שאלות על חשבון חזרתיות או תוכן מומצא. עדיף תוכן מצומצם וייחודי מהרבה וחזרתי.
+5. STRICT GROUNDING: אסור להמציא או לבדות מידע. אם הטקסט שטחי, אל תמתח או תמציא מושגים.
+6. MISSING CONTEXT: אם הטקסט המסופק ריק, לא קריא או קצר/פגום מכדי להכיל תוכן לימודי אמיתי, אל תמציא תוכן מידע כללי. החזר תוכן שמסביר שהחומר לא נקרא כראוי ומבקש מהמשתמש להעלות אותו מחדש.
+
+ענה תמיד בעברית תקינה ואקדמית בלבד על בסיס הטקסט המסופק בלבד.`;
+const RESPONSE_GUARDRAILS_EN = `
+
+STRICT OPERATIONAL RULES (VIOLATION WILL BREAK THE SYSTEM):
+1. STRICT TRUTH: Rely strictly on the provided text or transcript only. Do not add outside knowledge.
+2. ZERO DUPLICATION: Never generate the same question, concept, or answer more than once. Every card/question must test a completely different fact.
+3. DIVERSITY: If a topic was already covered, never ask about it again, even rephrased.
+4. QUALITY OVER QUANTITY: Do not chase a high count at the cost of repetition or invented filler. Fewer unique items beat many repetitive ones.
+5. STRICT GROUNDING: You are strictly forbidden from hallucinating or fabricating information. If the source text lacks depth, do not stretch or invent concepts.
+6. MISSING CONTEXT: If the provided text is empty, unreadable, or too short/corrupted to contain real study content, do not invent content from general knowledge. Return content that explicitly states the material could not be read and asks the user to re-upload it.
+
+Always respond in clear English only.`;
+
+// Wires the Dispatcher (lib/prompts) into every Summary/Flashcards/
+// Questions/Exam generation call: picks the category-specific system prompt
+// from the material's content, appends the same safety guardrails every
+// route always had, then appends the JSON-only suffix for jsonMode calls.
+// `mode` (emergency/general/undefined) is inferred per-route from existing
+// request fields by inferStudyMode() -- see prompts/index.ts.
+function buildDispatcherSystemInstruction(
+  materialContent: string,
+  isHe: boolean,
+  mode: ReturnType<typeof inferStudyMode>,
+  withJsonSuffix: boolean,
+): string {
+  const { systemInstruction } = getSystemPrompt(materialContent, mode);
+  const guarded = systemInstruction + (isHe ? RESPONSE_GUARDRAILS_HE : RESPONSE_GUARDRAILS_EN);
+  return withJsonSuffix ? guarded + (isHe ? JSON_ONLY_SUFFIX_HE : JSON_ONLY_SUFFIX_EN) : guarded;
+}
 
 // 20,000 chars was cutting into the aggregated, already chunk-summarized
 // content fed to the final synthesis calls -- on an 84-page document that
@@ -622,6 +668,7 @@ const SUMMARY_MAX_OUTPUT_TOKENS = 8000;
 const FLASHCARDS_MAX_OUTPUT_TOKENS = 4000;
 const QUESTIONS_MAX_OUTPUT_TOKENS = 6000;
 const EXAM_MAX_OUTPUT_TOKENS = 6000;
+const VOCAB_FILL_IN_BLANK_MAX_OUTPUT_TOKENS = 3000;
 
 // Above this length, a single Gemini call risks silently dropping the tail
 // of the document (or the model just skims the title and hallucinates) — so
@@ -1106,7 +1153,7 @@ Return ONLY JSON matching this structure:
 
     const { keyPoints, executiveSummary } = await callGeminiJsonWithValidation(
       {
-        systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+        systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true),
         contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
         temperature: 0.4,
         jsonMode: true,
@@ -1180,7 +1227,7 @@ Return ONLY JSON matching this structure:
 
   const { content, keyPoints } = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1286,7 +1333,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, undefined, true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1419,7 +1466,7 @@ Return ONLY JSON matching this structure:
 
   const cards = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, undefined, true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1525,7 +1572,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1682,7 +1729,7 @@ Return ONLY JSON matching this structure:
 
   const questions = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1790,7 +1837,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1945,7 +1992,7 @@ Return ONLY JSON matching this structure:
 
   const questions = await callGeminiJsonWithValidation(
     {
-      systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -2059,6 +2106,92 @@ Return ONLY JSON matching this structure, a single question object (not an array
     if (err instanceof RateLimitExhaustedError) throw err;
     console.error(`generateTargetedConceptQuestionAI: failed to generate question for concept "${concept}":`, err);
     return null;
+  }
+}
+
+// Vocab-Kit's one AI-backed piece: writing a natural example sentence with a
+// blank for a bounded subset of vocabulary words. Everything else in the
+// Vocab-Kit path (flashcards, the MC quiz, and the MC options for these
+// sentences) is deterministic -- see lib/vocab.ts -- because there's nothing
+// for an LLM to "understand" beyond a literal term/definition pair. A natural
+// sentence is the one thing that genuinely needs generation. The model
+// returns only {word, sentence}; the route builds the actual 4-option
+// distractor array itself (reusing vocab.ts's pickDistractors), so the only
+// JSON shape we need to trust the model for is two string fields per item.
+export async function generateVocabFillInBlanksAI(opts: {
+  language: "he" | "en";
+  words: string[];
+  materialTitle: string;
+  materialId?: number;
+}): Promise<Array<{ word: string; sentence: string }>> {
+  return pipelineLimit(() => generateVocabFillInBlanksAIImpl(opts));
+}
+
+async function generateVocabFillInBlanksAIImpl(opts: {
+  language: "he" | "en";
+  words: string[];
+  materialTitle: string;
+  materialId?: number;
+}): Promise<Array<{ word: string; sentence: string }>> {
+  const { language, words, materialTitle } = opts;
+  const isHe = language === "he";
+  if (words.length === 0) return [];
+
+  const wordList = words.map((w, i) => `${i + 1}. ${w}`).join("\n");
+
+  const userPrompt = isHe
+    ? `## רשימת מילים מתוך "${materialTitle}":
+${wordList}
+
+המשימה: לכל מילה ברשימה, כתבו משפט טבעי אחד וקצר (5-15 מילים) המשתמש במילה הזו בהקשר ברור, ואז החליפו את המילה עצמה במשפט בסימן "____" (4 קווים תחתיים).
+כללים:
+- "word" חייב להיות זהה אות-באות למילה כפי שניתנה לכם ברשימה -- אסור לשנות צורת נטייה, ריבוי/יחיד, או זמן.
+- ה-"____" במשפט הוא תחליף ישיר למילה הזו בלבד, כך שהמשפט יישאר תקין דקדוקית כשמחזירים את המילה למקומה.
+- אל תכתבו את המילה במקום אחר באותו משפט.
+- המשפט חייב לתת הקשר מספיק כדי שתלמיד שיודע את משמעות המילה יוכל לבחור אותה מבין כמה אפשרויות.
+
+החזירו JSON במבנה הבא בלבד:
+{"items": [{"word": "המילה", "sentence": "משפט עם ____ במקום המילה"}]}`
+    : `## Word list from "${materialTitle}":
+${wordList}
+
+Task: for each word in the list, write one short, natural sentence (5-15 words) that uses the word in clear context, then replace that exact word in the sentence with "____" (4 underscores).
+Rules:
+- "word" must be identical, character-for-character, to the word as given in the list -- do not change its inflection, plural/singular form, or tense.
+- The "____" in the sentence is a direct stand-in for that word only, so the sentence stays grammatically correct when the word is put back in its place.
+- Do not write the word anywhere else in the same sentence.
+- The sentence must give enough context that a student who knows the word's meaning could pick it out from a few options.
+
+Return ONLY JSON matching this structure:
+{"items": [{"word": "the word", "sentence": "a sentence with ____ in place of the word"}]}`;
+
+  try {
+    return await callGeminiJsonWithValidation(
+      {
+        systemInstruction: isHe ? SMART_STUDENT_SYSTEM_HE : SMART_STUDENT_SYSTEM_EN,
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        temperature: 0.5,
+        jsonMode: true,
+        maxOutputTokens: VOCAB_FILL_IN_BLANK_MAX_OUTPUT_TOKENS,
+      },
+      (text) => {
+        const parsed = safeJsonParse(text);
+        const result = Array.isArray(parsed.items)
+          ? parsed.items.filter(
+              (it: any) =>
+                typeof it?.word === "string" && it.word.trim().length > 0 &&
+                typeof it?.sentence === "string" && it.sentence.includes("____")
+            )
+          : [];
+        if (result.length === 0) throw new Error("empty fill-in-blank items array");
+        return result as Array<{ word: string; sentence: string }>;
+      },
+      "generateVocabFillInBlanksAI",
+    );
+  } catch (err) {
+    if (err instanceof RateLimitExhaustedError) throw err;
+    console.error("generateVocabFillInBlanksAI: failed to generate fill-in-blank sentences:", err);
+    return [];
   }
 }
 

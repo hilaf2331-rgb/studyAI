@@ -3,13 +3,15 @@ import { db, flashcardDecksTable, flashcardsTable, materialsTable, activityTable
 import { eq, count, and } from "drizzle-orm";
 import {
   ListFlashcardDecksParams, GenerateFlashcardsParams, GenerateFlashcardsBody,
-  GetFlashcardDeckParams, DeleteFlashcardDeckParams, ReviewFlashcardParams, ReviewFlashcardBody
+  GetFlashcardDeckParams, DeleteFlashcardDeckParams, ReviewFlashcardParams, ReviewFlashcardBody,
+  UpdateFlashcardDeckStudiedParams, UpdateFlashcardDeckStudiedBody
 } from "@workspace/api-zod";
 import { generateFlashcardsAI } from "../lib/ai";
-import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
+import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration } from "../lib/tokens";
 import { recordStudyActivity } from "../lib/streaks";
+import { parseVocabEntries, generateVocabFlashcards } from "../lib/prompts/vocab";
 
 const router = Router();
 
@@ -56,14 +58,22 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
 
   await requireTokenBalance(userId);
 
-  const cards = await generateFlashcardsAI({
-    language: body.language as "he" | "en",
-    materialContent,
-    materialTitle: material.title,
-    cardCount,
-    cardTypes,
-    materialId: id,
-  });
+  // Vocab-Kit "Smart Vocabulary Mode": term/definition word lists skip the
+  // general-purpose AI flashcard generator entirely -- a card here is just
+  // the literal term/definition pair, re-shuffled fresh on every generation,
+  // never an AI paraphrase that risks drifting from the exact wording the
+  // student needs to learn.
+  const vocabEntries = looksLikeVocabularyList(materialContent) ? parseVocabEntries(materialContent) : [];
+  const cards = vocabEntries.length > 0
+    ? generateVocabFlashcards(vocabEntries)
+    : await generateFlashcardsAI({
+        language: body.language as "he" | "en",
+        materialContent,
+        materialTitle: material.title,
+        cardCount,
+        cardTypes,
+        materialId: id,
+      });
   await deductTokensForGeneration(userId, materialContent, JSON.stringify(cards));
 
   const [deck] = await db.insert(flashcardDecksTable).values({
@@ -102,6 +112,22 @@ router.get("/flashcard-decks/:id", async (req, res) => {
   if (!deck) return res.status(404).json({ error: "Not found" });
   if (!await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
   res.json(deck);
+});
+
+router.patch("/flashcard-decks/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = UpdateFlashcardDeckStudiedParams.parse({ id: Number(req.params.id) });
+  const body = UpdateFlashcardDeckStudiedBody.parse(req.body);
+
+  const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.id, id));
+  if (!deck) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+
+  await db.update(flashcardDecksTable)
+    .set({ studied: body.studied, studiedAt: body.studied ? new Date() : null })
+    .where(eq(flashcardDecksTable.id, id));
+
+  res.json(await getDeckWithCards(id));
 });
 
 router.delete("/flashcard-decks/:id", async (req, res) => {

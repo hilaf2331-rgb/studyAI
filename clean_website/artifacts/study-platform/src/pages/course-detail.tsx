@@ -5,10 +5,14 @@ import {
   getListMaterialsQueryKey,
   useListGlossaryTerms, useCreateGlossaryTerm, useUpdateGlossaryTerm, useDeleteGlossaryTerm,
   getListGlossaryTermsQueryKey,
-  type GlossaryTerm,
+  useListCourseMedia, useConvertCourseMaterialToAudio, useDeleteCourseMedia,
+  getListCourseMediaQueryKey,
+  type GlossaryTerm, type CourseAsset,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
+import { getStoredToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-base";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,12 +21,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { AudioPlayer } from "@/components/audio-player";
 import {
   ArrowLeft, ArrowRight, BookOpen, FileText, Plus, Trash2,
   BrainCircuit, HelpCircle, FileQuestion, Loader2, AlertCircle, CheckCircle2, Mic,
-  BookMarked, Pencil,
+  BookMarked, Pencil, Headphones, Upload, Music,
 } from "lucide-react";
 
 function GlossarySection({ courseId, isRTL }: { courseId: number; isRTL: boolean }) {
@@ -130,6 +138,185 @@ function GlossarySection({ courseId, isRTL }: { courseId: number; isRTL: boolean
             <Button variant="outline" onClick={() => setOpen(false)}>{isRTL ? "ביטול" : "Cancel"}</Button>
             <Button onClick={handleSave} disabled={createTerm.isPending || updateTerm.isPending}>
               {isRTL ? "שמור" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CourseMediaSection({ courseId, isRTL }: { courseId: number; isRTL: boolean }) {
+  const qc = useQueryClient();
+  const { data: assets, isLoading } = useListCourseMedia(courseId);
+  const { data: materials } = useListMaterials({ courseId });
+  const convertMaterial = useConvertCourseMaterialToAudio();
+  const deleteAsset = useDeleteCourseMedia();
+
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>("");
+  const [lectureTitle, setLectureTitle] = useState("");
+  const [lectureText, setLectureText] = useState("");
+  const [lectureFile, setLectureFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListCourseMediaQueryKey(courseId) });
+
+  const handleConvert = () => {
+    if (!selectedMaterialId) return;
+    convertMaterial.mutate({ id: courseId, data: { materialId: Number(selectedMaterialId) } }, {
+      onSuccess: () => { invalidate(); setConvertOpen(false); setSelectedMaterialId(""); },
+    });
+  };
+
+  const handleUpload = async () => {
+    if (!lectureFile && !lectureText.trim()) return;
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      if (lectureTitle.trim()) fd.append("title", lectureTitle.trim());
+      if (lectureFile) fd.append("file", lectureFile);
+      else fd.append("text", lectureText.trim());
+
+      const res = await fetch(apiUrl(`/api/courses/${courseId}/media/upload`), {
+        method: "POST",
+        body: fd,
+        headers: { Authorization: `Bearer ${getStoredToken()}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Upload failed");
+      }
+      invalidate();
+      setUploadOpen(false);
+      setLectureTitle("");
+      setLectureText("");
+      setLectureFile(null);
+    } catch (err: any) {
+      setUploadError(err.message || (isRTL ? "ההעלאה נכשלה" : "Upload failed"));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteAsset = (assetId: number) => {
+    if (!window.confirm(isRTL ? "האם אתה בטוח שברצונך למחוק את הקובץ הזה?" : "Delete this media file?")) return;
+    deleteAsset.mutate({ id: courseId, assetId }, { onSuccess: invalidate });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Headphones className="w-5 h-5 text-primary" />
+          {isRTL ? "מדיה של הקורס" : "Course Media"}
+        </h2>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setConvertOpen(true)}>
+            <Music className="w-4 h-4" />
+            {isRTL ? "המר חומר לשמע" : "Convert Material"}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setUploadOpen(true)}>
+            <Upload className="w-4 h-4" />
+            {isRTL ? "העלה הרצאה" : "Upload Lecture"}
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)}
+        </div>
+      ) : !assets?.length ? (
+        <p className="text-sm text-muted-foreground italic">
+          {isRTL ? "אין עדיין מדיה לקורס זה." : "No course media yet."}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {assets.map((asset: CourseAsset) => (
+            <Card key={asset.id}>
+              <CardContent className="p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium text-sm break-words">{asset.title}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {asset.kind === "lecture_upload" ? (isRTL ? "הרצאה שהועלתה" : "Uploaded") : (isRTL ? "הומר" : "Converted")}
+                    </Badge>
+                  </div>
+                  <button onClick={() => handleDeleteAsset(asset.id)}
+                    className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {asset.status === "ready" ? (
+                  <AudioPlayer src={asset.storageUrl} />
+                ) : (
+                  <p className="text-xs text-muted-foreground">{isRTL ? "מעבד..." : "Processing..."}</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isRTL ? "המר חומר קיים לשמע" : "Convert Existing Material"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>{isRTL ? "בחר חומר" : "Select material"}</Label>
+            <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId}>
+              <SelectTrigger>
+                <SelectValue placeholder={isRTL ? "בחר חומר" : "Select a material"} />
+              </SelectTrigger>
+              <SelectContent>
+                {materials?.map(m => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConvertOpen(false)}>{isRTL ? "ביטול" : "Cancel"}</Button>
+            <Button onClick={handleConvert} disabled={!selectedMaterialId || convertMaterial.isPending}>
+              {convertMaterial.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isRTL ? "המר" : "Convert"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isRTL ? "העלה הרצאה חדשה" : "Upload New Lecture"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="lecture-title">{isRTL ? "כותרת" : "Title"}</Label>
+              <Input id="lecture-title" value={lectureTitle} onChange={(e) => setLectureTitle(e.target.value)} placeholder={isRTL ? "לדוגמה: הרצאה 3" : "e.g. Lecture 3"} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lecture-file">{isRTL ? "קובץ שמע (אופציונלי)" : "Audio file (optional)"}</Label>
+              <Input id="lecture-file" type="file" accept="audio/*" onChange={(e) => setLectureFile(e.target.files?.[0] ?? null)} />
+            </div>
+            {!lectureFile && (
+              <div className="space-y-1.5">
+                <Label htmlFor="lecture-text">{isRTL ? "או הדבק טקסט להקראה" : "Or paste text to narrate"}</Label>
+                <Textarea id="lecture-text" value={lectureText} onChange={(e) => setLectureText(e.target.value)} rows={5} placeholder={isRTL ? "תוכן ההרצאה..." : "Lecture notes..."} />
+              </div>
+            )}
+            {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadOpen(false)}>{isRTL ? "ביטול" : "Cancel"}</Button>
+            <Button onClick={handleUpload} disabled={(!lectureFile && !lectureText.trim()) || isUploading}>
+              {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isRTL ? "העלה" : "Upload"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -246,6 +433,8 @@ export const CourseDetailPage: React.FC = () => {
       </div>
 
       <GlossarySection courseId={courseId} isRTL={isRTL} />
+
+      <CourseMediaSection courseId={courseId} isRTL={isRTL} />
 
       {loadingMaterials ? (
         <div className="space-y-3">

@@ -5,12 +5,15 @@ import { Coins } from "lucide-react";
 import { useLanguage } from "@/lib/i18n";
 import { usePurchaseModal } from "@/lib/purchase-modal";
 
-// Below this many whole Tokens, the full (non-compact) widget surfaces a
-// proactive "buy more" nudge instead of waiting for the user to actually hit
+// Below this many Tokens, the full (non-compact) widget surfaces a proactive
+// "buy more" nudge instead of waiting for the user to actually hit
 // InsufficientTokensError mid-generation (the existing reactive 402 path, see
 // token-limit-error-banner.tsx/beta-upsell-dialog.tsx) -- catching a low
-// balance before it runs out entirely.
-const LOW_BALANCE_THRESHOLD = 3;
+// balance before it runs out entirely. Scaled to the granular ~0.3-Token-per-
+// generation pricing model (two generations' worth of runway left), not a
+// flat "3" -- with a 2-Token starting balance, a threshold of 3 would nudge
+// every brand-new user immediately, which is the opposite of feeling wealthy.
+const LOW_BALANCE_THRESHOLD = 0.6;
 
 // Visual token counter for the Sidebar/Header -- replaces a plain-text
 // balance with a glowing icon + energy bar, since "1,847 tokens" alone gives

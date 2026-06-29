@@ -16,4 +16,7 @@ export interface QuestionSet {
   questionCount?: number;
   questions?: Question[];
   createdAt: Date;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: Date | null;
 }

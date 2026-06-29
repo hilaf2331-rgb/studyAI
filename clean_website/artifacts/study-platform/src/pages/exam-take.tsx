@@ -103,7 +103,7 @@ export const ExamTakePage: React.FC = () => {
               </div>
             </div>
 
-            {q.questionType === "multiple_choice" && q.options?.length > 0 ? (
+            {(q.questionType === "multiple_choice" || q.questionType === "fill_blank") && q.options?.length > 0 ? (
               <div className="space-y-2 ps-10">
                 {q.options.map((opt, i) => (
                   <button key={i} onClick={() => setAnswers(a => ({ ...a, [q.id]: opt }))}

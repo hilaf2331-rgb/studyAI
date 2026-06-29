@@ -15,9 +15,10 @@ import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/compo
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { WELCOME_PENDING_KEY } from "@/lib/auth";
 
-// Mirrors FEATURE_TOKEN_COSTS.dailyReviewQueue in api-server/src/lib/tokens.ts --
-// a real flat fee (not an estimate), so it's safe to show as an exact number.
-const DAILY_REVIEW_TOKEN_COST = 20;
+// Mirrors FEATURE_TOKEN_COSTS.dailyReviewQueue in api-server/src/lib/tokens.ts
+// (exactly 1 whole Token, RAW_UNITS_PER_TOKEN) -- a real flat fee (not an
+// estimate), so it's safe to show as an exact number.
+const DAILY_REVIEW_TOKEN_COST = 1;
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   upload: <Upload className="w-4 h-4" />,

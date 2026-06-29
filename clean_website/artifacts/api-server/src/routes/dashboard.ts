@@ -11,10 +11,11 @@ const DAILY_REVIEW_CAP = 15;
 
 // Rough estimated token cost of one generation of each kind, used only to
 // turn a raw token balance into a friendly "enough for ~X" estimate on the
-// frontend. Based on a typical chunk-sized material (well under
-// CHUNK_TRIGGER_CHAR_LENGTH) going through ai.ts's prompt + response.
-const ESTIMATED_TOKENS_PER_SUMMARY = 3000;
-const ESTIMATED_TOKENS_PER_EXAM = 6000;
+// frontend. Expressed directly in the granular ~0.3 Token-per-generation
+// pricing model (mirrors ESTIMATED_TOKEN_COST in material-detail.tsx) and
+// converted to raw units here since `total` above stays in raw units.
+const ESTIMATED_TOKENS_PER_SUMMARY = Math.round(0.3 * RAW_UNITS_PER_TOKEN);
+const ESTIMATED_TOKENS_PER_EXAM = Math.round(0.6 * RAW_UNITS_PER_TOKEN);
 
 const router = Router();
 
@@ -145,11 +146,13 @@ router.get("/dashboard/tokens", async (req, res) => {
   if (!balance) return res.status(404).json({ error: "Not found" });
 
   const total = balance.tokensRemaining + balance.tokenBalance;
-  // Convert raw cost-estimation units -> simplified whole Tokens only here,
-  // at the API read boundary -- every internal check/deduction above keeps
-  // working in raw units exactly as before. Floored (never rounded up) so
-  // the UI never claims a Token the user doesn't fully have.
-  const toTokens = (raw: number) => Math.floor(raw / RAW_UNITS_PER_TOKEN);
+  // Convert raw cost-estimation units -> simplified Tokens only here, at the
+  // API read boundary -- every internal check/deduction above keeps working
+  // in raw units exactly as before. Rounded down to one decimal place (never
+  // up) so the UI never claims a fraction of a Token the user doesn't fully
+  // have -- whole-Token flooring would make a ~0.3-Token-per-generation
+  // balance jump in large, confusing steps instead of draining smoothly.
+  const toTokens = (raw: number) => Math.floor((raw / RAW_UNITS_PER_TOKEN) * 10) / 10;
   res.json({
     tokensRemaining: toTokens(balance.tokensRemaining),
     monthlyTokenQuota: toTokens(balance.monthlyTokenQuota),

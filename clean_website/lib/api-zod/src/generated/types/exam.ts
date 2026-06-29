@@ -22,4 +22,7 @@ export interface Exam {
   difficulty?: ExamDifficulty;
   questions?: Question[];
   createdAt: Date;
+  studied?: boolean;
+  /** @nullable */
+  studiedAt?: Date | null;
 }

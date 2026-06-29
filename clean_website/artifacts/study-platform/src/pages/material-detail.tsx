@@ -4,6 +4,7 @@ import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
   useGetMaterialProgress, useUpdateMaterial, useShareMaterial,
+  useUpdateSummaryStudied, useUpdateFlashcardDeckStudied, useUpdateQuestionSetStudied, useUpdateExamStudied,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
 } from "@workspace/api-client-react";
@@ -21,6 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -87,11 +89,11 @@ function GenerateDialog({
 // that links straight to that item's dedicated page, plus a "+ Generate"
 // button to create another one of the same type.
 function ContentSection({
-  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint, disabled, disabledReason, costEstimate,
+  icon, label, items, viewHrefBase, onAddNew, isRTL, emptyHint, disabled, disabledReason, costEstimate, onToggleStudied,
 }: {
   icon: React.ReactNode;
   label: string;
-  items: Array<{ id: number; title?: string | null; subtitle?: string }>;
+  items: Array<{ id: number; title?: string | null; subtitle?: string; createdAt?: string | Date; studied?: boolean }>;
   viewHrefBase: string;
   onAddNew: () => void;
   isRTL: boolean;
@@ -99,6 +101,7 @@ function ContentSection({
   disabled?: boolean;
   disabledReason?: string;
   costEstimate?: number;
+  onToggleStudied: (id: number, studied: boolean) => void;
 }) {
   const addButton = (
     <Button size="sm" variant="outline" className="gap-1" onClick={onAddNew} disabled={disabled}>
@@ -143,9 +146,21 @@ function ContentSection({
                 key={item.id}
                 className={`flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2 ${isRTL ? "flex-row-reverse" : ""}`}
               >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{item.title || label}</p>
-                  {item.subtitle && <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>}
+                <div className="flex items-center gap-2 min-w-0">
+                  <Checkbox
+                    checked={!!item.studied}
+                    onCheckedChange={(checked) => onToggleStudied(item.id, checked === true)}
+                    aria-label={isRTL ? "נלמד" : "Studied"}
+                    data-testid={`checkbox-studied-${item.id}`}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{item.title || label}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {item.subtitle}
+                      {item.subtitle && item.createdAt && " · "}
+                      {item.createdAt && new Date(item.createdAt).toLocaleDateString(isRTL ? "he-IL" : "en-US")}
+                    </p>
+                  </div>
                 </div>
                 <Link href={`${viewHrefBase}/${item.id}`}>
                   <Button size="sm" variant="default" className="gap-1 shrink-0" data-testid={`button-view-${item.id}`}>
@@ -169,12 +184,15 @@ const PROGRESS_STEPS_EN = ["Analyzing study material...", "Generating detailed s
 // to turn a raw token balance into "X summaries/exams remaining" -- actual
 // cost is dynamic (deductTokensForGeneration in tokens.ts, billed off real
 // input/output size), so these are deliberately framed as estimates, not a
-// flat fee.
+// flat fee. Expressed directly in whole/fractional Tokens (the same unit the
+// balance widget shows), not raw cost-estimation units -- under the granular
+// pricing model a single summary/flashcards/quiz generation costs roughly
+// 0.3 Tokens, with exams (longer output) costing about double.
 const ESTIMATED_TOKEN_COST = {
-  summary: 3000,
-  flashcards: 3000,
-  quiz: 3000,
-  exam: 6000,
+  summary: 0.3,
+  flashcards: 0.3,
+  quiz: 0.3,
+  exam: 0.6,
 } as const;
 
 interface KitResult {
@@ -236,6 +254,19 @@ export const MaterialDetailPage: React.FC = () => {
   const genSummary = useGenerateSummary();
   const genFlash = useGenerateFlashcards();
   const genQA = useGenerateQuestions();
+
+  const toggleSummaryStudied = useUpdateSummaryStudied({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListSummariesQueryKey(id) }) },
+  });
+  const toggleDeckStudied = useUpdateFlashcardDeckStudied({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) }) },
+  });
+  const toggleQSetStudied = useUpdateQuestionSetStudied({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListQuestionSetsQueryKey(id) }) },
+  });
+  const toggleExamStudied = useUpdateExamStudied({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListExamsQueryKey(id) }) },
+  });
 
   const [examDatePickerOpen, setExamDatePickerOpen] = useState(false);
   const updateMaterial = useUpdateMaterial({
@@ -755,42 +786,46 @@ export const MaterialDetailPage: React.FC = () => {
         <ContentSection
           icon={<BookOpen className="w-5 h-5 text-primary" />}
           label={isRTL ? "סיכומים" : "Summaries"}
-          items={(summaries || []).map(s => ({ id: s.id, title: s.summaryType, subtitle: s.language }))}
+          items={(summaries || []).map(s => ({ id: s.id, title: s.summaryType, subtitle: s.language, createdAt: s.createdAt, studied: s.studied }))}
           viewHrefBase="/summaries"
           onAddNew={() => setSummaryOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר סיכום לחומר זה" : "No summary generated for this material yet"}
           costEstimate={ESTIMATED_TOKEN_COST.summary}
+          onToggleStudied={(itemId, studied) => toggleSummaryStudied.mutate({ id: itemId, data: { studied } })}
         />
         <ContentSection
           icon={<BrainCircuit className="w-5 h-5 text-primary" />}
           label={isRTL ? "כרטיסיות לימוד" : "Flashcards"}
-          items={(decks || []).map(d => ({ id: d.id, title: d.title, subtitle: d.language }))}
+          items={(decks || []).map(d => ({ id: d.id, title: d.title, subtitle: d.language, createdAt: d.createdAt, studied: d.studied }))}
           viewHrefBase="/flashcards"
           onAddNew={() => setFlashOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצרה ערכת כרטיסיות לחומר זה" : "No flashcard deck generated for this material yet"}
           costEstimate={ESTIMATED_TOKEN_COST.flashcards}
+          onToggleStudied={(itemId, studied) => toggleDeckStudied.mutate({ id: itemId, data: { studied } })}
         />
         <ContentSection
           icon={<HelpCircle className="w-5 h-5 text-primary" />}
           label={isRTL ? "שאלות תרגול" : "Practice Quiz"}
-          items={(qSets || []).map(q => ({ id: q.id, title: q.title, subtitle: q.language }))}
+          items={(qSets || []).map(q => ({ id: q.id, title: q.title, subtitle: q.language, createdAt: q.createdAt, studied: q.studied }))}
           viewHrefBase="/questions"
           onAddNew={() => setQAOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר חידון לחומר זה" : "No quiz generated for this material yet"}
           costEstimate={ESTIMATED_TOKEN_COST.quiz}
+          onToggleStudied={(itemId, studied) => toggleQSetStudied.mutate({ id: itemId, data: { studied } })}
         />
         <ContentSection
           icon={<FileQuestion className="w-5 h-5 text-primary" />}
           label={isRTL ? "מבחנים" : "Exams"}
-          items={(exams || []).map(e => ({ id: e.id, title: e.title, subtitle: e.language }))}
+          items={(exams || []).map(e => ({ id: e.id, title: e.title, subtitle: e.language, createdAt: e.createdAt, studied: e.studied }))}
           viewHrefBase="/exams"
           onAddNew={() => setExamOpen(true)}
           isRTL={isRTL}
           emptyHint={isRTL ? "עדיין לא נוצר מבחן לחומר זה" : "No exam generated for this material yet"}
           costEstimate={ESTIMATED_TOKEN_COST.exam}
+          onToggleStudied={(itemId, studied) => toggleExamStudied.mutate({ id: itemId, data: { studied } })}
         />
       </div>
 

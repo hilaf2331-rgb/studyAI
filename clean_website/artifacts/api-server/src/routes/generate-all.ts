@@ -8,6 +8,7 @@ import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
 import { getExistingQuestionTexts } from "../lib/question-history";
+import { parseVocabEntries, generateVocabFlashcards, generateVocabQuiz } from "../lib/prompts/vocab";
 
 const router = Router();
 
@@ -75,6 +76,113 @@ function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
     return err.message;
   }
   return fallbackHe;
+}
+
+// Vocab-Kit branch of generate-all: a plain term/definition word list skips
+// the summary stage entirely (no narrative to summarize -- see
+// summaries.ts), and the flashcards/questions stages call the deterministic
+// helpers in lib/vocab.ts instead of Gemini. Kept as a separate function
+// rather than threading branches through runGenerateAll below, since the two
+// pipelines no longer share a "summary chunks reused by later stages"
+// structure once Stage 1 is gone.
+async function runGenerateAllVocab(material: MaterialRow, userId: number, content: string): Promise<void> {
+  const materialId = material.id;
+  const language = "he" as const;
+
+  try {
+    const entries = parseVocabEntries(content);
+
+    console.log(`generate-all[${materialId}]: vocab-kit -- generating flashcards for ${entries.length} terms...`);
+    const flashResult = generateVocabFlashcards(entries);
+
+    const [deck] = await db.insert(flashcardDecksTable).values({
+      materialId,
+      title: `${material.title} — כרטיסיות`,
+      language,
+    }).returning();
+
+    if (flashResult.length > 0 && deck?.id) {
+      await db.insert(flashcardsTable).values(
+        flashResult.map(c => ({
+          deckId: deck.id,
+          front: c.front,
+          back: c.back,
+          difficulty: c.difficulty,
+          cardType: c.cardType,
+          concept: c.concept,
+        }))
+      );
+    }
+
+    setGenerationProgress(materialId, {
+      currentChunk: 0, totalChunks: 0, percentage: 50, stage: "running",
+      result: { deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined },
+    });
+
+    const practiceQuestionCount = computeQuestionCount(Math.ceil(entries.length / 4));
+    console.log(`generate-all[${materialId}]: vocab-kit -- generating ${practiceQuestionCount} quiz questions...`);
+    const questionResult = generateVocabQuiz(entries, practiceQuestionCount);
+
+    const [qSet] = await db.insert(questionSetsTable).values({
+      materialId,
+      title: `${material.title} — חידון`,
+      language,
+    }).returning();
+
+    if (questionResult.length > 0 && qSet?.id) {
+      await db.insert(questionsTable).values(
+        questionResult.map(q => ({
+          setId: qSet.id,
+          questionType: q.questionType,
+          question: q.question,
+          answer: q.answer,
+          explanation: q.explanation,
+          options: q.options,
+          difficulty: q.difficulty,
+          concept: q.concept,
+        }))
+      );
+    }
+
+    await db.insert(activityTable).values({
+      userId,
+      activityType: "summary",
+      description: `Generated full exam kit for "${material.title}"`,
+      materialTitle: material.title,
+    });
+
+    // Deterministic vocab generation has no Gemini output to bill for the
+    // standard per-token rate -- only the standardized source-material
+    // (page-based) charge applies, same as a regular summary's source charge.
+    await deductTokensForSummary(userId, content);
+
+    if (!qSet?.id) {
+      logger.error({ materialId }, "generate-all: incomplete insert result, reporting failure");
+      setGenerationProgress(materialId, {
+        currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+        error: "Generated content was incomplete. Please try again.",
+      });
+      return;
+    }
+
+    setGenerationProgress(materialId, {
+      currentChunk: 0,
+      totalChunks: 0,
+      percentage: 100,
+      stage: "done",
+      result: {
+        deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
+        questionSet: { id: qSet.id, questionCount: questionResult.length },
+        partialFailure: false,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, materialId }, "generate-all: unhandled background failure (vocab-kit)");
+    const message = err instanceof InsufficientTokensError
+      ? err.message
+      : "Something went wrong while generating your study kit. Please try again.";
+    setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
+  }
 }
 
 // The actual Gemini + DB-insert pipeline, run after the 202 has already gone
@@ -372,7 +480,11 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "running" });
     res.status(202).json({ materialId, status: "running" });
 
-    void runGenerateAll(material, userId, content);
+    if (looksLikeVocabularyList(content)) {
+      void runGenerateAllVocab(material, userId, content);
+    } else {
+      void runGenerateAll(material, userId, content);
+    }
   } catch (err) {
     logger.error({ err, materialId: req.params.id }, "generate-all: failed before dispatch");
     if (!res.headersSent) {

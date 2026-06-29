@@ -174,6 +174,51 @@ export const DeleteGlossaryTermParams = zod.object({
 
 
 /**
+ * @summary List course media (generated podcast/lecture audio) for a course
+ */
+export const ListCourseMediaParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCourseMediaResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "materialId": zod.number().nullish(),
+  "kind": zod.enum(['material_convert', 'lecture_upload']),
+  "title": zod.string(),
+  "storageUrl": zod.string(),
+  "mimeType": zod.string(),
+  "durationSeconds": zod.number().nullish(),
+  "sizeBytes": zod.number().nullish(),
+  "status": zod.enum(['processing', 'ready', 'error']),
+  "createdAt": zod.coerce.date()
+})
+export const ListCourseMediaResponse = zod.array(ListCourseMediaResponseItem)
+
+
+/**
+ * @summary Convert an existing course material/summary into a podcast-style audio asset
+ */
+export const ConvertCourseMaterialToAudioParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ConvertCourseMaterialToAudioBody = zod.object({
+  "materialId": zod.number(),
+  "source": zod.enum(['summary', 'extracted_text']).optional().describe('Which text of the material to convert; defaults to the material\'s summary if one exists, otherwise its extracted text.')
+})
+
+
+/**
+ * @summary Delete a course media asset (and its storage object)
+ */
+export const DeleteCourseMediaParams = zod.object({
+  "id": zod.coerce.number(),
+  "assetId": zod.coerce.number()
+})
+
+
+/**
  * @summary List materials, optionally filtered by courseId
  */
 export const ListMaterialsQueryParams = zod.object({
@@ -427,7 +472,9 @@ export const ListSummariesResponseItem = zod.object({
   "language": zod.enum(['he', 'en']),
   "content": zod.string(),
   "keyPoints": zod.array(zod.string()).optional(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 export const ListSummariesResponse = zod.array(ListSummariesResponseItem)
 
@@ -460,7 +507,33 @@ export const GetSummaryResponse = zod.object({
   "language": zod.enum(['he', 'en']),
   "content": zod.string(),
   "keyPoints": zod.array(zod.string()).optional(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Mark a summary as studied/unstudied
+ */
+export const UpdateSummaryStudiedParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateSummaryStudiedBody = zod.object({
+  "studied": zod.boolean()
+})
+
+export const UpdateSummaryStudiedResponse = zod.object({
+  "id": zod.number(),
+  "materialId": zod.number(),
+  "summaryType": zod.enum(['quick', 'detailed', 'chapter', 'topic', 'key_takeaways', 'exam_focused']),
+  "language": zod.enum(['he', 'en']),
+  "content": zod.string(),
+  "keyPoints": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 
 
@@ -498,7 +571,9 @@ export const ListFlashcardDecksResponseItem = zod.object({
   "nextReviewAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 export const ListFlashcardDecksResponse = zod.array(ListFlashcardDecksResponseItem)
 
@@ -543,7 +618,45 @@ export const GetFlashcardDeckResponse = zod.object({
   "nextReviewAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Mark a flashcard deck as studied/unstudied
+ */
+export const UpdateFlashcardDeckStudiedParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateFlashcardDeckStudiedBody = zod.object({
+  "studied": zod.boolean()
+})
+
+export const UpdateFlashcardDeckStudiedResponse = zod.object({
+  "id": zod.number(),
+  "materialId": zod.number(),
+  "title": zod.string(),
+  "language": zod.enum(['he', 'en']),
+  "cardCount": zod.number().optional(),
+  "masteredCount": zod.number().optional(),
+  "cards": zod.array(zod.object({
+  "id": zod.number(),
+  "deckId": zod.number(),
+  "front": zod.string(),
+  "back": zod.string(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']),
+  "cardType": zod.enum(['qa', 'definition', 'formula', 'concept']).optional(),
+  "concept": zod.string().nullish(),
+  "reviewCount": zod.number().optional(),
+  "nextReviewAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 
 
@@ -607,7 +720,9 @@ export const ListQuestionSetsResponseItem = zod.object({
   "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 export const ListQuestionSetsResponse = zod.array(ListQuestionSetsResponseItem)
 
@@ -679,7 +794,46 @@ export const GetQuestionSetResponse = zod.object({
   "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Mark a question set as studied/unstudied
+ */
+export const UpdateQuestionSetStudiedParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateQuestionSetStudiedBody = zod.object({
+  "studied": zod.boolean()
+})
+
+export const UpdateQuestionSetStudiedResponse = zod.object({
+  "id": zod.number(),
+  "materialId": zod.number(),
+  "title": zod.string(),
+  "language": zod.enum(['he', 'en']),
+  "questionCount": zod.number().optional(),
+  "questions": zod.array(zod.object({
+  "id": zod.number(),
+  "setId": zod.number(),
+  "questionType": zod.enum(['open', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
+  "options": zod.array(zod.string()).optional(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
+  "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 
 
@@ -721,7 +875,9 @@ export const ListExamsResponseItem = zod.object({
   "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 export const ListExamsResponse = zod.array(ListExamsResponseItem)
 
@@ -773,7 +929,49 @@ export const GetExamResponse = zod.object({
   "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
 })).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Mark an exam as studied/unstudied
+ */
+export const UpdateExamStudiedParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateExamStudiedBody = zod.object({
+  "studied": zod.boolean()
+})
+
+export const UpdateExamStudiedResponse = zod.object({
+  "id": zod.number(),
+  "materialId": zod.number(),
+  "title": zod.string(),
+  "language": zod.enum(['he', 'en']),
+  "examType": zod.enum(['practice', 'topic_quiz', 'midterm', 'final']),
+  "questionCount": zod.number(),
+  "timeLimitMinutes": zod.number().nullish(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).optional(),
+  "questions": zod.array(zod.object({
+  "id": zod.number(),
+  "setId": zod.number(),
+  "questionType": zod.enum(['open', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
+  "options": zod.array(zod.string()).optional(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
+  "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
   "createdAt": zod.coerce.date()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "studied": zod.boolean().optional(),
+  "studiedAt": zod.coerce.date().nullish()
 })
 
 

@@ -1,6 +1,10 @@
 [
   {
-    "origin": ["https://YOUR_PRODUCTION_DOMAIN", "http://localhost:5173"],
+    "origin": [
+      "https://YOUR_VERCEL_PROD_DOMAIN",
+      "https://*.vercel.app",
+      "http://localhost:5173"
+    ],
     "method": ["GET", "HEAD"],
     "responseHeader": ["Content-Type", "Content-Length", "Range", "Accept-Ranges", "Content-Range"],
     "maxAgeSeconds": 3600

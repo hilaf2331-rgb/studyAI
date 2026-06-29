@@ -41,33 +41,35 @@ app.use(
 
 const isProd = process.env.NODE_ENV === "production";
 
-// 1. הגדרת הלוגיקה של ה-Origins
-// focusstudy.net is the production frontend domain (both the bare and "www."
-// hosts -- Vercel serves the app on both) -- allowed unconditionally here
-// rather than only via CORS_ORIGINS so login/signup never breaks on Render
-// because that env var wasn't set, same treatment as *.vercel.app below.
+// Exact-match origin whitelist -- no substring checks (the old
+// origin.includes('localhost') would also match "https://evil-localhost.com")
+// and no *.vercel.app wildcard (that let any Vercel-hosted project, including
+// ones we don't control, make credentialed cross-origin requests). Defaults
+// cover the production frontend; add any extra trusted origin (e.g. a
+// specific preview deployment) via the comma-separated CORS_ORIGINS env var
+// rather than widening the match logic itself.
+const DEFAULT_ALLOWED_ORIGINS = "https://focusstudy.net,https://www.focusstudy.net";
+const allowedOriginSet = new Set(
+  (process.env.CORS_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+
 const allowedOrigins = isProd
   ? function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-      if (
-        !origin ||
-        origin.endsWith('.vercel.app') ||
-        origin.includes('localhost') ||
-        origin === 'https://focusstudy.net' ||
-        origin === 'https://www.focusstudy.net'
-      ) {
+      // No Origin header at all (server-to-server calls, curl, the Zapier/
+      // PayPal webhooks) -- those routes are mounted outside this CORS
+      // middleware's concern anyway and authenticate via their own secret/
+      // signature checks, not via Origin.
+      if (!origin || allowedOriginSet.has(origin)) {
         callback(null, true);
       } else {
-        const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map(d => d.trim()).filter(Boolean);
-        if (envOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
+        callback(new Error('Not allowed by CORS'));
       }
     }
   : true;
 
-// 2. הפעלת ה-CORS Middleware (זה החלק שהיה חסר!)
 app.use(
   cors({
     origin: allowedOrigins,

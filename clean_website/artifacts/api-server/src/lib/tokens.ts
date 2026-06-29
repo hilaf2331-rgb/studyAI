@@ -1,5 +1,5 @@
 import { db, usersTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
 import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 
@@ -119,16 +119,24 @@ export async function requireTokenBalance(userId: number): Promise<void> {
 // monthly refill is used up before tokens the student actually paid for.
 // Floored at 0 on both pools. Returns silently (no-op) once amount is fully
 // covered or the user has nothing left to spend.
+//
+// Single atomic UPDATE, not read-then-write: both SET expressions are
+// computed by Postgres against the same locked row image, so two concurrent
+// deductions for the same user can never both read the same pre-deduction
+// balance and double-spend it -- the second statement's row lock simply waits
+// for the first UPDATE to commit, then computes against the now-updated
+// values. This call is post-hoc (the AI work already happened; the cost is
+// only known after the fact), so it always applies and never rejects --
+// callers that need a pre-check + reject use requireAndDeductFeatureTokens
+// below instead.
 async function deductCombinedTokens(userId: number, amount: number): Promise<void> {
   if (amount <= 0) return;
-  const balance = await getTokenBalance(userId);
-  if (!balance) return;
-  const fromMonthly = Math.min(balance.tokensRemaining, amount);
-  const fromPurchased = Math.min(balance.tokenBalance, amount - fromMonthly);
-  await db.update(usersTable).set({
-    tokensRemaining: balance.tokensRemaining - fromMonthly,
-    tokenBalance: balance.tokenBalance - fromPurchased,
-  }).where(eq(usersTable.id, userId));
+  await db.update(usersTable)
+    .set({
+      tokensRemaining: sql`GREATEST(${usersTable.tokensRemaining} - ${amount}, 0)`,
+      tokenBalance: sql`GREATEST(${usersTable.tokenBalance} - GREATEST(${amount} - ${usersTable.tokensRemaining}, 0), 0)`,
+    })
+    .where(eq(usersTable.id, userId));
 }
 
 // Call after a generation request succeeds, with the actual input + output
@@ -248,11 +256,30 @@ export const FEATURE_TOKEN_COSTS = {
 // Call right before running a PAYG-gated feature. Throws InsufficientTokensError
 // if the balance can't cover the flat cost, otherwise atomically deducts it.
 // Admin accounts (see isAdminUser above) always pass and are never deducted.
+//
+// The check ("does this user have enough?") and the deduct happen in one
+// UPDATE ... WHERE statement, not as two separate steps -- a SELECT-then-
+// UPDATE here would leave a window where two concurrent requests both read
+// "balance is sufficient" before either one's deduction lands, letting a user
+// spend the same tokens twice. Postgres only matches the WHERE clause's
+// balance condition against a row it can currently lock, so a second
+// concurrent call is forced to wait for the first to commit and is then
+// evaluated against the already-decremented balance -- .returning() comes
+// back empty exactly when that re-check fails.
 export async function requireAndDeductFeatureTokens(userId: number, cost: number): Promise<void> {
   if (await isAdminUser(userId)) return;
-  const balance = await getTokenBalance(userId);
-  if (!balance || balance.tokensRemaining + balance.tokenBalance < cost) {
+  await maybeApplyMonthlyRefill(userId);
+  const updated = await db.update(usersTable)
+    .set({
+      tokensRemaining: sql`GREATEST(${usersTable.tokensRemaining} - ${cost}, 0)`,
+      tokenBalance: sql`GREATEST(${usersTable.tokenBalance} - GREATEST(${cost} - ${usersTable.tokensRemaining}, 0), 0)`,
+    })
+    .where(and(
+      eq(usersTable.id, userId),
+      sql`(${usersTable.tokensRemaining} + ${usersTable.tokenBalance}) >= ${cost}`,
+    ))
+    .returning({ id: usersTable.id });
+  if (updated.length === 0) {
     throw new InsufficientTokensError();
   }
-  await deductCombinedTokens(userId, cost);
 }

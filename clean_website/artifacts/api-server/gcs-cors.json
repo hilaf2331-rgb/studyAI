@@ -1,9 +1,9 @@
 [
   {
     "origin": [
-      "https://YOUR_VERCEL_PROD_DOMAIN",
-      "https://*.vercel.app",
-      "http://localhost:5173"
+      "https://focusstudy.net",
+      "https://www.focusstudy.net",
+      "https://*.focusstudy.net"
     ],
     "method": ["GET", "HEAD"],
     "responseHeader": ["Content-Type", "Content-Length", "Range", "Accept-Ranges", "Content-Range"],

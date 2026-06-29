@@ -4,7 +4,7 @@ import { db, usersTable, transactionsTable } from "@workspace/db";
 import { eq, sql, ilike } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { verifyPaypalWebhookSignature, getPaypalOrderDetails } from "../lib/paypal";
-import { RAW_UNITS_PER_TOKEN } from "../lib/tokens";
+import { RAW_UNITS_PER_TOKEN, isAdminUser } from "../lib/tokens";
 
 // Token packages sold via Bit/PayBox. Priced as a no-brainer student top-up
 // while keeping a healthy margin over the buffered real API cost per lecture
@@ -18,6 +18,36 @@ export const TOKEN_PACKAGES_BY_PRICE: Record<number, { id: "bronze" | "silver" |
 };
 
 export type TokenPackageId = "bronze" | "silver" | "gold";
+
+// Shared by the real /webhooks/paypal handler and the admin-only test-purchase
+// bypass below, so "verify the flow" always exercises the exact same crediting
+// logic a live capture would run -- not a separate reimplementation of it.
+// Returns the raw-unit amount actually credited.
+async function creditTokenPackage(
+  userId: number,
+  pkg: { id: TokenPackageId; tokens: number; priceILS: number },
+  provider: string,
+  providerTransactionId: string,
+): Promise<number> {
+  const rawTokens = pkg.tokens * RAW_UNITS_PER_TOKEN;
+  await db.transaction(async (tx) => {
+    await tx.insert(transactionsTable).values({
+      userId,
+      packageId: pkg.id,
+      tokens: rawTokens,
+      priceIls: pkg.priceILS,
+      provider,
+      providerTransactionId,
+    });
+    await tx.update(usersTable)
+      .set({
+        tokenBalance: sql`${usersTable.tokenBalance} + ${rawTokens}`,
+        isPayingCustomer: true,
+      })
+      .where(eq(usersTable.id, userId));
+  });
+  return rawTokens;
+}
 
 // Token bundles sold via hosted PayPal (NCP) checkout -- the live, user-
 // facing purchase flow (see study-platform's purchase-modal.tsx). `tokens`
@@ -46,6 +76,30 @@ billingAuthRouter.post("/billing/bit-name", async (req, res) => {
 
   await db.update(usersTable).set({ bitName }).where(eq(usersTable.id, userId));
   res.json({ ok: true, bitName });
+});
+
+// Admin-only "Test Mode" bypass: lets an admin account click a real Buy Now
+// button in purchase-modal.tsx and have it credited exactly as the live
+// PayPal webhook would, without an actual PayPal checkout round-trip. Gated
+// server-side by isAdminUser (DB-backed, can't be spoofed from the client) --
+// this is temporary and should be removed once the purchase flow has been
+// manually verified end-to-end.
+billingAuthRouter.post("/billing/test-purchase", async (req, res) => {
+  const userId = req.user!.userId;
+  if (!(await isAdminUser(userId))) {
+    return res.status(403).json({ error: "Admin only" });
+  }
+
+  const packageId = req.body?.packageId;
+  const pkg = Object.values(PAYPAL_PACKAGES_BY_PRICE).find((p) => p.id === packageId);
+  if (!pkg) {
+    return res.status(400).json({ error: "Unknown packageId", availablePackageIds: ["bronze", "silver", "gold"] });
+  }
+
+  const rawTokens = await creditTokenPackage(userId, pkg, "admin-test", randomUUID());
+
+  logger.info({ userId, packageId: pkg.id, tokens: pkg.tokens }, "[billing] admin test-purchase: credited tokens via Test Mode bypass (no real payment)");
+  res.json({ ok: true, userId, tokensAdded: pkg.tokens, rawTokensAdded: rawTokens });
 });
 
 export default billingAuthRouter;
@@ -207,25 +261,9 @@ billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
   // Credit in raw cost-estimation units -- tokenBalance/transactionsTable
   // stay denominated in the same scale per-request metering already uses;
   // pkg.tokens is only the simplified whole-Token count shown in the UI.
-  const rawTokens = pkg.tokens * RAW_UNITS_PER_TOKEN;
-
+  let rawTokens: number;
   try {
-    await db.transaction(async (tx) => {
-      await tx.insert(transactionsTable).values({
-        userId: user.id,
-        packageId: pkg.id,
-        tokens: rawTokens,
-        priceIls: pkg.priceILS,
-        provider: "paypal",
-        providerTransactionId: captureId,
-      });
-      await tx.update(usersTable)
-        .set({
-          tokenBalance: sql`${usersTable.tokenBalance} + ${rawTokens}`,
-          isPayingCustomer: true,
-        })
-        .where(eq(usersTable.id, user.id));
-    });
+    rawTokens = await creditTokenPackage(user.id, pkg, "paypal", captureId);
   } catch (err: any) {
     // captureId is PayPal's real, stable transaction id, so a unique-
     // violation here means this exact capture was already credited by an

@@ -56,9 +56,10 @@ async function maybeApplyMonthlyRefill(userId: number): Promise<void> {
 // EDIT THIS: replace with your real account email(s).
 const ADMIN_EMAILS = new Set<string>([
   "hila@gmail.com",
+  "hilaf2331@gmail.com",
 ]);
 
-async function isAdminUser(userId: number): Promise<boolean> {
+export async function isAdminUser(userId: number): Promise<boolean> {
   const [user] = await db.select({ email: usersTable.email, role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId));
   return !!user && (user.role === "admin" || ADMIN_EMAILS.has(user.email.toLowerCase()));
 }

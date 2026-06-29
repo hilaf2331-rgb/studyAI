@@ -298,6 +298,14 @@ export async function transcribeAudio(
   onProgress?: ProgressCallback,
   options?: { maxDurationSeconds?: number; glossaryHint?: string }
 ): Promise<ExtractedContent> {
+  // Fail fast with a clear message if the key is unset, rather than letting
+  // the request go out with an "Authorization: Bearer undefined" header and
+  // surfacing as an opaque 401 from OpenAI deep inside the fetch call below.
+  // Never hardcode the key here -- it must only ever come from this env var.
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not set -- audio transcription is unavailable until it's configured");
+  }
+
   const form = new FormData();
   form.append("file", buffer, {
     filename,

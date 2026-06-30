@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { db, questionSetsTable, questionsTable, materialsTable, activityTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, questionSetsTable, questionsTable, materialsTable, activityTable, examsTable, examResultsTable, flashcardDecksTable, flashcardsTable } from "@workspace/db";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import {
   ListQuestionSetsParams, GenerateQuestionsParams, GenerateQuestionsBody,
   GetQuestionSetParams, DeleteQuestionSetParams,
   GenerateTargetedQuestionParams, GenerateTargetedQuestionBody,
-  UpdateQuestionSetStudiedParams, UpdateQuestionSetStudiedBody
+  UpdateQuestionSetStudiedParams, UpdateQuestionSetStudiedBody,
+  GetWeakConceptsParams,
 } from "@workspace/api-zod";
 import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
@@ -182,6 +183,112 @@ router.delete("/question-sets/:id", async (req, res) => {
   if (!await assertMaterialOwner(set.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
   await db.delete(questionSetsTable).where(eq(questionSetsTable.id, id));
   res.status(204).end();
+});
+
+// Mines existing exam results and flashcard SM-2 data to surface the
+// concepts the student struggles with most. Zero new tables -- purely
+// aggregates data that's already being written on every exam submission
+// and every flashcard review.
+router.get("/materials/:id/weak-concepts", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id: materialId } = GetWeakConceptsParams.parse({ id: Number(req.params.id) });
+  if (!await assertMaterialOwner(materialId, userId)) return res.status(404).json({ error: "Not found" });
+
+  type ConceptStat = { quizCorrect: number; quizTotal: number; flashEfSum: number; flashCount: number };
+  const conceptStats = new Map<string, ConceptStat>();
+
+  // --- Exam-based signal ---
+  const exams = await db.select({ id: examsTable.id })
+    .from(examsTable).where(eq(examsTable.materialId, materialId));
+
+  if (exams.length > 0) {
+    const examIds = exams.map(e => e.id);
+    const results = await db.select({ feedbackJson: examResultsTable.feedbackJson })
+      .from(examResultsTable).where(inArray(examResultsTable.examId, examIds));
+
+    const allFeedback: Array<{ questionId: number; correct: boolean }> = [];
+    for (const r of results) {
+      try {
+        const parsed = JSON.parse(r.feedbackJson || "[]") as Array<{ questionId: number; correct: boolean }>;
+        allFeedback.push(...parsed);
+      } catch { /* malformed feedbackJson — skip */ }
+    }
+
+    if (allFeedback.length > 0) {
+      const uniqueQIds = [...new Set(allFeedback.map(f => f.questionId))];
+      const qs = await db.select({ id: questionsTable.id, concept: questionsTable.concept })
+        .from(questionsTable).where(inArray(questionsTable.id, uniqueQIds));
+      const qConceptMap = new Map(qs.map(q => [q.id, q.concept]));
+
+      for (const { questionId, correct } of allFeedback) {
+        const concept = qConceptMap.get(questionId);
+        if (!concept) continue;
+        const s = conceptStats.get(concept) ?? { quizCorrect: 0, quizTotal: 0, flashEfSum: 0, flashCount: 0 };
+        s.quizTotal++;
+        if (correct) s.quizCorrect++;
+        conceptStats.set(concept, s);
+      }
+    }
+  }
+
+  // --- Flashcard SM-2 signal ---
+  const decks = await db.select({ id: flashcardDecksTable.id })
+    .from(flashcardDecksTable).where(eq(flashcardDecksTable.materialId, materialId));
+
+  if (decks.length > 0) {
+    const deckIds = decks.map(d => d.id);
+    const cards = await db.select({ concept: flashcardsTable.concept, easeFactor: flashcardsTable.easeFactor })
+      .from(flashcardsTable)
+      .where(and(inArray(flashcardsTable.deckId, deckIds), isNotNull(flashcardsTable.concept)));
+
+    for (const card of cards) {
+      if (!card.concept) continue;
+      const s = conceptStats.get(card.concept) ?? { quizCorrect: 0, quizTotal: 0, flashEfSum: 0, flashCount: 0 };
+      s.flashEfSum += card.easeFactor;
+      s.flashCount++;
+      conceptStats.set(card.concept, s);
+    }
+  }
+
+  // --- Aggregate and rank ---
+  // easeFactor is stored as int×100: default 250 (EF 2.5), minimum 130 (EF 1.3).
+  // Lower easeFactor means the student has been getting this card wrong repeatedly.
+  const weakItems: Array<{ concept: string; score: number; quizAccuracy?: number; flashcardEaseFactor?: number; source: "quiz" | "flashcard" | "both" }> = [];
+
+  for (const [concept, s] of conceptStats.entries()) {
+    const hasQuiz = s.quizTotal > 0;
+    const hasFlash = s.flashCount > 0;
+    const quizAccuracy = hasQuiz ? (s.quizCorrect / s.quizTotal) * 100 : undefined;
+    const avgEaseFactor = hasFlash ? Math.round(s.flashEfSum / s.flashCount) : undefined;
+
+    // Only surface concepts where there's a genuine weakness signal.
+    const quizWeak = hasQuiz && quizAccuracy! < 70;
+    const flashWeak = hasFlash && avgEaseFactor! < 220;
+    if (!quizWeak && !flashWeak) continue;
+
+    // Score 0–100: higher = weaker
+    let score: number;
+    if (hasQuiz && hasFlash) {
+      const qScore = (1 - quizAccuracy! / 100) * 100;
+      const fScore = Math.max(0, Math.min(100, (250 - avgEaseFactor!) / 120 * 100));
+      score = Math.round((qScore + fScore) / 2);
+    } else if (hasQuiz) {
+      score = Math.round((1 - quizAccuracy! / 100) * 100);
+    } else {
+      score = Math.round(Math.max(0, Math.min(100, (250 - avgEaseFactor!) / 120 * 100)));
+    }
+
+    weakItems.push({
+      concept,
+      score,
+      quizAccuracy: hasQuiz ? Math.round(quizAccuracy!) : undefined,
+      flashcardEaseFactor: hasFlash ? avgEaseFactor : undefined,
+      source: hasQuiz && hasFlash ? "both" : hasQuiz ? "quiz" : "flashcard",
+    });
+  }
+
+  weakItems.sort((a, b) => b.score - a.score);
+  res.json(weakItems.slice(0, 5));
 });
 
 export default router;

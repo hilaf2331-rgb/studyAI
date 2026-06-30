@@ -910,3 +910,19 @@ export type ListMaterialsParams = {
 courseId?: number;
 };
 
+export type WeakConceptSource = typeof WeakConceptSource[keyof typeof WeakConceptSource];
+
+export const WeakConceptSource = {
+  quiz: 'quiz',
+  flashcard: 'flashcard',
+  both: 'both',
+} as const;
+
+export interface WeakConcept {
+  concept: string;
+  score: number;
+  quizAccuracy?: number;
+  flashcardEaseFactor?: number;
+  source: WeakConceptSource;
+}
+

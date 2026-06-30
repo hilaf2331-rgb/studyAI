@@ -6,7 +6,9 @@ import {
   useGetMaterialProgress, useUpdateMaterial, useShareMaterial,
   useUpdateSummaryStudied, useUpdateFlashcardDeckStudied, useUpdateQuestionSetStudied, useUpdateExamStudied,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
-  getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey
+  getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey,
+  useGetWeakConcepts, getGetWeakConceptsQueryKey, useGenerateTargetedQuestion,
+  type WeakConcept, type TargetedQuestion
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -27,13 +29,180 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
-  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer, Share2, Copy, Check
+  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer, Share2, Copy, Check,
+  Wand2, TrendingDown
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { shortContentMessage, isInsufficientContentError } from "@/lib/content-check";
+
+function WeakSpotsWidget({ materialId, materialLang, isRTL }: { materialId: number; materialLang?: string; isRTL: boolean }) {
+  const { data: concepts, isLoading } = useGetWeakConcepts(materialId, { query: { enabled: !!materialId, queryKey: getGetWeakConceptsQueryKey(materialId) } });
+  const rescueMutation = useGenerateTargetedQuestion();
+  const [practiceQ, setPracticeQ] = React.useState<TargetedQuestion | null>(null);
+  const [practiceFor, setPracticeFor] = React.useState<string | null>(null);
+  const [selectedOpt, setSelectedOpt] = React.useState<string | null>(null);
+
+  if (isLoading) return null;
+  if (!concepts || concepts.length === 0) return null;
+
+  const lang = (materialLang === "en" ? "en" : "he") as "he" | "en";
+  const top = concepts.slice(0, 3);
+
+  const handlePractice = (concept: WeakConcept) => {
+    setPracticeFor(concept.concept);
+    setPracticeQ(null);
+    setSelectedOpt(null);
+    rescueMutation.mutate(
+      { id: materialId, data: { language: lang, concept: concept.concept } },
+      { onSuccess: (q) => setPracticeQ(q) }
+    );
+  };
+
+  const closePractice = () => {
+    setPracticeQ(null);
+    setPracticeFor(null);
+    setSelectedOpt(null);
+    rescueMutation.reset();
+  };
+
+  return (
+    <Card className="border border-amber-400/40 bg-amber-50/30 dark:bg-amber-950/10">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <TrendingDown className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <span className="font-semibold text-sm">{isRTL ? "נקודות חולשה שלך" : "Your Weak Spots"}</span>
+          <Badge variant="outline" className="text-xs border-amber-400/50 text-amber-700 dark:text-amber-400">
+            {isRTL ? `${concepts.length} מושגים` : `${concepts.length} concepts`}
+          </Badge>
+        </div>
+
+        <div className="space-y-2">
+          {top.map((c) => (
+            <div key={c.concept} className="flex items-center gap-3 group">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <span className="text-sm font-medium truncate">{c.concept}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {c.quizAccuracy !== undefined
+                      ? (isRTL ? `${c.quizAccuracy}% נכון` : `${c.quizAccuracy}% correct`)
+                      : (isRTL ? "כרטיסיות" : "flashcards")}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-amber-500 dark:bg-amber-400 transition-all"
+                    style={{ width: `${c.score}%` }}
+                  />
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5 text-xs border-primary/40 text-primary hover:bg-primary/10 h-7 px-2"
+                onClick={() => handlePractice(c)}
+                disabled={rescueMutation.isPending && practiceFor === c.concept}
+              >
+                {rescueMutation.isPending && practiceFor === c.concept
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Wand2 className="w-3 h-3" />}
+                {isRTL ? "תרגל" : "Practice"}
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {concepts.length > 3 && (
+          <p className="text-xs text-muted-foreground">
+            {isRTL ? `ועוד ${concepts.length - 3} נקודות חולשה — תרגל כדי לשפר!` : `+${concepts.length - 3} more weak spots — keep practicing!`}
+          </p>
+        )}
+      </CardContent>
+
+      <Dialog open={!!practiceFor} onOpenChange={(open) => { if (!open) closePractice(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Wand2 className="w-4 h-4 text-primary" />
+              {isRTL ? `תרגול: ${practiceFor}` : `Practice: ${practiceFor}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {rescueMutation.isPending && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {isRTL ? "מכין שאלה..." : "Preparing question..."}
+              </div>
+            )}
+            {rescueMutation.isError && (
+              <p className="text-sm text-destructive">
+                {isRTL ? "אירעה שגיאה בעת יצירת השאלה. נסו שוב." : "Failed to generate question. Please try again."}
+              </p>
+            )}
+            {practiceQ && (
+              <div dir={lang === "he" ? "rtl" : "ltr"} className="space-y-3">
+                <p className="font-medium text-sm leading-relaxed">{practiceQ.question}</p>
+                {practiceQ.options && practiceQ.options.length > 0 && (
+                  <div className="space-y-2">
+                    {practiceQ.options.map((opt) => {
+                      const isSelected = selectedOpt === opt;
+                      const isCorrect = opt === practiceQ.answer;
+                      const answered = !!selectedOpt;
+                      return (
+                        <button
+                          key={opt}
+                          onClick={() => !answered && setSelectedOpt(opt)}
+                          className={`w-full text-start rounded-lg border px-3 py-2 text-sm transition-colors ${
+                            !answered
+                              ? "hover:border-primary hover:bg-primary/5 cursor-pointer"
+                              : isCorrect
+                              ? "border-green-500 bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300"
+                              : isSelected
+                              ? "border-red-400 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300"
+                              : "opacity-60"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedOpt && practiceQ.explanation && (
+                  <p className="text-xs text-muted-foreground border-t pt-2">{practiceQ.explanation}</p>
+                )}
+                {selectedOpt && (
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={closePractice}>
+                      {isRTL ? "סגור" : "Close"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 gap-1.5"
+                      onClick={() => {
+                        setSelectedOpt(null);
+                        setPracticeQ(null);
+                        if (practiceFor) {
+                          const concept = concepts.find(c => c.concept === practiceFor);
+                          if (concept) handlePractice(concept);
+                        }
+                      }}
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      {isRTL ? "שאלה נוספת" : "Another question"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
 
 function GenerateDialog({
   open, onClose, title, onGenerate, isGenerating, isRTL, children, progress, costEstimate
@@ -835,6 +1004,8 @@ export const MaterialDetailPage: React.FC = () => {
           onToggleStudied={(itemId, studied) => toggleExamStudied.mutate({ id: itemId, data: { studied } })}
         />
       </div>
+
+      <WeakSpotsWidget materialId={id} materialLang={material?.language} isRTL={isRTL} />
 
       <GenerateDialog
         open={summaryOpen}

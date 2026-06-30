@@ -1264,3 +1264,21 @@ export const SaveSharedMaterialResponse = zod.object({
 })
 
 
+/**
+ * @summary Get weak-concept spots for a material
+ */
+export const GetWeakConceptsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const WeakConceptItem = zod.object({
+  "concept": zod.string(),
+  "score": zod.number(),
+  "quizAccuracy": zod.number().optional(),
+  "flashcardEaseFactor": zod.number().optional(),
+  "source": zod.enum(["quiz", "flashcard", "both"])
+})
+
+export const GetWeakConceptsResponse = zod.array(WeakConceptItem)
+
+

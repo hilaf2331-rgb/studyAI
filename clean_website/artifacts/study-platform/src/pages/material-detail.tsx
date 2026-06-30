@@ -8,7 +8,8 @@ import {
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey,
   useGetWeakConcepts, getGetWeakConceptsQueryKey, useGenerateTargetedQuestion,
-  type WeakConcept, type TargetedQuestion
+  useGetMaterialReadiness, getGetMaterialReadinessQueryKey,
+  type WeakConcept, type TargetedQuestion, type MaterialReadiness
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -37,6 +38,78 @@ import { StudyTipsCarousel } from "@/components/study-tips-carousel";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { shortContentMessage, isInsufficientContentError } from "@/lib/content-check";
+
+function ReadinessWidget({ materialId, isRTL }: { materialId: number; isRTL: boolean }) {
+  const { data: r } = useGetMaterialReadiness(materialId, {
+    query: { enabled: !!materialId, queryKey: getGetMaterialReadinessQueryKey(materialId) },
+  });
+
+  if (!r) return null;
+  // Only show once the student has done something measurable
+  if (r.totalCards === 0 && r.examsCompleted === 0) return null;
+
+  const score = r.score;
+  const color =
+    score >= 80 ? "text-emerald-600 dark:text-emerald-400" :
+    score >= 60 ? "text-green-600 dark:text-green-400" :
+    score >= 40 ? "text-amber-600 dark:text-amber-400" :
+    "text-red-500 dark:text-red-400";
+  const barColor =
+    score >= 80 ? "[&>div]:bg-emerald-500" :
+    score >= 60 ? "[&>div]:bg-green-500" :
+    score >= 40 ? "[&>div]:bg-amber-500" :
+    "[&>div]:bg-red-500";
+  const label =
+    score >= 80 ? (isRTL ? "מוכן מצוין!" : "Very ready!") :
+    score >= 60 ? (isRTL ? "מוכן ברמה טובה" : "Mostly ready") :
+    score >= 40 ? (isRTL ? "מוכן חלקית" : "Partially ready") :
+    (isRTL ? "עדיין בלמידה" : "Still learning");
+
+  return (
+    <Card className="border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-sm">{isRTL ? "מוכנות לחומר זה" : "Readiness for this material"}</span>
+          <span className={`text-2xl font-black ${color}`}>{score}%</span>
+        </div>
+
+        <Progress value={score} className={`h-2.5 ${barColor}`} />
+
+        <p className={`text-xs font-medium ${color}`}>{label}</p>
+
+        <div className={`flex flex-wrap gap-3 text-xs text-muted-foreground pt-1 ${isRTL ? "flex-row-reverse" : ""}`}>
+          {r.flashcardMastery !== null && (
+            <span>
+              {isRTL ? "כרטיסיות" : "Flashcards"}{" "}
+              <span className="font-semibold text-foreground">{r.flashcardMastery}%</span>
+              {" "}({r.reviewedCards}/{r.totalCards} {isRTL ? "נסקרו" : "reviewed"})
+            </span>
+          )}
+          {r.quizAccuracy !== null && (
+            <span>
+              {isRTL ? "ממוצע מבחנים" : "Exam avg"}{" "}
+              <span className="font-semibold text-foreground">{r.quizAccuracy}%</span>
+            </span>
+          )}
+        </div>
+
+        {r.cardsDue > 0 && (
+          <Link href="/review">
+            <div className="flex items-center justify-between gap-2 mt-1 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
+              <div className="flex items-center gap-2">
+                <BrainCircuit className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-medium">
+                  {isRTL ? `${r.cardsDue} כרטיסיות ממתינות לחזרה` : `${r.cardsDue} cards due for review`}
+                </span>
+              </div>
+              <span className="text-xs text-primary font-semibold shrink-0">{isRTL ? "סקור →" : "Review →"}</span>
+            </div>
+          </Link>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function WeakSpotsWidget({ materialId, materialLang, isRTL }: { materialId: number; materialLang?: string; isRTL: boolean }) {
   const { data: concepts, isLoading } = useGetWeakConcepts(materialId, { query: { enabled: !!materialId, queryKey: getGetWeakConceptsQueryKey(materialId) } });

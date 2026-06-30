@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { db, questionSetsTable, questionsTable, materialsTable, activityTable, examsTable, examResultsTable, flashcardDecksTable, flashcardsTable } from "@workspace/db";
-import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, avg, count, sql, or, isNull, lte } from "drizzle-orm";
 import {
   ListQuestionSetsParams, GenerateQuestionsParams, GenerateQuestionsBody,
   GetQuestionSetParams, DeleteQuestionSetParams,
   GenerateTargetedQuestionParams, GenerateTargetedQuestionBody,
   UpdateQuestionSetStudiedParams, UpdateQuestionSetStudiedBody,
-  GetWeakConceptsParams,
+  GetWeakConceptsParams, GetMaterialReadinessParams,
 } from "@workspace/api-zod";
 import { generateQuestionsAI, generateTargetedConceptQuestionAI } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
@@ -289,6 +289,93 @@ router.get("/materials/:id/weak-concepts", async (req, res) => {
 
   weakItems.sort((a, b) => b.score - a.score);
   res.json(weakItems.slice(0, 5));
+});
+
+// Per-material readiness score: synthesises flashcard SM-2 mastery and
+// exam accuracy into a single 0-100 readiness signal, plus a card-due count
+// so the student knows whether they need to review before feeling confident.
+router.get("/materials/:id/readiness", async (req, res) => {
+  const userId = req.user!.userId;
+  const { id: materialId } = GetMaterialReadinessParams.parse({ id: Number(req.params.id) });
+  if (!await assertMaterialOwner(materialId, userId)) return res.status(404).json({ error: "Not found" });
+
+  const now = new Date();
+
+  // --- Flashcard stats ---
+  const decks = await db.select({ id: flashcardDecksTable.id })
+    .from(flashcardDecksTable).where(eq(flashcardDecksTable.materialId, materialId));
+  const deckIds = decks.map(d => d.id);
+
+  let totalCards = 0;
+  let reviewedCards = 0;
+  let avgEaseFactor: number | null = null;
+  let cardsDue = 0;
+
+  if (deckIds.length > 0) {
+    const [flashStats] = await db.select({
+      total: count(),
+      reviewed: sql<number>`CAST(SUM(CASE WHEN ${flashcardsTable.reviewCount} > 0 THEN 1 ELSE 0 END) AS INTEGER)`,
+      avgEf: sql<number>`AVG(CASE WHEN ${flashcardsTable.reviewCount} > 0 THEN ${flashcardsTable.easeFactor} ELSE NULL END)`,
+      due: sql<number>`CAST(SUM(CASE WHEN ${flashcardsTable.nextReviewAt} IS NULL OR ${flashcardsTable.nextReviewAt} <= ${now.toISOString()} THEN 1 ELSE 0 END) AS INTEGER)`,
+    }).from(flashcardsTable).where(inArray(flashcardsTable.deckId, deckIds));
+
+    totalCards = Number(flashStats.total ?? 0);
+    reviewedCards = Number(flashStats.reviewed ?? 0);
+    avgEaseFactor = flashStats.avgEf ? Number(flashStats.avgEf) : null;
+    cardsDue = Number(flashStats.due ?? 0);
+  }
+
+  // --- Exam/quiz stats ---
+  const exams = await db.select({ id: examsTable.id })
+    .from(examsTable).where(eq(examsTable.materialId, materialId));
+  const examIds = exams.map(e => e.id);
+
+  let quizAccuracy: number | null = null;
+  let examsCompleted = 0;
+
+  if (examIds.length > 0) {
+    const [quizStats] = await db.select({
+      avgScore: avg(examResultsTable.score),
+      total: count(),
+    }).from(examResultsTable).where(inArray(examResultsTable.examId, examIds));
+    examsCompleted = Number(quizStats.total ?? 0);
+    if (examsCompleted > 0 && quizStats.avgScore !== null) {
+      quizAccuracy = Math.round(Number(quizStats.avgScore));
+    }
+  }
+
+  // --- Flashcard mastery score (0-100) ---
+  // Coverage * mastery: student must have BOTH reviewed many cards AND done well.
+  // easeFactor 130=min(0), 250=default(1.0). We cap at 250 so a freshly-reviewed
+  // card that hasn't gone above default doesn't score above 100.
+  let flashcardMastery: number | null = null;
+  if (totalCards > 0 && reviewedCards > 0) {
+    const coverage = reviewedCards / totalCards;
+    const mastery = avgEaseFactor
+      ? Math.max(0, Math.min(1, (avgEaseFactor - 130) / 120))
+      : 0;
+    flashcardMastery = Math.round(coverage * mastery * 100);
+  }
+
+  // --- Overall readiness ---
+  let score = 0;
+  if (flashcardMastery !== null && quizAccuracy !== null) {
+    score = Math.round(flashcardMastery * 0.5 + quizAccuracy * 0.5);
+  } else if (flashcardMastery !== null) {
+    score = flashcardMastery;
+  } else if (quizAccuracy !== null) {
+    score = quizAccuracy;
+  }
+
+  res.json({
+    score,
+    flashcardMastery,
+    quizAccuracy,
+    totalCards,
+    reviewedCards,
+    cardsDue,
+    examsCompleted,
+  });
 });
 
 export default router;

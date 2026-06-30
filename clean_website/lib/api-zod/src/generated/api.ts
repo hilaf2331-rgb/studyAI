@@ -1282,3 +1282,21 @@ export const WeakConceptItem = zod.object({
 export const GetWeakConceptsResponse = zod.array(WeakConceptItem)
 
 
+/**
+ * @summary Get readiness score for a material
+ */
+export const GetMaterialReadinessParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const MaterialReadinessResponse = zod.object({
+  "score": zod.number(),
+  "flashcardMastery": zod.number().nullable(),
+  "quizAccuracy": zod.number().nullable(),
+  "totalCards": zod.number(),
+  "reviewedCards": zod.number(),
+  "cardsDue": zod.number(),
+  "examsCompleted": zod.number(),
+})
+
+

@@ -926,3 +926,15 @@ export interface WeakConcept {
   source: WeakConceptSource;
 }
 
+export interface MaterialReadiness {
+  score: number;
+  /** @nullable */
+  flashcardMastery: number | null;
+  /** @nullable */
+  quizAccuracy: number | null;
+  totalCards: number;
+  reviewedCards: number;
+  cardsDue: number;
+  examsCompleted: number;
+}
+

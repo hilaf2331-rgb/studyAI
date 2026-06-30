@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { GetSharedMaterialParams } from "@workspace/api-zod";
 
 // Public, unauthenticated router -- mounted in app.ts before requireAuth,
@@ -23,7 +23,10 @@ sharedPublicRouter.get("/shared/:shareId", async (req, res) => {
     .orderBy(desc(summariesTable.createdAt))
     .limit(1);
 
-  const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.materialId, material.id));
+  const [deck] = await db.select().from(flashcardDecksTable)
+    .where(eq(flashcardDecksTable.materialId, material.id))
+    .orderBy(desc(flashcardDecksTable.createdAt))
+    .limit(1);
   const cards = deck
     ? await db.select().from(flashcardsTable).where(eq(flashcardsTable.deckId, deck.id))
     : [];

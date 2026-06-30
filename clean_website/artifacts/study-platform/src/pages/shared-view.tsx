@@ -150,9 +150,10 @@ function SaveToCoursesButton({ shareId, isHebrew }: { shareId: string; isHebrew:
   const [saved, setSaved] = useState(false);
   const { mutate, isPending } = useSaveSharedMaterial({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data) => {
         setSaved(true);
         toast({ description: isHebrew ? "הערכה נשמרה לחומרי הלימוד שלך" : "Saved to your materials" });
+        setLocation(`/materials/${data.materialId}`);
       },
       onError: () => {
         toast({ variant: "destructive", description: isHebrew ? "השמירה נכשלה, נסו שנית" : "Save failed, please try again" });
@@ -260,6 +261,14 @@ export const SharedViewPage: React.FC = () => {
         )}
 
         {data.flashcards.length > 0 && <FlashcardPreview cards={data.flashcards} isHebrew={isHebrew} />}
+
+        {!data.summary && data.flashcards.length === 0 && (
+          <div className="rounded-xl border border-dashed p-8 text-center text-muted-foreground text-sm" dir={dir}>
+            {isHebrew
+              ? "ערכת הלימוד עדיין בהכנה — נסו שוב בעוד כמה דקות."
+              : "This study kit is still being prepared. Check back in a few minutes."}
+          </div>
+        )}
 
         <ConversionBanner isHebrew={isHebrew} variant="bottom" />
       </div>

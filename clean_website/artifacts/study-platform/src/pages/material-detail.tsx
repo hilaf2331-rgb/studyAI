@@ -9,7 +9,7 @@ import {
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey,
   useGetWeakConcepts, getGetWeakConceptsQueryKey, useGenerateTargetedQuestion,
   useGetMaterialReadiness, getGetMaterialReadinessQueryKey,
-  type WeakConcept, type TargetedQuestion, type MaterialReadiness
+  type WeakConcept, type TargetedQuestion, type MaterialReadiness, type FlashcardDeck
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
@@ -718,8 +718,11 @@ export const MaterialDetailPage: React.FC = () => {
     genFlash.mutate(
       { id, data: { language: flashLang, cardCount: 12, cardTypes: ["definition", "qa", "formula", "concept"] as any } },
       {
-        onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getListFlashcardDecksQueryKey(id) });
+        onSuccess: (newDeck) => {
+          // Add the new deck to the cache immediately so it appears without waiting for a refetch
+          qc.setQueryData(getListFlashcardDecksQueryKey(id), (old: FlashcardDeck[] | undefined) =>
+            [...(old ?? []), newDeck as FlashcardDeck]
+          );
           qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
           setFlashOpen(false);
         },

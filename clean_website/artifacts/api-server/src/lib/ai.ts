@@ -865,6 +865,21 @@ type GeneratedQuestion = {
   optionExplanations?: (string | null)[];
 };
 
+// Three rules injected into every content-generation prompt so the model
+// adheres to the schema, prefers variety, and flags exhaustion instead of
+// hallucinating. Shared by flashcards, questions, and exam prompts.
+function universalOutputRules(isHe: boolean): string {
+  return isHe
+    ? `כללי פלט מחייבים:
+1. עמוד בדיוק בסכמת ה-JSON שסופקה. אסור להוסיף שדות שלא הוגדרו ואסור להשמיט שדות חובה.
+2. אם התוכן שנוצר יהיה חזרתי, העדף גיוון על פני כמות -- החזר פחות פריטים.
+3. אם אין מספיק חומר לכמות המבוקשת, אל תמציא תוכן -- הוסף "exhaustionWarning": true לאובייקט השורש.`
+    : `Mandatory output rules:
+1. Always adhere strictly to the JSON schema provided. Do not add undeclared fields or omit required ones.
+2. If the generated content would be repetitive, prioritize variety over quantity — return fewer items.
+3. If material coverage is insufficient for the requested count, do not hallucinate — add "exhaustionWarning": true to the root object.`;
+}
+
 // Instruction forcing every generated item to carry a short "concept" tag --
 // the specific sub-topic/principle it's actually testing (e.g. "Krebs cycle
 // - ATP yield"), not the chapter title. This is the foundation for weak-spot
@@ -1318,8 +1333,10 @@ ${lengthRule}
 
 ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא בלבד:
-{"cards": [{"front": "שאלה ייחודית", "back": "תשובה קצרה ותכליתית", "difficulty": "medium", "cardType": "definition", "concept": "המושג הספציפי שהכרטיסייה בודקת"}]}`
+{"metadata": {"requested": ${cardsForChunk}, "generated": <מספר הכרטיסיות שנוצרו בפועל>}, "cards": [{"front": "שאלה ייחודית", "back": "תשובה קצרה ותכליתית", "difficulty": "medium", "cardType": "definition", "concept": "המושג הספציפי שהכרטיסייה בודקת"}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1335,8 +1352,10 @@ ${lengthRule}
 
 ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
-{"cards": [{"front": "question", "back": "short, to-the-point answer", "difficulty": "medium", "cardType": "definition", "concept": "the specific concept this card tests"}]}`;
+{"metadata": {"requested": ${cardsForChunk}, "generated": <actual count of cards generated>}, "cards": [{"front": "question", "back": "short, to-the-point answer", "difficulty": "medium", "cardType": "definition", "concept": "the specific concept this card tests"}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1348,6 +1367,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] flashcards chunk ${index}/${total}: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result = Array.isArray(parsed.cards) ? parsed.cards : [];
       if (result.length === 0) throw new Error("empty cards array");
       return result;
@@ -1439,8 +1459,11 @@ ${typeGuide}
 4. ${lengthRule}
 5. ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא בלבד:
 {
+  "metadata": {"requested": ${cardCount}, "generated": <מספר הכרטיסיות שנוצרו בפועל>},
   "cards": [
     {"front": "שאלה ייחודית 1", "back": "תשובה קצרה 1", "difficulty": "medium", "cardType": "definition", "concept": "המושג הספציפי שכרטיסייה 1 בודקת"},
     {"front": "שאלה ייחודית 2 (בנושא שונה לגמרי!)", "back": "תשובה קצרה 2", "difficulty": "medium", "cardType": "concept", "concept": "המושג הספציפי שכרטיסייה 2 בודקת"}
@@ -1464,8 +1487,11 @@ Strict rules to avoid duplication:
 6. ${lengthRule}
 7. ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
 {
+  "metadata": {"requested": ${cardCount}, "generated": <actual count of cards generated>},
   "cards": [
     {"front": "question", "back": "short answer", "difficulty": "medium", "cardType": "definition", "concept": "the specific concept this card tests"}
   ]
@@ -1481,6 +1507,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] flashcards: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result = Array.isArray(parsed.cards) ? parsed.cards : [];
       if (result.length === 0) throw new Error("empty cards array");
       return result;
@@ -1534,6 +1561,9 @@ async function generateQuestionsForChunk(
   excludeBlock: string,
   subjectType?: string,
 ): Promise<GeneratedQuestion[]> {
+  const vocabSourceNote = subjectType === "vocabulary"
+    ? (isHe ? "\nחשוב: השתמש אך ורק במונחי אוצר המילים שמופיעים בחומר המקור שסופק -- אסור להוסיף מילים שאינן ברשימה.\n" : "\nImportant: Use only vocabulary terms present in the provided source material — do not add words not in the list.\n")
+    : "";
   const userPrompt = isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
 
@@ -1543,7 +1573,7 @@ ${excludeBlock}
 המשימה: צור עד ${questionsForChunk} שאלות תרגול בעברית, מבוססות רק על תוכן מהחלק הזה בלבד -- אל תתייחס לחלקים אחרים.
 סוגי שאלות: ${questionTypes.join(", ")}
 רמת קושי: ${difficulty}
-
+${vocabSourceNote}
 כללים חשובים:
 - multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
 ${scenarioMcRules(true)}
@@ -1554,8 +1584,10 @@ ${scenarioMcRules(true)}
 - "explanation": הסבר קצר, ברור ומעודד -- כתוב גם הוא בהקשר התרחיש (אם השאלה מצבית), לא רק ציטוט מהטקסט.
 - ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": [null, "הסבר התפיסה השגויה לבחירה ב'ב'", "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
+{"metadata": {"requested": ${questionsForChunk}, "generated": <מספר השאלות שנוצרו בפועל>}, "questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": [null, "הסבר התפיסה השגויה לבחירה ב'ב'", "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 
 ${chunk}
@@ -1564,7 +1596,7 @@ ${excludeBlock}
 Task: create up to ${questionsForChunk} practice questions in English, based only on content from this part -- do not reference other parts.
 Question types: ${questionTypes.join(", ")}
 Difficulty: ${difficulty}
-
+${vocabSourceNote}
 Important rules:
 - multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index.
 ${scenarioMcRules(false)}
@@ -1575,8 +1607,10 @@ ${scenarioMcRules(false)}
 - "explanation": a brief, clear, encouraging explanation -- written in context of the scenario itself (if the question is situational), not just a quote from the text.
 - ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": [null, "misconception explanation for option B", "misconception explanation for option C", "misconception explanation for option D"]}]}`;
+{"metadata": {"requested": ${questionsForChunk}, "generated": <actual count of questions generated>}, "questions": [{"question": "Question text", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": [null, "misconception explanation for option B", "misconception explanation for option C", "misconception explanation for option D"]}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1588,6 +1622,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] questions chunk ${index}/${total}: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
         ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
         : [];
@@ -1660,6 +1695,9 @@ async function generateQuestionsAIImpl(
 
   const aggregatedContent = parts[0];
   const excludeBlock = buildExcludeQuestionsBlock(excludeQuestions ?? [], isHe);
+  const vocabSourceNote = subjectType === "vocabulary"
+    ? (isHe ? "\nחשוב: השתמש אך ורק במונחי אוצר המילים שמופיעים בחומר המקור שסופק -- אסור להוסיף מילים שאינן ברשימה.\n" : "\nImportant: Use only vocabulary terms present in the provided source material — do not add words not in the list.\n")
+    : "";
 
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
@@ -1670,7 +1708,7 @@ ${excludeBlock}
 המשימה: צור בדיוק ${questionCount} שאלות תרגול בעברית.
 סוגי שאלות: ${questionTypes.join(", ")}
 רמת קושי: ${difficulty}
-
+${vocabSourceNote}
 כללים חשובים:
 - multiple_choice: 4 אפשרויות ב-"options". "answer" הוא הטקסט של התשובה הנכונה בלבד. "correctIndex" הוא מספר האינדקס (0-3) של האפשרות הנכונה.
 ${scenarioMcRules(true)}
@@ -1681,8 +1719,11 @@ ${scenarioMcRules(true)}
 - "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — כתוב בטון חם ותומך (כמו חבר שמסביר, לא שופט), בהקשר התרחיש עצמו (אם השאלה מצבית), ולא רק "כי זה מה שכתוב בטקסט".
 - ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא:
 {
+  "metadata": {"requested": ${questionCount}, "generated": <מספר השאלות שנוצרו בפועל>},
   "questions": [
     {
       "question": "שאלה בעברית",
@@ -1706,7 +1747,7 @@ ${excludeBlock}
 Task: Create exactly ${questionCount} practice questions in English.
 Question types: ${questionTypes.join(", ")}
 Difficulty: ${difficulty}
-
+${vocabSourceNote}
 Important rules:
 - multiple_choice: 4 options in "options". "answer" is the exact text of the correct option. "correctIndex" is the 0-based index (0-3) of the correct option.
 ${scenarioMcRules(false)}
@@ -1717,8 +1758,11 @@ ${scenarioMcRules(false)}
 - "explanation": a brief, clear, encouraging explanation of why the correct answer is right — written in a warm, supportive tone (like a friend explaining, not a judge), in context of the scenario itself (if the question is situational), not just "because the text says so."
 - ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
 {
+  "metadata": {"requested": ${questionCount}, "generated": <actual count of questions generated>},
   "questions": [
     {
       "question": "Question text",
@@ -1745,6 +1789,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] questions: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result: GeneratedQuestion[] = Array.isArray(parsed.questions)
         ? parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 }))
         : [];
@@ -1797,11 +1842,14 @@ async function generateExamQuestionsForChunk(
   topicsLine: string,
   excludeBlock: string,
 ): Promise<GeneratedQuestion[]> {
+  const sectionCoverageNote = isHe
+    ? "\nחשוב: ודא שהשאלות מכסות חלקים שונים של החלק הנוכחי. אל תרכז את כל השאלות בפסקה הראשונה בלבד.\n"
+    : "\nImportant: Ensure the questions cover different sections of this part. Do not focus all questions on the first paragraph.\n";
   const userPrompt = isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
-
+${sectionCoverageNote}
 ${chunk}
 ${excludeBlock}
 ---
@@ -1818,12 +1866,14 @@ ${scenarioMcRules(true)}
 - "explanation": הסבר קצר, ברור ומעודד -- בהקשר התרחיש עצמו אם השאלה מצבית.
 - ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא בלבד:
-{"questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": ["הסבר התפיסה השגויה לבחירה ב'א'", null, "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
+{"metadata": {"requested": ${questionsForChunk}, "generated": <מספר השאלות שנוצרו בפועל>}, "questions": [{"question": "שאלה", "answer": "תשובה נכונה", "explanation": "הסבר", "options": ["א", "ב", "ג", "ד"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "המושג הספציפי שהשאלה בודקת", "optionExplanations": ["הסבר התפיסה השגויה לבחירה ב'א'", null, "הסבר התפיסה השגויה לבחירה ב'ג'", "הסבר התפיסה השגויה לבחירה ב'ד'"]}]}`
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
-
+${sectionCoverageNote}
 ${chunk}
 ${excludeBlock}
 ---
@@ -1840,8 +1890,10 @@ ${scenarioMcRules(false)}
 - "explanation": a brief, clear, encouraging explanation -- in context of the scenario itself if the question is situational.
 - ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
-{"questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": ["misconception explanation for option A", null, "misconception explanation for option C", "misconception explanation for option D"]}]}`;
+{"metadata": {"requested": ${questionsForChunk}, "generated": <actual count of questions generated>}, "questions": [{"question": "Question", "answer": "Correct answer", "explanation": "Explanation", "options": ["A", "B", "C", "D"], "correctIndex": 1, "questionType": "multiple_choice", "difficulty": "medium", "concept": "the specific concept this question tests", "optionExplanations": ["misconception explanation for option A", null, "misconception explanation for option C", "misconception explanation for option D"]}]}`;
 
   return callGeminiJsonWithValidation(
     {
@@ -1853,6 +1905,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] exam chunk ${index}/${total}: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result = Array.isArray(parsed.questions)
         ? filterValidQuestions(parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 })))
         : [];
@@ -1924,11 +1977,15 @@ async function generateExamAIImpl(
 
   const aggregatedContent = parts[0];
 
+  const sectionCoverageNote = isHe
+    ? "\nחשוב: ודא שהשאלות מכסות חלקים שונים של החומר. אל תרכז את כל השאלות בפסקה הראשונה בלבד.\n"
+    : "\nImportant: Ensure the questions cover different sections of the material. Do not focus all questions on the first paragraph.\n";
+
   const userPrompt = isHe
     ? `## חומר לימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
-
+${sectionCoverageNote}
 ${contentSlice(aggregatedContent)}
 ${excludeBlock}
 ---
@@ -1944,8 +2001,11 @@ ${scenarioMcRules(true)}
 - "explanation": הסבר קצר, ברור ומעודד למה התשובה הנכונה היא הנכונה — בטון חם ותומך, בהקשר התרחיש עצמו אם השאלה מצבית, לא רק ציטוט מהטקסט.
 - ${conceptTagRule(true)}
 
+${universalOutputRules(true)}
+
 החזר JSON במבנה הבא בלבד:
 {
+  "metadata": {"requested": ${questionCount}, "generated": <מספר השאלות שנוצרו בפועל>},
   "questions": [
     {
       "question": "שאלה",
@@ -1964,7 +2024,7 @@ ${scenarioMcRules(true)}
     : `## Study Material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
-
+${sectionCoverageNote}
 ${contentSlice(aggregatedContent)}
 ${excludeBlock}
 ---
@@ -1980,8 +2040,11 @@ ${scenarioMcRules(false)}
 - "explanation": a brief, clear, encouraging explanation of why the correct answer is right — warm and supportive in tone, in context of the scenario itself if the question is situational, not just a quote from the text.
 - ${conceptTagRule(false)}
 
+${universalOutputRules(false)}
+
 Return ONLY JSON matching this structure:
 {
+  "metadata": {"requested": ${questionCount}, "generated": <actual count of questions generated>},
   "questions": [
     {
       "question": "Question",
@@ -2008,6 +2071,7 @@ Return ONLY JSON matching this structure:
     },
     (text) => {
       const parsed = safeJsonParse(text);
+      if (parsed.metadata) console.log(`[generation-metadata] exam: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}${parsed.exhaustionWarning ? " EXHAUSTION_WARNING" : ""}`);
       const result = Array.isArray(parsed.questions)
         ? filterValidQuestions(parsed.questions.map((q: any) => ({ ...q, correctIndex: q.correctIndex ?? 0 })))
         : [];
@@ -2151,6 +2215,8 @@ async function generateVocabFillInBlanksAIImpl(opts: {
     ? `## רשימת מילים מתוך "${materialTitle}":
 ${wordList}
 
+חשוב: השתמש אך ורק במילים שמופיעות ברשימה לעיל -- אסור להוסיף מילים שאינן ברשימה.
+
 המשימה: לכל מילה ברשימה, כתבו משפט טבעי אחד וקצר (5-15 מילים) המשתמש במילה הזו בהקשר ברור, ואז החליפו את המילה עצמה במשפט בסימן "____" (4 קווים תחתיים).
 כללים:
 - "word" חייב להיות זהה אות-באות למילה כפי שניתנה לכם ברשימה -- אסור לשנות צורת נטייה, ריבוי/יחיד, או זמן.
@@ -2159,9 +2225,11 @@ ${wordList}
 - המשפט חייב לתת הקשר מספיק כדי שתלמיד שיודע את משמעות המילה יוכל לבחור אותה מבין כמה אפשרויות.
 
 החזירו JSON במבנה הבא בלבד:
-{"items": [{"word": "המילה", "sentence": "משפט עם ____ במקום המילה"}]}`
+{"metadata": {"requested": ${words.length}, "generated": <מספר הפריטים שנוצרו בפועל>}, "items": [{"word": "המילה", "sentence": "משפט עם ____ במקום המילה"}]}`
     : `## Word list from "${materialTitle}":
 ${wordList}
+
+Important: Use only vocabulary terms present in the provided list above — do not add words not in the list.
 
 Task: for each word in the list, write one short, natural sentence (5-15 words) that uses the word in clear context, then replace that exact word in the sentence with "____" (4 underscores).
 Rules:
@@ -2171,7 +2239,7 @@ Rules:
 - The sentence must give enough context that a student who knows the word's meaning could pick it out from a few options.
 
 Return ONLY JSON matching this structure:
-{"items": [{"word": "the word", "sentence": "a sentence with ____ in place of the word"}]}`;
+{"metadata": {"requested": ${words.length}, "generated": <actual count of items generated>}, "items": [{"word": "the word", "sentence": "a sentence with ____ in place of the word"}]}`;
 
   try {
     return await callGeminiJsonWithValidation(
@@ -2184,6 +2252,7 @@ Return ONLY JSON matching this structure:
       },
       (text) => {
         const parsed = safeJsonParse(text);
+        if (parsed.metadata) console.log(`[generation-metadata] vocab-fill-in-blank: requested=${parsed.metadata.requested} generated=${parsed.metadata.generated}`);
         const result = Array.isArray(parsed.items)
           ? parsed.items.filter(
               (it: any) =>

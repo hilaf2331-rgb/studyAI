@@ -2,7 +2,7 @@ import { GoogleGenAI, type Content } from "@google/genai";
 import pLimit from "p-limit";
 import { splitTextIntoChunks } from "./chunker";
 import { setGenerationProgress, clearGenerationProgress } from "./progress";
-import { getSystemPrompt, inferStudyMode } from "./prompts";
+import { getSystemPrompt, getSystemPromptBySubjectType, inferStudyMode } from "./prompts";
 
 // Caps how many heavy, chunked document-generation pipelines (summary,
 // flashcards, questions, exam) can run their Gemini calls concurrently across
@@ -131,6 +131,9 @@ export interface AIGenerationOptions {
   // so the frontend can poll GET /materials/:id/progress and show a real
   // status instead of a generic spinner during long sequential processing.
   materialId?: number;
+  // When provided, overrides content-based category classification with the
+  // student's explicit subject-type selection (set at upload time).
+  subjectType?: string;
 }
 
 // פונקציית עזר חסינת תקלות משופרת לחילוץ ופענוח JSON מה-AI
@@ -254,8 +257,11 @@ function buildDispatcherSystemInstruction(
   isHe: boolean,
   mode: ReturnType<typeof inferStudyMode>,
   withJsonSuffix: boolean,
+  subjectType?: string,
 ): string {
-  const { systemInstruction } = getSystemPrompt(materialContent, mode);
+  const { systemInstruction } = subjectType
+    ? getSystemPromptBySubjectType(subjectType, mode)
+    : getSystemPrompt(materialContent, mode);
   const guarded = systemInstruction + (isHe ? RESPONSE_GUARDRAILS_HE : RESPONSE_GUARDRAILS_EN);
   return withJsonSuffix ? guarded + (isHe ? JSON_ONLY_SUFFIX_HE : JSON_ONLY_SUFFIX_EN) : guarded;
 }
@@ -1055,7 +1061,7 @@ async function generateSummaryImpl(
   parts: string[];
   chunked: boolean;
 }> {
-  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds, glossaryTerms } = opts;
+  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds, glossaryTerms, subjectType } = opts;
   const isHe = language === "he";
   const bookmarkContext = buildBookmarkContext(bookmarkTimestamps, audioDurationSeconds, materialContent, isHe);
   const glossaryContext = buildGlossaryContext(glossaryTerms, isHe);
@@ -1153,7 +1159,7 @@ Return ONLY JSON matching this structure:
 
     const { keyPoints, executiveSummary } = await callGeminiJsonWithValidation(
       {
-        systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true),
+        systemInstruction: buildDispatcherSystemInstruction(materialContent, isHe, inferStudyMode({ summaryType }), true, subjectType),
         contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
         temperature: 0.4,
         jsonMode: true,
@@ -1292,6 +1298,7 @@ async function generateFlashcardsForChunk(
   total: number,
   cardsForChunk: number,
   cardTypes: string[],
+  subjectType?: string,
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
   const typeGuide = flashcardTypeGuide(isHe);
   const lengthRule = flashcardLengthRule(isHe);
@@ -1333,7 +1340,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, undefined, true),
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, undefined, true, subjectType),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1358,7 +1365,7 @@ export function generateFlashcardsAI(
 async function generateFlashcardsAIImpl(
   opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
-  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts } = opts;
+  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts, subjectType } = opts;
   const isHe = language === "he";
   try {
   // generate-all.ts passes Stage 1's already-computed chunk parts here so
@@ -1380,7 +1387,7 @@ async function generateFlashcardsAIImpl(
 
     for (let i = 0; i < parts.length; i++) {
       try {
-        const chunkCards = await withChunkRetry(`generateFlashcardsForChunk(${i + 1}/${parts.length})`, () => generateFlashcardsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, cardsPerChunk, cardTypes));
+        const chunkCards = await withChunkRetry(`generateFlashcardsForChunk(${i + 1}/${parts.length})`, () => generateFlashcardsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, cardsPerChunk, cardTypes, subjectType));
         allCards.push(...chunkCards);
       } catch (err) {
         if (err instanceof RateLimitExhaustedError) throw err;
@@ -1466,7 +1473,7 @@ Return ONLY JSON matching this structure:
 
   const cards = await callGeminiJsonWithValidation(
     {
-      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, undefined, true),
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, undefined, true, subjectType),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.3,
       jsonMode: true,
@@ -1525,6 +1532,7 @@ async function generateQuestionsForChunk(
   questionTypes: string[],
   difficulty: string,
   excludeBlock: string,
+  subjectType?: string,
 ): Promise<GeneratedQuestion[]> {
   const userPrompt = isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
@@ -1572,7 +1580,7 @@ Return ONLY JSON matching this structure:
 
   return callGeminiJsonWithValidation(
     {
-      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true),
+      systemInstruction: buildDispatcherSystemInstruction(chunk, isHe, inferStudyMode({ difficulty }), true, subjectType),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,
@@ -1599,7 +1607,7 @@ export function generateQuestionsAI(
 async function generateQuestionsAIImpl(
   opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts, subjectType } = opts;
   const isHe = language === "he";
   try {
   // generate-all.ts passes Stage 1's already-computed chunk parts here so
@@ -1624,7 +1632,7 @@ async function generateQuestionsAIImpl(
     for (let i = 0; i < parts.length; i++) {
       const excludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
       try {
-        const chunkQuestions = await withChunkRetry(`generateQuestionsForChunk(${i + 1}/${parts.length})`, () => generateQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, questionTypes, difficulty, excludeBlock));
+        const chunkQuestions = await withChunkRetry(`generateQuestionsForChunk(${i + 1}/${parts.length})`, () => generateQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, questionTypes, difficulty, excludeBlock, subjectType));
         const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
         allQuestions.push(...deduped);
         cumulativeExclude.push(...deduped.map((q) => q.question));
@@ -1729,7 +1737,7 @@ Return ONLY JSON matching this structure:
 
   const questions = await callGeminiJsonWithValidation(
     {
-      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true),
+      systemInstruction: buildDispatcherSystemInstruction(aggregatedContent, isHe, inferStudyMode({ difficulty }), true, subjectType),
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       temperature: 0.4,
       jsonMode: true,

@@ -3,12 +3,12 @@ import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTabl
 import { eq, and } from "drizzle-orm";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
 import { logger } from "../lib/logger";
-import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits, looksLikeVocabularyList } from "../lib/validation";
+import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, InsufficientTokensError } from "../lib/tokens";
 import { setGenerationProgress } from "../lib/progress";
 import { getExistingQuestionTexts } from "../lib/question-history";
-import { parseVocabEntries, generateVocabFlashcards, generateVocabQuiz } from "../lib/prompts/vocab";
+import { parseVocabEntries, generateVocabFlashcards } from "../lib/prompts/vocab";
 
 const router = Router();
 
@@ -120,8 +120,28 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
     });
 
     const practiceQuestionCount = computeQuestionCount(Math.ceil(entries.length / 4));
-    console.log(`generate-all[${materialId}]: vocab-kit -- generating ${practiceQuestionCount} quiz questions...`);
-    const questionResult = generateVocabQuiz(entries, practiceQuestionCount);
+    console.log(`generate-all[${materialId}]: vocab-kit -- generating ${practiceQuestionCount} fill-in-blank questions via AI...`);
+    let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
+    let questionFailed = false;
+    try {
+      questionResult = await withTimeout(
+        generateQuestionsAI({
+          language,
+          materialContent: content,
+          materialTitle: material.title,
+          materialId,
+          questionCount: practiceQuestionCount,
+          questionTypes: ["fill_in_blank"],
+          difficulty: "mixed",
+          subjectType: "vocabulary",
+        }),
+        AI_TASK_TIMEOUT_MS,
+        "generateQuestionsAI(vocab)",
+      );
+    } catch (err) {
+      questionFailed = true;
+      logger.warn({ err, materialId }, "generate-all: vocab question generation failed, continuing without it");
+    }
 
     const [qSet] = await db.insert(questionSetsTable).values({
       materialId,
@@ -133,13 +153,13 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
       await db.insert(questionsTable).values(
         questionResult.map(q => ({
           setId: qSet.id,
-          questionType: q.questionType,
+          questionType: q.questionType || "fill_in_blank",
           question: q.question,
           answer: q.answer,
-          explanation: q.explanation,
-          options: q.options,
-          difficulty: q.difficulty,
-          concept: q.concept,
+          explanation: q.explanation || null,
+          options: q.options || [],
+          difficulty: q.difficulty || "medium",
+          concept: q.concept || null,
         }))
       );
     }
@@ -151,10 +171,12 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
       materialTitle: material.title,
     });
 
-    // Deterministic vocab generation has no Gemini output to bill for the
-    // standard per-token rate -- only the standardized source-material
-    // (page-based) charge applies, same as a regular summary's source charge.
+    // Vocab flashcards are deterministic (no Gemini for flashcards), but the
+    // questions stage now uses AI (fill-in-blank), so bill for it.
     await deductTokensForSummary(userId, content);
+    if (!questionFailed && questionResult.length > 0) {
+      await deductTokensForGeneration(userId, "", JSON.stringify(questionResult));
+    }
 
     if (!qSet?.id) {
       logger.error({ materialId }, "generate-all: incomplete insert result, reporting failure");
@@ -173,7 +195,7 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
       result: {
         deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
         questionSet: { id: qSet.id, questionCount: questionResult.length },
-        partialFailure: false,
+        partialFailure: questionFailed,
       },
     });
   } catch (err) {
@@ -205,7 +227,27 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
 // instead of each independently re-chunking and re-summarizing the same raw
 // document -- the same call-count savings the old merged pipeline aimed for,
 // without merging the calls themselves back together.
-async function runGenerateAll(material: MaterialRow, userId: number, content: string): Promise<void> {
+// Per-subject-type card and question type profiles. These determine what the
+// AI generates for each category, matching the pedagogical intent described
+// in the subject-type spec (vocabulary = fill-in-blank quiz, STEM = formulas
+// + calculation problems, etc.).
+const SUBJECT_TYPE_CARD_TYPES: Record<string, string[]> = {
+  stem:       ["formula", "concept"],
+  history:    ["qa", "concept"],
+  literature: ["qa", "concept"],
+  law:        ["qa", "concept"],
+  other:      ["definition", "qa", "formula", "concept"],
+};
+
+const SUBJECT_TYPE_QUESTION_TYPES: Record<string, string[]> = {
+  stem:       ["multiple_choice", "open"],
+  history:    ["multiple_choice", "true_false"],
+  literature: ["multiple_choice", "open"],
+  law:        ["multiple_choice", "open"],
+  other:      ["multiple_choice", "true_false"],
+};
+
+async function runGenerateAll(material: MaterialRow, userId: number, content: string, subjectType: string): Promise<void> {
   const materialId = material.id;
   const language = "he" as const;
 
@@ -222,16 +264,19 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           .where(eq(glossaryTermsTable.courseId, material.courseId))
       : [];
 
+    const cardTypes = SUBJECT_TYPE_CARD_TYPES[subjectType] ?? SUBJECT_TYPE_CARD_TYPES.other;
+    const questionTypes = SUBJECT_TYPE_QUESTION_TYPES[subjectType] ?? SUBJECT_TYPE_QUESTION_TYPES.other;
+
     // Stage 1/3: summary -- top priority. generateSummary is already
     // internally chunked (ai.ts/buildAggregatedContent) for large documents,
     // and now also returns `parts`/`chunked` so stages 2 and 3 below can
     // reuse those same chunks instead of re-chunking the raw document again.
-    console.log(`generate-all[${materialId}]: stage 1/3 -- generating summary...`);
+    console.log(`generate-all[${materialId}]: stage 1/3 -- generating summary (subjectType=${subjectType})...`);
     let summaryResult: { content: string; keyPoints: string[]; parts: string[]; chunked: boolean };
     let summaryFailed = false;
     try {
       summaryResult = await withTimeout(
-        generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId, glossaryTerms }),
+        generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId, glossaryTerms, subjectType }),
         AI_TASK_TIMEOUT_MS,
         "generateSummary",
       );
@@ -274,7 +319,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
     // bounded-output Gemini call per chunk instead of re-chunking and
     // re-summarizing a second time.
     console.log(`generate-all[${materialId}]: stage 2/3 -- generating flashcards (up to ${maxFlashcards} cards)...`);
-    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string }> = [];
+    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }> = [];
     let flashFailed = false;
     try {
       flashResult = await withTimeout(
@@ -284,7 +329,8 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           materialTitle: material.title,
           materialId,
           cardCount: maxFlashcards,
-          cardTypes: ["definition", "qa", "formula", "concept"],
+          cardTypes,
+          subjectType,
           precomputedParts: summaryFailed ? undefined : summaryResult.parts,
         }),
         AI_TASK_TIMEOUT_MS,
@@ -342,9 +388,10 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           materialTitle: material.title,
           materialId,
           questionCount: practiceQuestionCount,
-          questionTypes: ["multiple_choice", "true_false"],
+          questionTypes,
           difficulty: "mixed",
           excludeQuestions,
+          subjectType,
           precomputedParts: summaryFailed ? undefined : summaryResult.parts,
         }),
         AI_TASK_TIMEOUT_MS,
@@ -460,13 +507,11 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     const content = material.extractedText || "";
     const language = "he";
 
-    // Length & sufficiency check — run BEFORE any Gemini calls. There is no
-    // point burning API calls (and risking hallucinated filler content) on
-    // material that's too thin to generate a meaningful study kit from. A
-    // short vocabulary/glossary list bypasses this floor entirely -- see
-    // looksLikeVocabularyList -- since it's valuable, legitimate source
-    // material even when very short.
-    if (!looksLikeVocabularyList(content) && content.trim().length < MIN_CONTENT_LENGTH) {
+    // Length & sufficiency check — run BEFORE any Gemini calls. Vocabulary
+    // materials bypass the minimum-length floor since a short term list is
+    // still valid study material even when compact.
+    const subjectType = material.subjectType || "other";
+    if (subjectType !== "vocabulary" && content.trim().length < MIN_CONTENT_LENGTH) {
       return res.status(400).json({
         error: "insufficient_content",
         message: insufficientContentMessage(language),
@@ -480,10 +525,10 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "running" });
     res.status(202).json({ materialId, status: "running" });
 
-    if (looksLikeVocabularyList(content)) {
+    if (subjectType === "vocabulary") {
       void runGenerateAllVocab(material, userId, content);
     } else {
-      void runGenerateAll(material, userId, content);
+      void runGenerateAll(material, userId, content, subjectType);
     }
   } catch (err) {
     logger.error({ err, materialId: req.params.id }, "generate-all: failed before dispatch");

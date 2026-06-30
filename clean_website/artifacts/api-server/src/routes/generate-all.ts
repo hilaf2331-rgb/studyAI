@@ -314,33 +314,69 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       result: { summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length } },
     });
 
-    // Stage 2/3: flashcards -- reuses summaryResult.parts (when the document
-    // was actually chunked) so this stage processes the document one small,
-    // bounded-output Gemini call per chunk instead of re-chunking and
-    // re-summarizing a second time.
-    console.log(`generate-all[${materialId}]: stage 2/3 -- generating flashcards (up to ${maxFlashcards} cards)...`);
+    // Stages 2+3 (parallel): flashcards and questions run simultaneously.
+    // Both only need summaryResult.parts which is already computed above.
+    // Within each stage, chunks are still processed one at a time with the
+    // 2-second inter-chunk cooldown, so peak concurrency across both stages
+    // combined is 2 simultaneous Gemini calls — within the 3-key pool budget.
+    console.log(`generate-all[${materialId}]: stages 2+3 -- generating flashcards and questions in parallel (up to ${maxFlashcards} cards, ${computeQuestionCount(summaryResult.parts.length)} questions)...`);
+
+    const practiceQuestionCount = computeQuestionCount(summaryResult.parts.length);
+    const excludeQuestions = await getExistingQuestionTexts(materialId);
+
     let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }> = [];
     let flashFailed = false;
-    try {
-      flashResult = await withTimeout(
-        generateFlashcardsAI({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          materialId,
-          cardCount: maxFlashcards,
-          cardTypes,
-          subjectType,
-          precomputedParts: summaryFailed ? undefined : summaryResult.parts,
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateFlashcardsAI",
-      );
-      console.log(`generate-all[${materialId}]: flashcards stage done -- ${flashResult.length} cards.`);
-    } catch (err) {
-      flashFailed = true;
-      logger.warn({ err, materialId }, "generate-all: flashcard generation failed, continuing without it");
-    }
+    let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
+    let questionFailed = false;
+
+    await Promise.allSettled([
+      (async () => {
+        try {
+          flashResult = await withTimeout(
+            generateFlashcardsAI({
+              language,
+              materialContent: content,
+              materialTitle: material.title,
+              materialId,
+              cardCount: maxFlashcards,
+              cardTypes,
+              subjectType,
+              precomputedParts: summaryFailed ? undefined : summaryResult.parts,
+            }),
+            AI_TASK_TIMEOUT_MS,
+            "generateFlashcardsAI",
+          );
+          console.log(`generate-all[${materialId}]: flashcards done -- ${flashResult.length} cards.`);
+        } catch (err) {
+          flashFailed = true;
+          logger.warn({ err, materialId }, "generate-all: flashcard generation failed, continuing without it");
+        }
+      })(),
+      (async () => {
+        try {
+          questionResult = await withTimeout(
+            generateQuestionsAI({
+              language,
+              materialContent: content,
+              materialTitle: material.title,
+              materialId,
+              questionCount: practiceQuestionCount,
+              questionTypes,
+              difficulty: "mixed",
+              excludeQuestions,
+              subjectType,
+              precomputedParts: summaryFailed ? undefined : summaryResult.parts,
+            }),
+            AI_TASK_TIMEOUT_MS,
+            "generateQuestionsAI",
+          );
+          console.log(`generate-all[${materialId}]: questions done -- ${questionResult.length} questions.`);
+        } catch (err) {
+          questionFailed = true;
+          logger.warn({ err, materialId }, "generate-all: question generation failed, continuing without it");
+        }
+      })(),
+    ]);
 
     const [deck] = await db.insert(flashcardDecksTable).values({
       materialId,
@@ -359,48 +395,6 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
           concept: c.concept || null,
         }))
       );
-    }
-
-    setGenerationProgress(materialId, {
-      currentChunk: 0, totalChunks: 0, percentage: 66, stage: "running",
-      result: {
-        summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length },
-        deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
-      },
-    });
-
-    // Stage 3/3: practice questions -- one quiz's worth per run (re-run for a
-    // fresh set), sized to the document's actual chunk count instead of a
-    // single fixed number (see computeQuestionCount above). Excludes any
-    // question already generated for this material in a previous run/exam
-    // so repeated runs don't just hand back the same quiz. Also reuses
-    // summaryResult.parts, same as the flashcards stage above.
-    const practiceQuestionCount = computeQuestionCount(summaryResult.parts.length);
-    console.log(`generate-all[${materialId}]: stage 3/3 -- generating ${practiceQuestionCount} practice questions...`);
-    let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
-    let questionFailed = false;
-    try {
-      const excludeQuestions = await getExistingQuestionTexts(materialId);
-      questionResult = await withTimeout(
-        generateQuestionsAI({
-          language,
-          materialContent: content,
-          materialTitle: material.title,
-          materialId,
-          questionCount: practiceQuestionCount,
-          questionTypes,
-          difficulty: "mixed",
-          excludeQuestions,
-          subjectType,
-          precomputedParts: summaryFailed ? undefined : summaryResult.parts,
-        }),
-        AI_TASK_TIMEOUT_MS,
-        "generateQuestionsAI",
-      );
-      console.log(`generate-all[${materialId}]: questions stage done -- ${questionResult.length} questions.`);
-    } catch (err) {
-      questionFailed = true;
-      logger.warn({ err, materialId }, "generate-all: question generation failed, continuing without it");
     }
 
     const [qSet] = await db.insert(questionSetsTable).values({

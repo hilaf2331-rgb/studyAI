@@ -132,6 +132,7 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
   const courseId = body.courseId ? Number(body.courseId) : undefined;
   const sourceUrl = body.sourceUrl || undefined;
   const uploadId = body.uploadId || undefined;
+  const subjectType = body.subjectType || "other";
 
   // Reject oversized files outright before any parsing/transcription starts
   // -- there's no point spending CPU or Whisper/Gemini budget on a file that
@@ -296,6 +297,7 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     userId,
     status,
     extractedText,
+    subjectType,
     ...(duration ? { duration } : {}),
   }).returning();
 
@@ -382,6 +384,7 @@ router.post("/shared/:shareId/save", async (req, res) => {
     language: source.language,
     status: "ready",
     extractedText: source.extractedText,
+    subjectType: source.subjectType,
   }).returning();
 
   const [summary] = await db.select().from(summariesTable)

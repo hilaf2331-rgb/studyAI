@@ -139,6 +139,7 @@ export const MaterialNewPage: React.FC = () => {
   const [contentType, setContentType] = useState<ContentType>("text");
   const [language, setLanguage] = useState("he");
   const [courseId, setCourseId] = useState<string>(preselectedCourseId);
+  const [subjectType, setSubjectType] = useState("other");
   const [text, setText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -259,6 +260,7 @@ export const MaterialNewPage: React.FC = () => {
         fd.append("title", title.trim());
         fd.append("contentType", contentType);
         fd.append("language", language);
+        fd.append("subjectType", subjectType);
         if (courseId) fd.append("courseId", courseId);
         fd.append("uploadId", newUploadId);
         fd.append("file", file);
@@ -279,6 +281,7 @@ export const MaterialNewPage: React.FC = () => {
             title: title.trim(),
             contentType,
             language,
+            subjectType,
             courseId: courseId ? Number(courseId) : undefined,
             text: contentType === "text" ? text : undefined,
             sourceUrl: (contentType === "youtube" || contentType === "url") ? sourceUrl : undefined,
@@ -365,6 +368,32 @@ export const MaterialNewPage: React.FC = () => {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Subject Type Picker */}
+            <div>
+              <Label className="mb-2 block">{isRTL ? "סוג נושא" : "Subject Type"}</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "vocabulary", labelHe: "אוצר מילים",          labelEn: "Vocabulary",   emoji: "📚" },
+                  { value: "stem",       labelHe: "מדעים / נוסחאות",     labelEn: "STEM",          emoji: "💻" },
+                  { value: "history",    labelHe: "היסטוריה",             labelEn: "History",       emoji: "📜" },
+                  { value: "literature", labelHe: "ספרות",                labelEn: "Literature",    emoji: "📖" },
+                  { value: "law",        labelHe: "משפטים",               labelEn: "Law",           emoji: "⚖️" },
+                  { value: "other",      labelHe: "אחר / כללי",           labelEn: "Other / General", emoji: "📝" },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setSubjectType(opt.value)}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-sm font-medium
+                      ${subjectType === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                  >
+                    <span className="text-xl leading-none">{opt.emoji}</span>
+                    <span className="text-xs text-center">{isRTL ? opt.labelHe : opt.labelEn}</span>
+                  </button>
+                ))}
               </div>
             </div>
 

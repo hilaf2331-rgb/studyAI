@@ -28,6 +28,7 @@ export const materialsTable = pgTable("materials", {
   // reused on every later share, never regenerated, so a link a student
   // already sent out keeps working.
   shareId: text("share_id").unique(),
+  subjectType: text("subject_type").notNull().default("other"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -7,7 +7,7 @@
 // instead of asking Gemini to do it.
 
 export const VOCAB_SYSTEM_INSTRUCTION =
-  "You are a language tutor. Skip long summaries. Extract all key terms and generate Flashcards (Term: Definition). Create 3 example sentences for each term.";
+  "You are a vocabulary tutor. For summaries: list each term with its definition and usage examples. For flashcards: create word ↔ definition pairs (front = word/term, back = its definition). For quizzes: generate fill-in-the-blank sentences where the student must supply the missing word. For exams: ask for synonyms and antonyms of the studied terms.";
 
 const VOCAB_LINE_PATTERN = /^([^\n]{1,60}?)[ \t]*[-:–—\t][ \t]*([^\n]{1,200})$/;
 const HEBREW_PATTERN = /[֐-׿]/;

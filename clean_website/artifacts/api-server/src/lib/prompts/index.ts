@@ -1,6 +1,8 @@
 // The Dispatcher. getSystemPrompt() runs a lightweight keyword check against
 // the material content and returns the matching category's system prompt,
 // falling back to base.ts's General prompt when nothing scores high enough.
+// getSystemPromptBySubjectType() bypasses content classification entirely and
+// returns the prompt for the student's explicit subject-type selection.
 // Category modules stay thin (just the system instruction text) -- all the
 // classification and modifier logic lives here, in one place.
 import { looksLikeVocabularyList } from "../validation";
@@ -8,13 +10,14 @@ import { VOCAB_SYSTEM_INSTRUCTION } from "./vocab";
 import { STEM_SYSTEM_INSTRUCTION } from "./stem";
 import { LITERATURE_SYSTEM_INSTRUCTION } from "./literature";
 import { HISTORY_SYSTEM_INSTRUCTION } from "./history";
+import { LAW_SYSTEM_INSTRUCTION } from "./law";
 import { GENERAL_SYSTEM_INSTRUCTION, appendGlobalModifier, StudyMode } from "./base";
 
 export type { StudyMode } from "./base";
 
-export type ContentCategory = "vocabulary" | "stem" | "literature" | "history" | "general";
+export type ContentCategory = "vocabulary" | "stem" | "literature" | "history" | "law" | "general";
 
-type ScoredCategory = Exclude<ContentCategory, "vocabulary" | "general">;
+type ScoredCategory = Exclude<ContentCategory, "vocabulary" | "law" | "general">;
 
 // Lightweight presence-based keyword check, not an ML classifier -- same
 // spirit as validation.ts's looksLikeVocabularyList: cheap, deterministic,
@@ -82,6 +85,7 @@ const SYSTEM_INSTRUCTIONS: Record<ContentCategory, string> = {
   stem: STEM_SYSTEM_INSTRUCTION,
   literature: LITERATURE_SYSTEM_INSTRUCTION,
   history: HISTORY_SYSTEM_INSTRUCTION,
+  law: LAW_SYSTEM_INSTRUCTION,
   general: GENERAL_SYSTEM_INSTRUCTION,
 };
 
@@ -92,6 +96,31 @@ export interface SystemPromptResult {
 
 export function getSystemPrompt(content: string, mode?: StudyMode): SystemPromptResult {
   const category = classifyContent(content);
+  const systemInstruction = appendGlobalModifier(SYSTEM_INSTRUCTIONS[category], mode);
+  return { category, systemInstruction };
+}
+
+// Maps the student's explicit subject-type selection to a ContentCategory.
+// "other" and any unknown value fall back to "general" so existing materials
+// (which have no subjectType or default to "other") keep their current behavior.
+function subjectTypeToCategory(subjectType: string): ContentCategory {
+  const map: Record<string, ContentCategory> = {
+    vocabulary: "vocabulary",
+    stem: "stem",
+    history: "history",
+    literature: "literature",
+    law: "law",
+    other: "general",
+  };
+  return map[subjectType] ?? "general";
+}
+
+// Bypasses content-based classification entirely and returns the system
+// prompt for the student's explicit subject-type choice. Used by
+// generate-all.ts when the material has a subjectType set by the student at
+// upload time, overriding any keyword-based auto-detection.
+export function getSystemPromptBySubjectType(subjectType: string, mode?: StudyMode): SystemPromptResult {
+  const category = subjectTypeToCategory(subjectType);
   const systemInstruction = appendGlobalModifier(SYSTEM_INSTRUCTIONS[category], mode);
   return { category, systemInstruction };
 }

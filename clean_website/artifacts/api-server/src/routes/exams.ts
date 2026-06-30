@@ -7,14 +7,14 @@ import {
   UpdateExamStudiedParams, UpdateExamStudiedBody
 } from "@workspace/api-zod";
 import { generateExamAI, gradeAnswer, generateVocabFillInBlanksAI } from "../lib/ai";
-import { rejectIfTooShort, clampToContentLength, looksLikeVocabularyList } from "../lib/validation";
+import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
 import { getExistingQuestionTexts } from "../lib/question-history";
 import { setGenerationProgress } from "../lib/progress";
 import { logger } from "../lib/logger";
 import { recordStudyActivity } from "../lib/streaks";
-import { parseVocabEntries, generateVocabQuiz, pickEntriesForFillInBlank, pickDistractors, shuffle, VocabEntry } from "../lib/prompts/vocab";
+import { parseVocabEntries, generateVocabQuiz, VocabEntry } from "../lib/prompts/vocab";
 
 // Mirrors generate-all.ts's PRACTICE_QUESTION_COUNT: a single exam run is
 // meant to feel like one real quiz/exam rather than an attempt to exhaust
@@ -48,57 +48,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-// Vocab-Kit "Advanced Exam": the MC quiz questions (same dual-directionality
-// EN<->HE logic as questions.ts's "Dynamic Matching" quiz) plus a
-// fill-in-the-blank section -- a sentence with the target word blanked out
-// and 4 word options to pick from. The MC half is fully deterministic; the
-// fill-in-blank half needs one AI call (generateVocabFillInBlanksAI, see
-// lib/ai.ts) to write the example sentences, but the actual 4-option
-// distractor set is still built here deterministically from the same
-// vocabulary pool, never trusted from the AI's own output.
-const VOCAB_FILL_IN_BLANK_SHARE = 0.4;
-
-async function generateVocabExamQuestions(
+// Vocab exam: pure 50/50 MCQ — half "English word → 4 Hebrew options",
+// half "Hebrew definition → 4 English options". Fully deterministic, no AI,
+// no cost. generateVocabQuiz already alternates forward/backward so calling
+// it with the full count gives the correct 50/50 split automatically.
+function generateVocabExamQuestions(
   entries: VocabEntry[],
-  language: "he" | "en",
-  materialTitle: string,
   questionCount: number,
-  materialId: number,
-): Promise<Array<{ questionType: string; question: string; answer: string; explanation?: string; options: string[]; difficulty: string; concept?: string; modelAnswer?: string; optionExplanations?: (string | null)[] }>> {
-  const fillInBlankCount = Math.max(1, Math.round(questionCount * VOCAB_FILL_IN_BLANK_SHARE));
-  const mcCount = Math.max(1, questionCount - fillInBlankCount);
-
-  const mcQuestions = generateVocabQuiz(entries, mcCount);
-
-  const allTerms = entries.map((e) => e.term);
-  const fillInEntries = pickEntriesForFillInBlank(entries, fillInBlankCount);
-  const sentences = fillInEntries.length > 0
-    ? await generateVocabFillInBlanksAI({
-        language,
-        words: fillInEntries.map((e) => e.term),
-        materialTitle,
-        materialId,
-      })
-    : [];
-
-  const fillInBlankQuestions = sentences
-    .map(({ word, sentence }) => {
-      const distractors = pickDistractors(allTerms, word, 3);
-      if (distractors.length < 3) return null;
-      const options = shuffle([word, ...distractors]);
-      return {
-        questionType: "fill_blank",
-        question: sentence,
-        answer: word,
-        explanation: language === "he" ? `המילה החסרה היא "${word}".` : `The missing word is "${word}".`,
-        options,
-        difficulty: "medium",
-        concept: word,
-      };
-    })
-    .filter((q): q is NonNullable<typeof q> => q !== null);
-
-  return shuffle([...mcQuestions, ...fillInBlankQuestions]);
+): Array<{ questionType: string; question: string; answer: string; explanation?: string; options: string[]; difficulty: string; concept?: string }> {
+  return generateVocabQuiz(entries, questionCount);
 }
 
 const router = Router();
@@ -143,15 +101,20 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
   const materialContent = material.extractedText || "";
 
   try {
-    const vocabEntries = looksLikeVocabularyList(materialContent) ? parseVocabEntries(materialContent) : [];
-    const generated = vocabEntries.length > 0
-      ? await generateVocabExamQuestions(
-          vocabEntries,
-          body.language as "he" | "en",
-          material.title,
-          questionCount,
-          materialId,
-        )
+    const excludeQuestions = await getExistingQuestionTexts(materialId);
+
+    // Exhaustion check: estimate how many unique questions this material can
+    // realistically produce (~15 per chunk of content). Once the student has
+    // seen that many, new runs will inevitably start repeating — flag it so
+    // the frontend can show a friendly "you've covered everything" message.
+    const estimatedChunks = Math.max(1, Math.ceil(materialContent.length / 15000));
+    const estimatedCapacity = Math.max(20, estimatedChunks * 15);
+    const isExhausted = excludeQuestions.length >= estimatedCapacity;
+
+    const isVocab = material.subjectType === "vocabulary";
+    const vocabEntries = isVocab ? parseVocabEntries(materialContent) : [];
+    const generated = isVocab && vocabEntries.length > 0
+      ? generateVocabExamQuestions(vocabEntries, questionCount)
       : await withTimeout(
           generateExamAI({
             language: body.language as "he" | "en",
@@ -162,7 +125,7 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
             difficulty: body.difficulty || "mixed",
             topics: body.topics,
             materialId,
-            excludeQuestions: await getExistingQuestionTexts(materialId),
+            excludeQuestions,
           }),
           AI_TASK_TIMEOUT_MS,
           "generateExamAI",
@@ -175,19 +138,19 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
     // whole bulk insert (and with it, every otherwise-good question in the
     // batch) with a DrizzleQueryError. Computed before the exam row itself
     // so questionCount reflects what actually gets inserted.
-    const rows = generated
-      .filter(q => typeof q.question === "string" && q.question.trim().length > 0 && typeof q.answer === "string" && q.answer.trim().length > 0)
+    const rows = (generated as Array<Record<string, unknown>>)
+      .filter(q => typeof q.question === "string" && (q.question as string).trim().length > 0 && typeof q.answer === "string" && (q.answer as string).trim().length > 0)
       .map(q => ({
         questionType: typeof q.questionType === "string" ? q.questionType : "multiple_choice",
-        question: q.question,
-        answer: q.answer,
+        question: q.question as string,
+        answer: q.answer as string,
         explanation: typeof q.explanation === "string" ? q.explanation : null,
         modelAnswer: typeof q.modelAnswer === "string" ? q.modelAnswer : null,
-        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === "string") : [],
+        options: Array.isArray(q.options) ? (q.options as unknown[]).filter((o): o is string => typeof o === "string") : [],
         difficulty: typeof q.difficulty === "string" ? q.difficulty : "medium",
         concept: typeof q.concept === "string" ? q.concept : null,
         optionExplanations: Array.isArray(q.optionExplanations)
-          ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null))
+          ? (q.optionExplanations as unknown[]).map((e) => (typeof e === "string" ? e : null))
           : null,
       }));
 
@@ -228,7 +191,7 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
       totalChunks: 0,
       percentage: 100,
       stage: "done",
-      result: { exam: { id: exam.id, questionCount: rows.length } },
+      result: { exam: { id: exam.id, questionCount: rows.length }, exhaustedWarning: isExhausted },
     });
   } catch (err) {
     logger.error({ err, materialId }, "exams: unhandled background failure");

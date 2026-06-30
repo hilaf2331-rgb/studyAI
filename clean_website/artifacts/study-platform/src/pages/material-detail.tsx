@@ -369,6 +369,13 @@ export const MaterialDetailPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) });
       setExamOpen(false);
       setExamLoading(false);
+      if (generationProgress.result.exhaustedWarning) {
+        toast({
+          description: isRTL
+            ? "וואו! עברת על כל החומר 🎉 השאלות עשויות להתחיל לחזור על עצמן — סימן שאתה מוכן!"
+            : "Wow! You've covered all the material 🎉 Questions may start repeating — that means you're ready!",
+        });
+      }
     } else if (generationProgress.stage === "error") {
       setExamError(generationProgress.error || (isRTL ? "אירעה שגיאה בלתי צפויה" : "An unknown error occurred"));
       setExamLoading(false);

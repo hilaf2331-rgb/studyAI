@@ -438,7 +438,8 @@ export const GetMaterialProgressResponse = zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
 }).optional().describe('Populated by the standalone exam generation job, which reuses this same result shape\/progress key rather than a separate tracking mechanism.'),
-  "partialFailure": zod.boolean().optional()
+  "partialFailure": zod.boolean().optional(),
+  "exhaustedWarning": zod.boolean().optional()
 }).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })

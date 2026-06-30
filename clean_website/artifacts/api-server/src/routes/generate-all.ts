@@ -127,7 +127,7 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
     try {
       questionResult = await withTimeout(
         generateQuestionsAI({
-          language,
+          language: "en",  // vocab fill-in-blank is always English sentences regardless of material language
           materialContent: content,
           materialTitle: material.title,
           materialId,

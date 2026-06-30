@@ -13,6 +13,7 @@ export interface GenerateAllResult {
   // identical "long chunked AI job, poll for done" flow.
   exam?: { id: number; questionCount: number };
   partialFailure?: boolean;
+  exhaustedWarning?: boolean;
 }
 
 export interface GenerationProgress {

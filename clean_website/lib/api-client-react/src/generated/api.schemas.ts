@@ -261,6 +261,7 @@ export interface GenerateAllResult {
   /** Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism. */
   exam?: GenerateAllResultExam;
   partialFailure?: boolean;
+  exhaustedWarning?: boolean;
 }
 
 export interface GenerationProgress {

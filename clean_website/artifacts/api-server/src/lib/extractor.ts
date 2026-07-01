@@ -230,6 +230,30 @@ export async function extractPDF(buffer: Buffer): Promise<ExtractedContent> {
   return { text };
 }
 
+// Max pixel dimension sent to Gemini. Gemini bills inline images by 768×768
+// tiles — a full-res 4K image costs ~16 tiles (4128 tokens) vs ~2 tiles (516
+// tokens) for a 1024px image. For text-heavy study material, 1024px is more
+// than enough for accurate OCR.
+const IMAGE_MAX_PX = 1024;
+
+async function resizeForAI(buffer: Buffer, mimeType: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  try {
+    const { default: sharp } = await import("sharp");
+    const meta = await sharp(buffer).metadata();
+    const { width = 0, height = 0 } = meta;
+    if (width <= IMAGE_MAX_PX && height <= IMAGE_MAX_PX) {
+      return { buffer, mimeType };
+    }
+    const resized = await sharp(buffer)
+      .resize({ width: IMAGE_MAX_PX, height: IMAGE_MAX_PX, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    return { buffer: resized, mimeType: "image/jpeg" };
+  } catch {
+    return { buffer, mimeType };
+  }
+}
+
 // Routes a photo (e.g. a phone snapshot of handwritten or printed notes) to
 // Gemini 1.5 Flash's native vision support for transcription, so a future
 // camera/gallery upload button on the frontend can plug straight into the
@@ -239,8 +263,10 @@ export async function extractImage(buffer: Buffer, mimeType: string, onProgress?
     throw new Error("Received an empty image file buffer");
   }
 
-  onProgress?.(30);
-  const rawText = await extractTextFromImage(buffer, mimeType);
+  onProgress?.(20);
+  const resized = await resizeForAI(buffer, mimeType);
+  onProgress?.(35);
+  const rawText = await extractTextFromImage(resized.buffer, resized.mimeType);
   const text = sanitizeExtractedText(rawText);
 
   if (!text) {

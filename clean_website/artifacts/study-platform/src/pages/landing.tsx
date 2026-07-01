@@ -1,16 +1,49 @@
 import React from "react";
 import { Link } from "wouter";
-import { ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2 } from "lucide-react";
+import {
+  ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2,
+  Mic, MessageSquare, Trophy, FolderOpen, Headphones, Pencil,
+  GaugeCircle, Flame, ClipboardList, Brain,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundGlow } from "@/components/background-glow";
 import { WaveField } from "@/components/wave-field";
 import { TokenGlyph, InfinityGlyph, FlashcardGlyph, RescueGlyph } from "@/components/icons";
 
-// Public marketing page — the / route for logged-out visitors (see App.tsx).
+const FeatureCard = ({
+  icon,
+  title,
+  body,
+  glow = "teal",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  glow?: string;
+}) => {
+  const glowMap: Record<string, string> = {
+    teal:   "hover:shadow-teal-500/20   hover:border-teal-400/50",
+    emerald:"hover:shadow-emerald-500/20 hover:border-emerald-400/50",
+    blue:   "hover:shadow-blue-500/20   hover:border-blue-400/50",
+    violet: "hover:shadow-violet-500/20 hover:border-violet-400/50",
+    pink:   "hover:shadow-pink-500/20   hover:border-pink-400/50",
+    amber:  "hover:shadow-amber-500/20  hover:border-amber-400/50",
+    cyan:   "hover:shadow-cyan-500/20   hover:border-cyan-400/50",
+    rose:   "hover:shadow-rose-500/20   hover:border-rose-400/50",
+  };
+  return (
+    <div className={`group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2.5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glowMap[glow] ?? glowMap.teal}`}>
+      <div className="transition-transform duration-300 group-hover:scale-110 w-fit">{icon}</div>
+      <p className="text-sm font-bold tracking-wide">{title}</p>
+      <p className="text-xs text-muted-foreground leading-relaxed">{body}</p>
+    </div>
+  );
+};
+
 export const LandingPage: React.FC = () => {
   return (
     <div className="relative min-h-screen flex flex-col bg-background overflow-hidden" dir="rtl">
-      {/* Top nav — pill capsule, glass-blurred over the dark background */}
+      {/* Nav */}
       <header className="relative z-10 px-4 sm:px-10 pt-5">
         <div className="flex items-center justify-between gap-4 mx-auto max-w-4xl rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-2.5 shadow-lg shadow-black/20">
           <div className="flex items-center gap-2.5">
@@ -29,7 +62,8 @@ export const LandingPage: React.FC = () => {
         <WaveField className="absolute top-[14rem] sm:top-[18rem] left-0 w-full h-[26rem] opacity-80" />
 
         <div className="relative z-10 w-full max-w-3xl space-y-20">
-          {/* Hero */}
+
+          {/* ─── Hero ─── */}
           <section className="text-center space-y-5 pt-4 sm:pt-8">
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.1]">
               מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
@@ -49,8 +83,8 @@ export const LandingPage: React.FC = () => {
             <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
               PDF, מצגת, סרטון YouTube, טקסט או הקלטה קולית — מה שיש לכם.
               <br />
-              FocusStudy בונה מזה סיכום, כרטיסיות זיכרון וחידון תרגול,
-              מוכנים ללמידה כבר ברגע שהעלאתם את החומר.
+              FocusStudy בונה מזה סיכום, כרטיסיות זיכרון, חידון תרגול ומבחן מלא עם ציון —
+              מוכנים ללמידה כבר ברגע שהעלאתם.
             </p>
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Link href="/login">
@@ -59,15 +93,15 @@ export const LandingPage: React.FC = () => {
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
-              <a href="#why-focusstudy">
+              <a href="#all-features">
                 <Button size="lg" variant="outline" className="text-base px-8 font-bold tracking-wide">
-                  למה FocusStudy?
+                  כל הפיצ׳רים
                 </Button>
               </a>
             </div>
           </section>
 
-          {/* Why FocusStudy */}
+          {/* ─── 3 core pillars ─── */}
           <section id="why-focusstudy" className="space-y-6 scroll-mt-24">
             <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">למה FocusStudy?</h2>
             <div className="grid sm:grid-cols-3 gap-4">
@@ -75,50 +109,138 @@ export const LandingPage: React.FC = () => {
                 <FlashcardGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">ערכת לימוד מיידית</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  לא צריך ללחוץ שוב ושוב. מעלים פעם אחת, ומקבלים סיכום, כרטיסיות
-                  וחידון תרגול — בלי שום הגדרה נוספת.
+                  מעלים פעם אחת — ומקבלים סיכום, כרטיסיות, חידון תרגול ומבחן
+                  מלא עם ציון, בלי שום הגדרה נוספת.
                 </p>
               </div>
               <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/20 hover:border-emerald-400/50">
                 <RescueGlyph className="w-10 h-10 mx-auto transition-transform duration-300 group-hover:scale-110" />
                 <p className="text-sm font-bold tracking-wide">★ Rescue Questions — המורה הפרואקטיבי שלכם</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  טעיתם בתרגול? FocusStudy מזהה בדיוק איפה נפלתם, ובונה שאלות
-                  ממוקדות שתוקפות רק את הנקודות החלשות שלכם — לפני המבחן, לא אחריו.
+                  טעיתם בתרגול? FocusStudy מזהה בדיוק איפה נפלתם ובונה שאלות
+                  ממוקדות שתוקפות רק את הנקודות החלשות — לפני המבחן, לא אחריו.
                 </p>
               </div>
               <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/20 hover:border-blue-400/50">
                 <RotateCw className="w-10 h-10 mx-auto text-cyan-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
                 <p className="text-sm font-bold tracking-wide">חזרה מרווחת שמזכירה לכם מה לחזור עליו</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  אלגוריתם חזרה מרווחת קובע מתי הזמן הנכון לחזור על כל כרטיסייה —
+                  אלגוריתם SM-2 קובע מתי הזמן הנכון לחזור על כל כרטיסייה —
                   כל מה שמגיע לחזרה היום מחכה לכם במקום אחד.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Token pillars */}
+          {/* ─── All features grid ─── */}
+          <section id="all-features" className="space-y-6 scroll-mt-24">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
+              כל כלי הלמידה — במקום אחד
+            </h2>
+            <p className="text-sm text-muted-foreground text-center max-w-xl mx-auto">
+              לא אפליקציה עם פיצ׳ר אחד. כל מה שצריך לסמסטר שלם.
+            </p>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+
+              <FeatureCard
+                glow="blue"
+                icon={<Trophy className="w-9 h-9 text-yellow-500" strokeWidth={1.75} />}
+                title="מבחן מלא עם ציון"
+                body="מעבר לחידון תרגול — FocusStudy יוצר מבחן אמיתי עם שאלות פתוחות ורב-ברירה, מציג ציון בסוף ומראה בדיוק על אילו שאלות טעיתם ומדוע."
+              />
+
+              <FeatureCard
+                glow="violet"
+                icon={<FolderOpen className="w-9 h-9 text-violet-500" strokeWidth={1.75} />}
+                title="קורסים — ניהול כל הסמסטר"
+                body="מאגדים את כל חומרי הקורס (מרובה הרצאות) תחת קורס אחד. גלוסר מונחים משותף לכל הקורס, ומבחן קורס ענק שמערבב שאלות מכל החומרים — בלחיצה אחת."
+              />
+
+              <FeatureCard
+                glow="cyan"
+                icon={<MessageSquare className="w-9 h-9 text-cyan-500" strokeWidth={1.75} />}
+                title="צ׳אט עם החומר שלכם"
+                body="שאלה שנשארה פתוחה אחרי הסיכום? פותחים צ׳אט עם ה-AI ושואלים בדיוק מה שרוצים — הוא עונה אך ורק על בסיס ההרצאה שהעליתם, לא מהידע הכללי שלו."
+              />
+
+              <FeatureCard
+                glow="emerald"
+                icon={<Headphones className="w-9 h-9 text-emerald-500" strokeWidth={1.75} />}
+                title="פודקאסט מהחומר שלכם"
+                body="הופכים כל חומר לימוד לפרק פודקאסט שאפשר להאזין לו בדרך לאוניברסיטה, בחדר כושר, או בכל מקום אחר — ה-AI קורא את ההרצאה בקול."
+              />
+
+              <FeatureCard
+                glow="rose"
+                icon={<Flame className="w-9 h-9 text-rose-500" strokeWidth={1.75} />}
+                title="מצב קריאנץ׳ — לפני הבחינה"
+                body="פחות מ-24 שעות עד הבחינה? מצב קריאנץ׳ מחליף את לוח הזמנים של החזרה המרווחת ב-שניות/שעות — הכרטיסיות החלשות חוזרות ביתר תדירות עד לרגע הכניסה לאולם."
+              />
+
+              <FeatureCard
+                glow="amber"
+                icon={<GaugeCircle className="w-9 h-9 text-amber-500" strokeWidth={1.75} />}
+                title="ציון מוכנות לבחינה"
+                body="FocusStudy מחשב כמה אחוזים מהחומר אתם באמת מוכנים עליו, על בסיס היסטוריית הביצועים בכרטיסיות ובחידונים — כדי שתדעו בדיוק על מה צריך לעבוד."
+              />
+
+              <FeatureCard
+                glow="teal"
+                icon={<Mic className="w-9 h-9 text-teal-500" strokeWidth={1.75} />}
+                title="הקלטת הרצאות ישירות מהאפליקציה"
+                body="לא הספקתם לצלם מסך? מקליטים ישירות מהאפליקציה — ה-AI מתמלל, מסכם ובונה ערכת לימוד מלאה מההקלטה, בלי לגעת בקובץ."
+              />
+
+              <FeatureCard
+                glow="pink"
+                icon={<Pencil className="w-9 h-9 text-pink-500" strokeWidth={1.75} />}
+                title="עריכה ידנית של כרטיסיות ושאלות"
+                body="ה-AI לא תמיד מושלם. עורכים כל כרטיסייה או שאלה ישירות מתוך מסך הלמידה — מתקנים, מדייקים ומותאמים לשפת המרצה — בלי לצאת מהתרגול."
+              />
+
+            </div>
+
+            {/* Mini-features strip */}
+            <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5">
+              <p className="text-xs font-bold text-muted-foreground mb-3 tracking-wide">ועוד כמה דברים שתשמחו לדעת:</p>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+                {[
+                  { icon: <Brain className="w-4 h-4 text-cyan-500 shrink-0" />, text: "תמיכה בחומרי אוצר מילים — שאלות בשתי כיוונים (ע׳→א׳ וא׳→ע׳)" },
+                  { icon: <ClipboardList className="w-4 h-4 text-violet-500 shrink-0" />, text: "גלוסר קורס — מוסיפים מונחים פעם אחת, ה-AI משתמש בהם בכל הסיכומים" },
+                  { icon: <Flame className="w-4 h-4 text-rose-500 shrink-0" />, text: "רצף לימוד — מעקב אחר כמה ימים רצופים למדתם" },
+                  { icon: <Users className="w-4 h-4 text-violet-500 shrink-0" />, text: "שיתוף בלינק — חבר מקבל את כל ערכת הלימוד בלחיצה אחת" },
+                  { icon: <RotateCw className="w-4 h-4 text-teal-500 shrink-0" />, text: "חזרה יומית — כל הכרטיסיות שמגיעות לחזרה מחכות במקום אחד" },
+                  { icon: <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />, text: "ה-AI עונה רק מהחומר שלכם — אפס ניחושים מהידע הכללי" },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 py-1">
+                    {item.icon}
+                    <p className="text-xs text-muted-foreground leading-relaxed">{item.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ─── Token pillars ─── */}
           <section className="grid sm:grid-cols-2 gap-4">
             <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/20 hover:border-amber-400/50">
               <TokenGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
                 <strong className="block mb-0.5">משלמים רק על מה שמשתמשים!</strong>
-                בלי התחייבות חודשית – קונים טוקנים לפי הצורך, ואין מגבלת שימוש יומית.
+                בלי התחייבות חודשית — קונים טוקנים לפי הצורך, ואין מגבלת שימוש יומית.
               </p>
             </div>
             <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/20 hover:border-blue-400/50">
               <InfinityGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
-                <strong className="block mb-0.5">האם הטוקנים פגים בתוקף? לא!</strong>
+                <strong className="block mb-0.5">הטוקנים לא פגים — אף פעם!</strong>
                 אם שילמתם ותיכנסו גם אחרי שנה, הטוקנים שלכם עדיין יחכו לכם באותו המצב.
               </p>
             </div>
           </section>
 
-          {/* Accuracy & Glossary — trust section: the AI is grounded strictly
-              in the user's own uploaded materials/glossary, never guessing
-              or inventing facts from general knowledge. */}
+          {/* ─── Accuracy & Glossary ─── */}
           <section className="space-y-6 scroll-mt-24">
             <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
               דיוק מוחלט — אפס ניחושים
@@ -133,7 +255,7 @@ export const LandingPage: React.FC = () => {
                     </p>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    בניגוד לצ'אטבוטים כלליים שמשלימים פערים מהידע הכללי שלהם,
+                    בניגוד לצ׳אטבוטים כלליים שמשלימים פערים מהידע הכללי שלהם,
                     FocusStudy לא מנחש. הוא קורא בקפידה את החומר שהעליתם — ההרצאה,
                     המאמר, המצגת — ובונה את הסיכום, הכרטיסיות והשאלות אך ורק
                     מהמקור הזה.
@@ -143,18 +265,15 @@ export const LandingPage: React.FC = () => {
                   <BookMarked className="w-7 h-7 text-emerald-500 shrink-0" strokeWidth={1.75} />
                   <p className="text-sm leading-relaxed">
                     <strong className="block mb-0.5">המינוח של המרצה שלכם — לא מינוח כללי</strong>
-                    מעלים את הגלוסר או רשימת המושגים של הקורס, ו-FocusStudy
-                    ישתמש בדיוק במונחים ובהגדרות שלכם, כדי שהסיכום ידבר באותה
-                    שפה שתידרשו לה במבחן.
+                    מעלים את הגלוסר של הקורס, ו-FocusStudy ישתמש בדיוק במונחים
+                    ובהגדרות שלכם — הסיכום ידבר באותה שפה שתידרשו לה במבחן.
                   </p>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* Community Sharing — promotes saveSharedMaterial/shared-view.tsx,
-              the existing feature that lets a classmate save someone else's
-              shared study kit straight into their own materials. */}
+          {/* ─── Community ─── */}
           <section className="space-y-6 scroll-mt-24">
             <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
               לומדים ביחד, חוסכים ביחד
@@ -164,24 +283,23 @@ export const LandingPage: React.FC = () => {
                 <Users className="w-9 h-9 text-violet-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
                 <p className="text-sm font-bold tracking-wide">שולחים לחברים בלינק אחד</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  כל ערכת לימוד שיצרתם אפשר לשתף עם חבר/ה לקורס בלינק פשוט —
-                  הם נכנסים, רואים את הסיכום, הכרטיסיות והחידון, ושומרים אותם
-                  ישר לחומרי הלימוד שלהם בלחיצה אחת.
+                  כל ערכת לימוד שיצרתם אפשר לשתף בלינק פשוט — חבר/ה נכנסים,
+                  רואים את הסיכום, הכרטיסיות והחידון, ושומרים אותם לחשבון שלהם
+                  בלחיצה אחת.
                 </p>
               </div>
               <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 space-y-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-400/50">
                 <FileCheck2 className="w-9 h-9 text-pink-500 transition-transform duration-300 group-hover:scale-110" strokeWidth={1.75} />
                 <p className="text-sm font-bold tracking-wide">בונים מאגר קורס ביחד</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  כשכל הכיתה משתפת את הסיכומים שלה, נוצר מאגר חומרים מצטבר
-                  לכל הקורס — פעם אחת מעלים את ההרצאה, וכולם נהנים מערכת
-                  לימוד מלאה עליה.
+                  כשכל הכיתה משתפת את הסיכומים שלה נוצר מאגר חומרים לכל הקורס —
+                  פעם אחת מעלים הרצאה וכולם נהנים מערכת לימוד מלאה עליה.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Founder story — moved below the fold as a trust-building section */}
+          {/* ─── Founder story ─── */}
           <section className="text-center space-y-3 max-w-2xl mx-auto">
             <p className="text-xs font-bold tracking-wide text-primary uppercase">הסיפור מאחורי FocusStudy</p>
             <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
@@ -193,7 +311,7 @@ export const LandingPage: React.FC = () => {
             </p>
           </section>
 
-          {/* Final CTA */}
+          {/* ─── Final CTA ─── */}
           <section className="flex justify-center pt-2 pb-6">
             <Link href="/login">
               <Button size="lg" className="text-base px-8 gap-2 font-bold tracking-wide shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300">
@@ -202,6 +320,7 @@ export const LandingPage: React.FC = () => {
               </Button>
             </Link>
           </section>
+
         </div>
       </main>
 

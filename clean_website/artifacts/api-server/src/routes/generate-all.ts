@@ -93,34 +93,70 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
   try {
     const entries = parseVocabEntries(content);
 
-    console.log(`generate-all[${materialId}]: vocab-kit -- generating flashcards for ${entries.length} terms...`);
-    const flashResult = generateVocabFlashcards(entries);
+    let flashResult: Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>;
+    let flashFailed = false;
 
-    const [deck] = await db.insert(flashcardDecksTable).values({
-      materialId,
-      title: `${material.title} — כרטיסיות`,
-      language,
-    }).returning();
+    if (entries.length > 0) {
+      console.log(`generate-all[${materialId}]: vocab-kit -- generating flashcards for ${entries.length} terms (deterministic)...`);
+      flashResult = generateVocabFlashcards(entries);
+    } else {
+      // Structured vocab entries couldn't be parsed (e.g. image-based material or
+      // free-text notes) — ask AI to extract word/definition pairs instead.
+      console.log(`generate-all[${materialId}]: vocab-kit -- no parseable entries, falling back to AI extraction...`);
+      try {
+        flashResult = await withTimeout(
+          generateFlashcardsAI({
+            language,
+            materialContent: content,
+            materialTitle: material.title,
+            materialId,
+            cardCount: 50,
+            cardTypes: [],
+            subjectType: "vocabulary",
+            precomputedParts: [content],
+          }),
+          AI_TASK_TIMEOUT_MS,
+          "generateFlashcardsAI(vocab-fallback)",
+        );
+        console.log(`generate-all[${materialId}]: vocab-kit -- AI extracted ${flashResult.length} vocab cards.`);
+      } catch (err) {
+        flashFailed = true;
+        flashResult = [];
+        logger.warn({ err, materialId }, "generate-all: vocab AI flashcard extraction failed, continuing without flashcards");
+      }
+    }
 
-    if (flashResult.length > 0 && deck?.id) {
-      await db.insert(flashcardsTable).values(
-        flashResult.map(c => ({
-          deckId: deck.id,
-          front: c.front,
-          back: c.back,
-          difficulty: c.difficulty,
-          cardType: c.cardType,
-          concept: c.concept,
-        }))
-      );
+    // Only create the deck once we have actual cards — an empty deck would show
+    // a "View Flashcards" button in the UI while the deck has nothing in it.
+    let deck: (typeof flashcardDecksTable.$inferSelect) | undefined;
+    if (flashResult.length > 0) {
+      const [deckRow] = await db.insert(flashcardDecksTable).values({
+        materialId,
+        title: `${material.title} — כרטיסיות`,
+        language,
+      }).returning();
+
+      if (deckRow?.id) {
+        await db.insert(flashcardsTable).values(
+          flashResult.map(c => ({
+            deckId: deckRow.id,
+            front: c.front,
+            back: c.back,
+            difficulty: c.difficulty,
+            cardType: c.cardType,
+            concept: c.concept ?? null,
+          }))
+        );
+        deck = deckRow;
+      }
     }
 
     setGenerationProgress(materialId, {
       currentChunk: 0, totalChunks: 0, percentage: 50, stage: "running",
-      result: { deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined },
+      result: { deck: deck ? { id: deck.id, cardCount: flashResult.length } : undefined },
     });
 
-    const practiceQuestionCount = computeQuestionCount(Math.ceil(entries.length / 4));
+    const practiceQuestionCount = computeQuestionCount(Math.max(1, Math.ceil(entries.length / 4)));
     console.log(`generate-all[${materialId}]: vocab-kit -- generating ${practiceQuestionCount} fill-in-blank questions via AI...`);
     let questionResult: Awaited<ReturnType<typeof generateQuestionsAI>> = [];
     let questionFailed = false;
@@ -172,11 +208,12 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
       materialTitle: material.title,
     });
 
-    // Vocab flashcards are deterministic (no Gemini for flashcards), but the
-    // questions stage now uses AI (fill-in-blank), so bill for it.
     await deductTokensForSummary(userId, content);
     if (!questionFailed && questionResult.length > 0) {
       await deductTokensForGeneration(userId, "", JSON.stringify(questionResult));
+    }
+    if (entries.length === 0 && !flashFailed && flashResult.length > 0) {
+      await deductTokensForGeneration(userId, content, JSON.stringify(flashResult));
     }
 
     if (!qSet?.id) {
@@ -194,9 +231,9 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
       percentage: 100,
       stage: "done",
       result: {
-        deck: deck?.id ? { id: deck.id, cardCount: flashResult.length } : undefined,
+        deck: deck ? { id: deck.id, cardCount: flashResult.length } : undefined,
         questionSet: { id: qSet.id, questionCount: questionResult.length },
-        partialFailure: questionFailed,
+        partialFailure: flashFailed || questionFailed,
       },
     });
   } catch (err) {

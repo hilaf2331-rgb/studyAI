@@ -71,6 +71,7 @@ export * from './materialInputContentType';
 export * from './materialInputLanguage';
 export * from './materialLanguage';
 export * from './materialStatus';
+export * from './materialSubjectType';
 export * from './question';
 export * from './questionDifficulty';
 export * from './questionFeedback';

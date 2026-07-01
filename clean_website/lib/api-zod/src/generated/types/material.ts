@@ -8,6 +8,7 @@
 import type { MaterialContentType } from './materialContentType';
 import type { MaterialLanguage } from './materialLanguage';
 import type { MaterialStatus } from './materialStatus';
+import type { MaterialSubjectType } from './materialSubjectType';
 
 export interface Material {
   id: number;
@@ -30,6 +31,7 @@ export interface Material {
   questionCount?: number;
   examCount?: number;
   wordCount?: number;
+  subjectType?: MaterialSubjectType;
   tooShortForGeneration?: boolean;
   cramMode?: boolean;
   /** @nullable */

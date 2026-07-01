@@ -1384,6 +1384,9 @@ components:
           type: integer
         wordCount:
           type: integer
+        subjectType:
+          type: string
+          enum: [vocabulary, stem, history, literature, law, other]
         tooShortForGeneration:
           type: boolean
         cramMode:

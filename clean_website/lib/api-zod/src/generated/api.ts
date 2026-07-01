@@ -262,6 +262,7 @@ export const ListMaterialsResponseItem = zod.object({
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
+  "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
@@ -311,6 +312,7 @@ export const GetMaterialResponse = zod.object({
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
+  "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
@@ -347,6 +349,7 @@ export const UpdateMaterialResponse = zod.object({
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
+  "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
@@ -386,6 +389,7 @@ export const ShareMaterialResponse = zod.object({
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
+  "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
@@ -438,8 +442,7 @@ export const GetMaterialProgressResponse = zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
 }).optional().describe('Populated by the standalone exam generation job, which reuses this same result shape\/progress key rather than a separate tracking mechanism.'),
-  "partialFailure": zod.boolean().optional(),
-  "exhaustedWarning": zod.boolean().optional()
+  "partialFailure": zod.boolean().optional()
 }).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
@@ -1261,42 +1264,6 @@ export const SaveSharedMaterialParams = zod.object({
 export const SaveSharedMaterialResponse = zod.object({
   "ok": zod.boolean(),
   "materialId": zod.number()
-})
-
-
-/**
- * @summary Get weak-concept spots for a material
- */
-export const GetWeakConceptsParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const WeakConceptItem = zod.object({
-  "concept": zod.string(),
-  "score": zod.number(),
-  "quizAccuracy": zod.number().optional(),
-  "flashcardEaseFactor": zod.number().optional(),
-  "source": zod.enum(["quiz", "flashcard", "both"])
-})
-
-export const GetWeakConceptsResponse = zod.array(WeakConceptItem)
-
-
-/**
- * @summary Get readiness score for a material
- */
-export const GetMaterialReadinessParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const MaterialReadinessResponse = zod.object({
-  "score": zod.number(),
-  "flashcardMastery": zod.number().nullable(),
-  "quizAccuracy": zod.number().nullable(),
-  "totalCards": zod.number(),
-  "reviewedCards": zod.number(),
-  "cardsDue": zod.number(),
-  "examsCompleted": zod.number(),
 })
 
 

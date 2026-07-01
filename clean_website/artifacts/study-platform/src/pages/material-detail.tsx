@@ -1035,17 +1035,28 @@ export const MaterialDetailPage: React.FC = () => {
       )}
 
       <div className="grid gap-4">
-        <ContentSection
-          icon={<BookOpen className="w-5 h-5 text-primary" />}
-          label={isRTL ? "סיכומים" : "Summaries"}
-          items={(summaries || []).map(s => ({ id: s.id, title: s.summaryType, subtitle: s.language, createdAt: s.createdAt, studied: s.studied }))}
-          viewHrefBase="/summaries"
-          onAddNew={() => setSummaryOpen(true)}
-          isRTL={isRTL}
-          emptyHint={isRTL ? "עדיין לא נוצר סיכום לחומר זה" : "No summary generated for this material yet"}
-          costEstimate={ESTIMATED_TOKEN_COST.summary}
-          onToggleStudied={(itemId, studied) => toggleSummaryStudied.mutate({ id: itemId, data: { studied } })}
-        />
+        {material.subjectType === "vocabulary" ? (
+          <div className={`flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3.5 text-sm ${isRTL ? "flex-row-reverse text-right" : ""}`}>
+            <span className="text-xl shrink-0">💡</span>
+            <p className="text-muted-foreground leading-relaxed">
+              {isRTL
+                ? "לאוצר מילים הכי טוב ללמוד דרך כרטיסיות, חידונים ומבחנים — כך המילים באמת נשארות בזיכרון!"
+                : "For vocabulary, the best way to learn is through flashcards, quizzes, and exams — that's how words truly stick!"}
+            </p>
+          </div>
+        ) : (
+          <ContentSection
+            icon={<BookOpen className="w-5 h-5 text-primary" />}
+            label={isRTL ? "סיכומים" : "Summaries"}
+            items={(summaries || []).map(s => ({ id: s.id, title: s.summaryType, subtitle: s.language, createdAt: s.createdAt, studied: s.studied }))}
+            viewHrefBase="/summaries"
+            onAddNew={() => setSummaryOpen(true)}
+            isRTL={isRTL}
+            emptyHint={isRTL ? "עדיין לא נוצר סיכום לחומר זה" : "No summary generated for this material yet"}
+            costEstimate={ESTIMATED_TOKEN_COST.summary}
+            onToggleStudied={(itemId, studied) => toggleSummaryStudied.mutate({ id: itemId, data: { studied } })}
+          />
+        )}
         <ContentSection
           icon={<BrainCircuit className="w-5 h-5 text-primary" />}
           label={isRTL ? "כרטיסיות לימוד" : "Flashcards"}
@@ -1084,7 +1095,7 @@ export const MaterialDetailPage: React.FC = () => {
       <WeakSpotsWidget materialId={id} materialLang={material?.language} isRTL={isRTL} />
 
       <GenerateDialog
-        open={summaryOpen}
+        open={summaryOpen && material.subjectType !== "vocabulary"}
         onClose={() => setSummaryOpen(false)}
         title={isRTL ? "צור סיכום" : "Generate Summary"}
         onGenerate={handleGenerateSummary}

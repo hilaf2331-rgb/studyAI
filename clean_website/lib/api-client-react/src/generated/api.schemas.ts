@@ -147,6 +147,18 @@ export const MaterialLanguage = {
   mixed: 'mixed',
 } as const;
 
+export type MaterialSubjectType = typeof MaterialSubjectType[keyof typeof MaterialSubjectType];
+
+
+export const MaterialSubjectType = {
+  vocabulary: 'vocabulary',
+  stem: 'stem',
+  history: 'history',
+  literature: 'literature',
+  law: 'law',
+  other: 'other',
+} as const;
+
 export interface Material {
   id: number;
   /** @nullable */
@@ -168,6 +180,7 @@ export interface Material {
   questionCount?: number;
   examCount?: number;
   wordCount?: number;
+  subjectType?: MaterialSubjectType;
   tooShortForGeneration?: boolean;
   cramMode?: boolean;
   /** @nullable */
@@ -261,7 +274,6 @@ export interface GenerateAllResult {
   /** Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism. */
   exam?: GenerateAllResultExam;
   partialFailure?: boolean;
-  exhaustedWarning?: boolean;
 }
 
 export interface GenerationProgress {
@@ -909,32 +921,4 @@ export interface ContactMessageResult {
 export type ListMaterialsParams = {
 courseId?: number;
 };
-
-export type WeakConceptSource = typeof WeakConceptSource[keyof typeof WeakConceptSource];
-
-export const WeakConceptSource = {
-  quiz: 'quiz',
-  flashcard: 'flashcard',
-  both: 'both',
-} as const;
-
-export interface WeakConcept {
-  concept: string;
-  score: number;
-  quizAccuracy?: number;
-  flashcardEaseFactor?: number;
-  source: WeakConceptSource;
-}
-
-export interface MaterialReadiness {
-  score: number;
-  /** @nullable */
-  flashcardMastery: number | null;
-  /** @nullable */
-  quizAccuracy: number | null;
-  totalCards: number;
-  reviewedCards: number;
-  cardsDue: number;
-  examsCompleted: number;
-}
 

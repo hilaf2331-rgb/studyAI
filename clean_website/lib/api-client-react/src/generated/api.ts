@@ -64,9 +64,7 @@ import type {
   TargetedQuestion,
   TargetedQuestionRequest,
   TokenBalance,
-  UpdateMaterialInput,
-  WeakConcept,
-  MaterialReadiness
+  UpdateMaterialInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -4451,72 +4449,4 @@ export const useSaveSharedMaterial = <TError = ErrorType<void>,
       > => {
       return useMutation(getSaveSharedMaterialMutationOptions(options));
     }
-
-
-/**
- * @summary Get weak-concept spots for a material
- */
-export const getGetWeakConceptsUrl = (id: number) => `/api/materials/${id}/weak-concepts`;
-
-export const getWeakConcepts = async (id: number, options?: RequestInit): Promise<WeakConcept[]> => {
-  return customFetch<WeakConcept[]>(getGetWeakConceptsUrl(id), { ...options, method: 'GET' });
-};
-
-export const getGetWeakConceptsQueryKey = (id: number) => [`/api/materials/${id}/weak-concepts`] as const;
-
-export const getGetWeakConceptsQueryOptions = <TData = Awaited<ReturnType<typeof getWeakConcepts>>, TError = ErrorType<unknown>>(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-  const queryKey = queryOptions?.queryKey ?? getGetWeakConceptsQueryKey(id);
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getWeakConcepts>>> = ({ signal }) => getWeakConcepts(id, { signal, ...requestOptions });
-  return { queryKey, queryFn, enabled: !!(id), ...queryOptions } as UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData> & { queryKey: QueryKey };
-};
-
-export type GetWeakConceptsQueryResult = NonNullable<Awaited<ReturnType<typeof getWeakConcepts>>>;
-export type GetWeakConceptsQueryError = ErrorType<unknown>;
-
-export function useGetWeakConcepts<TData = Awaited<ReturnType<typeof getWeakConcepts>>, TError = ErrorType<unknown>>(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetWeakConceptsQueryOptions(id, options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-/**
- * @summary Get readiness score for a material
- */
-export const getGetMaterialReadinessUrl = (id: number) => `/api/materials/${id}/readiness`;
-
-export const getMaterialReadiness = async (id: number, options?: RequestInit): Promise<MaterialReadiness> => {
-  return customFetch<MaterialReadiness>(getGetMaterialReadinessUrl(id), { ...options, method: 'GET' });
-};
-
-export const getGetMaterialReadinessQueryKey = (id: number) => [`/api/materials/${id}/readiness`] as const;
-
-export const getGetMaterialReadinessQueryOptions = <TData = Awaited<ReturnType<typeof getMaterialReadiness>>, TError = ErrorType<unknown>>(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-  const queryKey = queryOptions?.queryKey ?? getGetMaterialReadinessQueryKey(id);
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMaterialReadiness>>> = ({ signal }) => getMaterialReadiness(id, { signal, ...requestOptions });
-  return { queryKey, queryFn, enabled: !!(id), ...queryOptions } as UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData> & { queryKey: QueryKey };
-};
-
-export type GetMaterialReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof getMaterialReadiness>>>;
-export type GetMaterialReadinessQueryError = ErrorType<unknown>;
-
-export function useGetMaterialReadiness<TData = Awaited<ReturnType<typeof getMaterialReadiness>>, TError = ErrorType<unknown>>(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetMaterialReadinessQueryOptions(id, options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-  return { ...query, queryKey: queryOptions.queryKey };
-}
 

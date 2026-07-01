@@ -6,7 +6,7 @@ import {
   GetExamParams, DeleteExamParams, SubmitExamParams, SubmitExamBody, GetExamResultParams,
   UpdateExamStudiedParams, UpdateExamStudiedBody
 } from "@workspace/api-zod";
-import { generateExamAI, gradeAnswer, generateVocabFillInBlanksAI } from "../lib/ai";
+import { generateExamAI, gradeAnswer, generateVocabFillInBlanksAI, AIServiceOverloadedError, RateLimitExhaustedError, SystemBlockedError } from "../lib/ai";
 import { rejectIfTooShort, clampToContentLength } from "../lib/validation";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { requireTokenBalance, deductTokensForGeneration, InsufficientTokensError } from "../lib/tokens";
@@ -196,8 +196,12 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
     });
   } catch (err) {
     logger.error({ err, materialId }, "exams: unhandled background failure");
-    const message = err instanceof InsufficientTokensError
-      ? err.message
+    const isKnownError = err instanceof InsufficientTokensError
+      || err instanceof AIServiceOverloadedError
+      || err instanceof RateLimitExhaustedError
+      || err instanceof SystemBlockedError;
+    const message = isKnownError
+      ? (err as Error).message
       : "Something went wrong while generating your exam. Please try again.";
     setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
   }
@@ -240,6 +244,10 @@ router.post("/materials/:id/exams", generationRateLimiter, async (req, res) => {
     if (!res.headersSent) {
       if (err instanceof InsufficientTokensError) {
         res.status(402).json({ error: err.message });
+        return;
+      }
+      if (err instanceof AIServiceOverloadedError || err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError) {
+        res.status(503).json({ error: (err as Error).message });
         return;
       }
       res.status(500).json({ error: "Something went wrong while generating your exam. Please try again." });

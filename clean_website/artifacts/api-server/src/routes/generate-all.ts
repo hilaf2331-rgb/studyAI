@@ -240,7 +240,7 @@ async function runGenerateAllVocab(material: MaterialRow, userId: number, conten
     logger.error({ err, materialId }, "generate-all: unhandled background failure (vocab-kit)");
     const message = err instanceof InsufficientTokensError
       ? err.message
-      : "Something went wrong while generating your study kit. Please try again.";
+      : userFacingAIErrorMessage(err, "Something went wrong while generating your study kit. Please try again.");
     setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
   }
 }
@@ -565,7 +565,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
     logger.error({ err, materialId }, "generate-all: unhandled background failure");
     const message = err instanceof InsufficientTokensError
       ? err.message
-      : "Something went wrong while generating your study kit. Please try again.";
+      : userFacingAIErrorMessage(err, "Something went wrong while generating your study kit. Please try again.");
     setGenerationProgress(materialId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: message });
   }
 }
@@ -629,6 +629,10 @@ router.post("/materials/:id/generate-all", generationRateLimiter, async (req, re
     if (!res.headersSent) {
       if (err instanceof InsufficientTokensError) {
         res.status(402).json({ error: err.message });
+        return;
+      }
+      if (err instanceof AIServiceOverloadedError || err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError) {
+        res.status(503).json({ error: (err as Error).message });
         return;
       }
       res.status(500).json({ error: "Something went wrong while generating your study kit. Please try again." });

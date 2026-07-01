@@ -232,6 +232,37 @@ export interface SaveSharedMaterialResult {
   materialId: number;
 }
 
+export type WeakConceptSource = typeof WeakConceptSource[keyof typeof WeakConceptSource];
+
+
+export const WeakConceptSource = {
+  quiz: 'quiz',
+  flashcard: 'flashcard',
+  both: 'both',
+} as const;
+
+export interface WeakConcept {
+  concept: string;
+  /** 0-100, higher means weaker */
+  score: number;
+  quizAccuracy?: number;
+  flashcardEaseFactor?: number;
+  source: WeakConceptSource;
+}
+
+export interface MaterialReadiness {
+  /** Overall readiness 0-100 */
+  score: number;
+  /** @nullable */
+  flashcardMastery?: number | null;
+  /** @nullable */
+  quizAccuracy?: number | null;
+  totalCards: number;
+  reviewedCards: number;
+  cardsDue: number;
+  examsCompleted: number;
+}
+
 export type GenerationProgressStage = typeof GenerationProgressStage[keyof typeof GenerationProgressStage];
 
 

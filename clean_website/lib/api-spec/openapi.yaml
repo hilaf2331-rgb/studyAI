@@ -458,6 +458,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkDeleteMaterialsResult"
 
+  /materials/{id}/weak-concepts:
+    get:
+      operationId: getWeakConcepts
+      tags: [materials]
+      summary: Get the top weak concepts for a material based on quiz and flashcard performance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of weak concepts (up to 5, sorted weakest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeakConcept"
+
+  /materials/{id}/readiness:
+    get:
+      operationId: getMaterialReadiness
+      tags: [materials]
+      summary: Get a per-material readiness score synthesising flashcard mastery and exam accuracy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Readiness score and breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialReadiness"
+
   /materials/{id}/progress:
     get:
       operationId: getMaterialProgress
@@ -1443,6 +1483,43 @@ components:
         ok:
           type: boolean
         materialId:
+          type: integer
+
+    WeakConcept:
+      type: object
+      required: [concept, score, source]
+      properties:
+        concept:
+          type: string
+        score:
+          type: integer
+          description: 0-100, higher means weaker
+        quizAccuracy:
+          type: integer
+        flashcardEaseFactor:
+          type: integer
+        source:
+          type: string
+          enum: [quiz, flashcard, both]
+
+    MaterialReadiness:
+      type: object
+      required: [score, totalCards, reviewedCards, cardsDue, examsCompleted]
+      properties:
+        score:
+          type: integer
+          description: Overall readiness 0-100
+        flashcardMastery:
+          type: ["integer", "null"]
+        quizAccuracy:
+          type: ["integer", "null"]
+        totalCards:
+          type: integer
+        reviewedCards:
+          type: integer
+        cardsDue:
+          type: integer
+        examsCompleted:
           type: integer
 
     GenerationProgress:

@@ -51,6 +51,7 @@ import type {
   ListMaterialsParams,
   Material,
   MaterialInput,
+  MaterialReadiness,
   QuestionRequest,
   QuestionSet,
   SaveBitNameInput,
@@ -64,7 +65,8 @@ import type {
   TargetedQuestion,
   TargetedQuestionRequest,
   TokenBalance,
-  UpdateMaterialInput
+  UpdateMaterialInput,
+  WeakConcept
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1630,6 +1632,160 @@ export const useBulkDeleteMaterials = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getBulkDeleteMaterialsMutationOptions(options));
     }
+
+export const getGetWeakConceptsUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}/weak-concepts`
+}
+
+/**
+ * @summary Get the top weak concepts for a material based on quiz and flashcard performance
+ */
+export const getWeakConcepts = async (id: number, options?: RequestInit): Promise<WeakConcept[]> => {
+
+  return customFetch<WeakConcept[]>(getGetWeakConceptsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWeakConceptsQueryKey = (id: number,) => {
+    return [
+    `/api/materials/${id}/weak-concepts`
+    ] as const;
+    }
+
+
+export const getGetWeakConceptsQueryOptions = <TData = Awaited<ReturnType<typeof getWeakConcepts>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWeakConceptsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWeakConcepts>>> = ({ signal }) => getWeakConcepts(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWeakConceptsQueryResult = NonNullable<Awaited<ReturnType<typeof getWeakConcepts>>>
+export type GetWeakConceptsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the top weak concepts for a material based on quiz and flashcard performance
+ */
+
+export function useGetWeakConcepts<TData = Awaited<ReturnType<typeof getWeakConcepts>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWeakConcepts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWeakConceptsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMaterialReadinessUrl = (id: number,) => {
+
+
+
+
+  return `/api/materials/${id}/readiness`
+}
+
+/**
+ * @summary Get a per-material readiness score synthesising flashcard mastery and exam accuracy
+ */
+export const getMaterialReadiness = async (id: number, options?: RequestInit): Promise<MaterialReadiness> => {
+
+  return customFetch<MaterialReadiness>(getGetMaterialReadinessUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMaterialReadinessQueryKey = (id: number,) => {
+    return [
+    `/api/materials/${id}/readiness`
+    ] as const;
+    }
+
+
+export const getGetMaterialReadinessQueryOptions = <TData = Awaited<ReturnType<typeof getMaterialReadiness>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMaterialReadinessQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMaterialReadiness>>> = ({ signal }) => getMaterialReadiness(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMaterialReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof getMaterialReadiness>>>
+export type GetMaterialReadinessQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a per-material readiness score synthesising flashcard mastery and exam accuracy
+ */
+
+export function useGetMaterialReadiness<TData = Awaited<ReturnType<typeof getMaterialReadiness>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMaterialReadiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMaterialReadinessQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetMaterialProgressUrl = (id: number,) => {
 

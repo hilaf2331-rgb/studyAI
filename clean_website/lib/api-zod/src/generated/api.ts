@@ -414,6 +414,41 @@ export const BulkDeleteMaterialsResponse = zod.object({
 
 
 /**
+ * @summary Get the top weak concepts for a material based on quiz and flashcard performance
+ */
+export const GetWeakConceptsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetWeakConceptsResponseItem = zod.object({
+  "concept": zod.string(),
+  "score": zod.number().describe('0-100, higher means weaker'),
+  "quizAccuracy": zod.number().optional(),
+  "flashcardEaseFactor": zod.number().optional(),
+  "source": zod.enum(['quiz', 'flashcard', 'both'])
+})
+export const GetWeakConceptsResponse = zod.array(GetWeakConceptsResponseItem)
+
+
+/**
+ * @summary Get a per-material readiness score synthesising flashcard mastery and exam accuracy
+ */
+export const GetMaterialReadinessParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetMaterialReadinessResponse = zod.object({
+  "score": zod.number().describe('Overall readiness 0-100'),
+  "flashcardMastery": zod.number().nullish(),
+  "quizAccuracy": zod.number().nullish(),
+  "totalCards": zod.number(),
+  "reviewedCards": zod.number(),
+  "cardsDue": zod.number(),
+  "examsCompleted": zod.number()
+})
+
+
+/**
  * @summary Poll chunked-generation progress for a material, or the status of a background generate-all job for it
  */
 export const GetMaterialProgressParams = zod.object({

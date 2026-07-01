@@ -394,6 +394,19 @@ export class AIServiceError extends Error {
   }
 }
 
+// Thrown when Gemini returns 503 ("high demand" / capacity) on
+// MAX_OVERLOAD_ATTEMPTS consecutive attempts -- distinct from AIServiceError
+// so the frontend can show "השירות עמוס" rather than the generic failure
+// message. Kept separate from RateLimitExhaustedError (429) because the
+// remediation is different: overload is transient capacity (try in a minute),
+// rate-limit is a per-key quota window (try in ~90 s).
+export class AIServiceOverloadedError extends Error {
+  constructor() {
+    super("השירות עמוס כרגע. אנא נסו שנית בעוד מספר דקות.");
+    this.name = "AIServiceOverloadedError";
+  }
+}
+
 // Must be called as the first step before any Gemini call (and explicitly
 // before any aggregation/chunking work begins) so an already-confirmed hard
 // limit fails instantly without burning more budget or wasted chunking work.
@@ -500,6 +513,11 @@ interface GeminiCallParams {
  * choked key -- doesn't take down the whole pipeline (and, in turn, the HTTP
  * response) with it.
  */
+// After this many consecutive 503 responses the service is genuinely
+// overloaded -- stop burning the retry budget and surface a "service busy"
+// error instead of continuing to wait through exponential backoff.
+const MAX_OVERLOAD_ATTEMPTS = 3;
+
 async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   checkCircuitBreaker();
 
@@ -507,6 +525,7 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   if (keyIndex === null) throw new SystemBlockedError(1);
 
   let lastError: any;
+  let overloadedAttempts = 0;
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
       const response = await withAttemptTimeout(
@@ -574,6 +593,18 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
         continue;
       }
 
+      // Track 503 "high demand" responses separately. After MAX_OVERLOAD_ATTEMPTS
+      // the service is genuinely congested and further waiting won't help in the
+      // short term -- stop retrying so the caller can surface "service busy" to
+      // the user immediately instead of making them wait through the full backoff.
+      if ((error?.status ?? error?.response?.status) === 503) {
+        overloadedAttempts++;
+        if (overloadedAttempts >= MAX_OVERLOAD_ATTEMPTS) {
+          console.error(`callGeminiWithRetry: service overloaded for ${overloadedAttempts} consecutive attempts, giving up.`);
+          break;
+        }
+      }
+
       if (attempt === MAX_RETRY_ATTEMPTS || !isRetryableError(error)) {
         break;
       }
@@ -597,6 +628,12 @@ async function callGeminiWithRetry(params: GeminiCallParams): Promise<string> {
   if (isRateLimitError(lastError)) {
     console.error("callGeminiWithRetry: rate limit survived every key in the pool, failing fast.");
     throw new RateLimitExhaustedError(RATE_LIMIT_COOLDOWN_SECONDS);
+  }
+  if (overloadedAttempts >= MAX_OVERLOAD_ATTEMPTS) {
+    console.error(
+      `callGeminiWithRetry: request abandoned after ${overloadedAttempts} 503 overload responses. model=${TEXT_MODEL}`,
+    );
+    throw new AIServiceOverloadedError();
   }
   // Every attempt is exhausted (and it wasn't a confirmed rate limit, which
   // throws above as RateLimitExhaustedError) -- this is a network outage,

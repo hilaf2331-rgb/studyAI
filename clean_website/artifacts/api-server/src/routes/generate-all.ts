@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "../lib/ai";
+import { generateSummary, generateFlashcardsAI, generateQuestionsAI, RateLimitExhaustedError, SystemBlockedError, AIServiceError, AIServiceOverloadedError } from "../lib/ai";
 import { splitTextIntoChunks } from "../lib/chunker";
 import { logger } from "../lib/logger";
 import { MIN_CONTENT_LENGTH, insufficientContentMessage, getDynamicGenerationLimits } from "../lib/validation";
@@ -73,7 +73,7 @@ function computeQuestionCount(chunkCount: number): number {
 }
 
 function userFacingAIErrorMessage(err: unknown, fallbackHe: string): string {
-  if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError || err instanceof AIServiceError) {
+  if (err instanceof RateLimitExhaustedError || err instanceof SystemBlockedError || err instanceof AIServiceError || err instanceof AIServiceOverloadedError) {
     return err.message;
   }
   return fallbackHe;

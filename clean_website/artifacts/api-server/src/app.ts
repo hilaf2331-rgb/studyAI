@@ -8,7 +8,7 @@ import { billingPublicRouter } from "./routes/billing";
 import { sharedPublicRouter } from "./routes/shared";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
-import { RateLimitExhaustedError, SystemBlockedError, AIServiceError } from "./lib/ai";
+import { RateLimitExhaustedError, SystemBlockedError, AIServiceError, AIServiceOverloadedError } from "./lib/ai";
 import { InsufficientTokensError } from "./lib/tokens";
 import { PremiumRequiredError } from "./lib/subscription";
 import { globalRateLimiter } from "./lib/rate-limit";
@@ -85,7 +85,26 @@ app.use("/api", requireAuth, router);
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error({ err }, "Unhandled error");
   if (res.headersSent) return;
-  // טיפול בשגיאות קלאסי...
+  if (err instanceof AIServiceOverloadedError) {
+    res.status(503).json({ error: err.message });
+    return;
+  }
+  if (err instanceof RateLimitExhaustedError) {
+    res.status(429).json({ error: err.message });
+    return;
+  }
+  if (err instanceof SystemBlockedError || err instanceof AIServiceError) {
+    res.status(503).json({ error: err.message });
+    return;
+  }
+  if (err instanceof InsufficientTokensError) {
+    res.status(402).json({ error: (err as Error).message });
+    return;
+  }
+  if (err instanceof PremiumRequiredError) {
+    res.status(403).json({ error: (err as Error).message });
+    return;
+  }
   res.status(500).json({ error: "Internal server error." });
 });
 

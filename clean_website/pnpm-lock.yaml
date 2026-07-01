@@ -226,9 +226,6 @@ importers:
       sanitize-html:
         specifier: ^2.17.5
         version: 2.17.5
-      sharp:
-        specifier: ^0.33.5
-        version: 0.33.5
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2(@napi-rs/canvas@0.1.100)
@@ -278,6 +275,10 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.6(@types/debug@4.1.13)(@types/node@25.6.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
+    optionalDependencies:
+      sharp:
+        specifier: ^0.33.5
+        version: 0.33.5
 
   artifacts/mockup-sandbox:
     devDependencies:
@@ -6186,18 +6187,22 @@ snapshots:
   color-convert@2.0.1:
     dependencies:
       color-name: 1.1.4
+    optional: true
 
-  color-name@1.1.4: {}
+  color-name@1.1.4:
+    optional: true
 
   color-string@1.9.1:
     dependencies:
       color-name: 1.1.4
       simple-swizzle: 0.2.4
+    optional: true
 
   color@4.2.3:
     dependencies:
       color-convert: 2.0.1
       color-string: 1.9.1
+    optional: true
 
   colorette@2.0.20: {}
 
@@ -6888,7 +6893,8 @@ snapshots:
       is-alphabetical: 2.0.1
       is-decimal: 2.0.1
 
-  is-arrayish@0.3.4: {}
+  is-arrayish@0.3.4:
+    optional: true
 
   is-decimal@2.0.1: {}
 
@@ -8043,6 +8049,7 @@ snapshots:
       '@img/sharp-wasm32': 0.33.5
       '@img/sharp-win32-ia32': 0.33.5
       '@img/sharp-win32-x64': 0.33.5
+    optional: true
 
   shebang-command@2.0.0:
     dependencies:
@@ -8085,6 +8092,7 @@ snapshots:
   simple-swizzle@0.2.4:
     dependencies:
       is-arrayish: 0.3.4
+    optional: true
 
   slash@5.1.0: {}
 

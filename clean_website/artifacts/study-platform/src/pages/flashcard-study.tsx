@@ -91,8 +91,10 @@ export const FlashcardStudyPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Flip Card */}
-      <div className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
+      {/* Flip Card — key={currentIndex} ensures the DOM element is recreated
+          when advancing to the next card, so no flip animation runs with the
+          next card's content momentarily visible during the transition. */}
+      <div key={currentIndex} className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
         <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
           {/* Front */}
           <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">

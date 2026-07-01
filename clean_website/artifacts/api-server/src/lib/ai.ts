@@ -1433,6 +1433,33 @@ async function generateFlashcardsAIImpl(
     ? { parts: precomputedParts, chunked: precomputedParts.length > 1 }
     : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
 
+  if (subjectType === "vocabulary") {
+    const aggregatedContent = parts[0];
+    const pairs = await callGeminiJsonWithValidation(
+      {
+        contents: [{ role: "user", parts: [{ text: `Extract the vocabulary list from ${contentSlice(aggregatedContent)}. Return the output as a valid JSON array of objects. Each object must have exactly two keys: 'word' and 'definition'. Do not include any other text, explanations, or markdown formatting outside of the JSON. If a word doesn't have a clear definition in the image, skip it` }] }],
+        temperature: 0.1,
+        jsonMode: true,
+        maxOutputTokens: FLASHCARDS_MAX_OUTPUT_TOKENS,
+      },
+      (text) => {
+        const parsed = safeJsonParse(text);
+        const result = Array.isArray(parsed) ? parsed.filter((p: any) => p.word && p.definition) : [];
+        if (result.length === 0) throw new Error("empty vocab array");
+        return result as Array<{ word: string; definition: string }>;
+      },
+      "generateFlashcardsAI(vocab)",
+    );
+    console.log(`generateFlashcardsAI(vocab): extracted ${pairs.length} word-definition pairs for material ${materialId ?? "?"}.`);
+    return pairs.slice(0, cardCount).map((p) => ({
+      front: p.word,
+      back: p.definition,
+      difficulty: "medium" as const,
+      cardType: "vocab",
+      concept: p.word,
+    }));
+  }
+
   // Large/chunked documents: one small, bounded-output Gemini call per
   // chunk instead of a single call over the whole aggregated text. This is
   // what actually fixes the truncation/empty-response failures on large

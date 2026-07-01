@@ -72,6 +72,7 @@ router.post("/materials/:id/flashcard-decks", generationRateLimiter, async (req,
         cardCount,
         cardTypes,
         materialId: id,
+        subjectType: material.subjectType,
       });
   if (!isVocab) {
     await deductTokensForGeneration(userId, materialContent, JSON.stringify(cards));

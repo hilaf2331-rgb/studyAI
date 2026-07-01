@@ -52,6 +52,7 @@ import type {
   Material,
   MaterialInput,
   MaterialReadiness,
+  Question,
   QuestionRequest,
   QuestionSet,
   SaveBitNameInput,
@@ -65,7 +66,9 @@ import type {
   TargetedQuestion,
   TargetedQuestionRequest,
   TokenBalance,
+  UpdateFlashcardInput,
   UpdateMaterialInput,
+  UpdateQuestionInput,
   WeakConcept
 } from './api.schemas';
 
@@ -2677,6 +2680,78 @@ export const useDeleteFlashcardDeck = <TError = ErrorType<unknown>,
       return useMutation(getDeleteFlashcardDeckMutationOptions(options));
     }
 
+export const getUpdateFlashcardUrl = (id: number,) => {
+
+
+
+
+  return `/api/flashcards/${id}`
+}
+
+/**
+ * @summary Edit the front, back, or cardType of a flashcard
+ */
+export const updateFlashcard = async (id: number,
+    updateFlashcardInput: UpdateFlashcardInput, options?: RequestInit): Promise<Flashcard> => {
+
+  return customFetch<Flashcard>(getUpdateFlashcardUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateFlashcardInput,)
+  }
+);}
+
+
+
+
+export const getUpdateFlashcardMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFlashcard>>, TError,{id: number;data: BodyType<UpdateFlashcardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateFlashcard>>, TError,{id: number;data: BodyType<UpdateFlashcardInput>}, TContext> => {
+
+const mutationKey = ['updateFlashcard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFlashcard>>, {id: number;data: BodyType<UpdateFlashcardInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateFlashcard(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateFlashcardMutationResult = NonNullable<Awaited<ReturnType<typeof updateFlashcard>>>
+    export type UpdateFlashcardMutationBody = BodyType<UpdateFlashcardInput>
+    export type UpdateFlashcardMutationError = ErrorType<void>
+
+    /**
+ * @summary Edit the front, back, or cardType of a flashcard
+ */
+export const useUpdateFlashcard = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFlashcard>>, TError,{id: number;data: BodyType<UpdateFlashcardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateFlashcard>>,
+        TError,
+        {id: number;data: BodyType<UpdateFlashcardInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateFlashcardMutationOptions(options));
+    }
+
 export const getReviewFlashcardUrl = (id: number,) => {
 
 
@@ -3187,6 +3262,78 @@ export const useDeleteQuestionSet = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteQuestionSetMutationOptions(options));
+    }
+
+export const getUpdateQuestionUrl = (id: number,) => {
+
+
+
+
+  return `/api/questions/${id}`
+}
+
+/**
+ * @summary Edit the text, answer, options, or explanation of a question
+ */
+export const updateQuestion = async (id: number,
+    updateQuestionInput: UpdateQuestionInput, options?: RequestInit): Promise<Question> => {
+
+  return customFetch<Question>(getUpdateQuestionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateQuestionInput,)
+  }
+);}
+
+
+
+
+export const getUpdateQuestionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateQuestion>>, TError,{id: number;data: BodyType<UpdateQuestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateQuestion>>, TError,{id: number;data: BodyType<UpdateQuestionInput>}, TContext> => {
+
+const mutationKey = ['updateQuestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateQuestion>>, {id: number;data: BodyType<UpdateQuestionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateQuestion(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateQuestionMutationResult = NonNullable<Awaited<ReturnType<typeof updateQuestion>>>
+    export type UpdateQuestionMutationBody = BodyType<UpdateQuestionInput>
+    export type UpdateQuestionMutationError = ErrorType<void>
+
+    /**
+ * @summary Edit the text, answer, options, or explanation of a question
+ */
+export const useUpdateQuestion = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateQuestion>>, TError,{id: number;data: BodyType<UpdateQuestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateQuestion>>,
+        TError,
+        {id: number;data: BodyType<UpdateQuestionInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateQuestionMutationOptions(options));
     }
 
 export const getListExamsUrl = (id: number,) => {

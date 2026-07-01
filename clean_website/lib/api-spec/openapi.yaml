@@ -740,6 +740,35 @@ paths:
         "204":
           description: Deleted
 
+  /flashcards/{id}:
+    patch:
+      operationId: updateFlashcard
+      tags: [flashcards]
+      summary: Edit the front, back, or cardType of a flashcard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFlashcardInput"
+      responses:
+        "200":
+          description: Updated flashcard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flashcard"
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+
   /flashcards/{id}/review:
     post:
       operationId: reviewFlashcard
@@ -891,6 +920,35 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /questions/{id}:
+    patch:
+      operationId: updateQuestion
+      tags: [questions]
+      summary: Edit the text, answer, options, or explanation of a question
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuestionInput"
+      responses:
+        "200":
+          description: Updated question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Question"
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
 
   # ── Exams ─────────────────────────────────────────────────────────────────
   /materials/{id}/exams:
@@ -1763,6 +1821,30 @@ components:
         result:
           type: string
           enum: [again, hard, good, easy]
+
+    UpdateFlashcardInput:
+      type: object
+      properties:
+        front:
+          type: string
+        back:
+          type: string
+        cardType:
+          type: string
+
+    UpdateQuestionInput:
+      type: object
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+        explanation:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
 
     # ── Questions ─────────────────────────────────────────────────────────────
     QuestionSet:

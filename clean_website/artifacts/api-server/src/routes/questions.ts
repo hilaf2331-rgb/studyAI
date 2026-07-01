@@ -378,4 +378,44 @@ router.get("/materials/:id/readiness", async (req, res) => {
   });
 });
 
+router.patch("/questions/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+
+  const { question, answer, explanation, options } = req.body as {
+    question?: string; answer?: string; explanation?: string; options?: string[];
+  };
+  if (!question?.trim() && !answer?.trim() && explanation === undefined && options === undefined) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+
+  const [q] = await db.select().from(questionsTable).where(eq(questionsTable.id, id));
+  if (!q) return res.status(404).json({ error: "Not found" });
+
+  // Resolve owner: question belongs to either a question-set or an exam
+  let materialId: number | null = null;
+  if (q.setId) {
+    const [set] = await db.select({ materialId: questionSetsTable.materialId })
+      .from(questionSetsTable).where(eq(questionSetsTable.id, q.setId));
+    materialId = set?.materialId ?? null;
+  } else if (q.examId) {
+    const [exam] = await db.select({ materialId: examsTable.materialId })
+      .from(examsTable).where(eq(examsTable.id, q.examId));
+    materialId = exam?.materialId ?? null;
+  }
+  if (!materialId || !await assertMaterialOwner(materialId, userId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const updates: Partial<typeof questionsTable.$inferInsert> = {};
+  if (question?.trim()) updates.question = question.trim();
+  if (answer?.trim()) updates.answer = answer.trim();
+  if (explanation !== undefined) updates.explanation = explanation?.trim() || null;
+  if (options !== undefined) updates.options = options.map(o => String(o));
+
+  const [updated] = await db.update(questionsTable).set(updates).where(eq(questionsTable.id, id)).returning();
+  res.json(updated);
+});
+
 export default router;

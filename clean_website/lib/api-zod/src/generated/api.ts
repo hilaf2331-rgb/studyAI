@@ -729,6 +729,33 @@ export const DeleteFlashcardDeckParams = zod.object({
 
 
 /**
+ * @summary Edit the front, back, or cardType of a flashcard
+ */
+export const UpdateFlashcardParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateFlashcardBody = zod.object({
+  "front": zod.string().optional(),
+  "back": zod.string().optional(),
+  "cardType": zod.string().optional()
+})
+
+export const UpdateFlashcardResponse = zod.object({
+  "id": zod.number(),
+  "deckId": zod.number(),
+  "front": zod.string(),
+  "back": zod.string(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']),
+  "cardType": zod.enum(['qa', 'definition', 'formula', 'concept']).optional(),
+  "concept": zod.string().nullish(),
+  "reviewCount": zod.number().optional(),
+  "nextReviewAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Record flashcard review result (spaced repetition)
  */
 export const ReviewFlashcardParams = zod.object({
@@ -902,6 +929,36 @@ export const UpdateQuestionSetStudiedResponse = zod.object({
  */
 export const DeleteQuestionSetParams = zod.object({
   "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Edit the text, answer, options, or explanation of a question
+ */
+export const UpdateQuestionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateQuestionBody = zod.object({
+  "question": zod.string().optional(),
+  "answer": zod.string().optional(),
+  "explanation": zod.string().optional(),
+  "options": zod.array(zod.string()).optional()
+})
+
+export const UpdateQuestionResponse = zod.object({
+  "id": zod.number(),
+  "setId": zod.number(),
+  "questionType": zod.enum(['open', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
+  "options": zod.array(zod.string()).optional(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
+  "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
+  "createdAt": zod.coerce.date()
 })
 
 

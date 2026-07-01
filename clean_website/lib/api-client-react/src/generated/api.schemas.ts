@@ -530,6 +530,19 @@ export interface FlashcardReview {
   result: FlashcardReviewResult;
 }
 
+export interface UpdateFlashcardInput {
+  front?: string;
+  back?: string;
+  cardType?: string;
+}
+
+export interface UpdateQuestionInput {
+  question?: string;
+  answer?: string;
+  explanation?: string;
+  options?: string[];
+}
+
 export type QuestionSetLanguage = typeof QuestionSetLanguage[keyof typeof QuestionSetLanguage];
 
 

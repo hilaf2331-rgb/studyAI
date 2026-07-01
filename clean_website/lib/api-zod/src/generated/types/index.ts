@@ -104,6 +104,8 @@ export * from './targetedQuestionQuestionType';
 export * from './targetedQuestionRequest';
 export * from './targetedQuestionRequestLanguage';
 export * from './tokenBalance';
+export * from './updateFlashcardInput';
 export * from './updateMaterialInput';
+export * from './updateQuestionInput';
 export * from './weakConcept';
 export * from './weakConceptSource';

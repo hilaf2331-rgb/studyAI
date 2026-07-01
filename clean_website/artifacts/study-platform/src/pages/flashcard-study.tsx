@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
-import { useGetFlashcardDeck, useReviewFlashcard, getGetFlashcardDeckQueryKey } from "@workspace/api-client-react";
+import { useGetFlashcardDeck, useReviewFlashcard, useUpdateFlashcard, getGetFlashcardDeckQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { ArrowLeft, RotateCcw, Pencil, Check, X } from "lucide-react";
 
 export const FlashcardStudyPage: React.FC = () => {
   const { id: idStr } = useParams<{ id: string }>();
@@ -17,9 +17,13 @@ export const FlashcardStudyPage: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [done, setDone] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editFront, setEditFront] = useState("");
+  const [editBack, setEditBack] = useState("");
 
   const { data: deck, isLoading } = useGetFlashcardDeck(id, { query: { enabled: !!id, queryKey: getGetFlashcardDeckQueryKey(id) } });
   const reviewCard = useReviewFlashcard();
+  const updateCard = useUpdateFlashcard();
 
   // Freeze the card order for this study session. The deck query gets
   // invalidated/refetched after every review (since reviewing changes that
@@ -66,6 +70,26 @@ export const FlashcardStudyPage: React.FC = () => {
     });
   };
 
+  const startEdit = () => {
+    setEditFront(current.front);
+    setEditBack(current.back);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => setEditing(false);
+
+  const saveEdit = () => {
+    if (!editFront.trim() || !editBack.trim()) return;
+    updateCard.mutate({ id: current.id, data: { front: editFront.trim(), back: editBack.trim() } }, {
+      onSuccess: (updated) => {
+        // Patch the local snapshot so the UI reflects the change immediately
+        // without re-fetching (which would reorder the deck).
+        setCards(prev => prev ? prev.map(c => c.id === current.id ? { ...c, ...updated } : c) : prev);
+        setEditing(false);
+      }
+    });
+  };
+
   if (done) return (
     <div className="max-w-lg mx-auto text-center py-16 space-y-4">
       <h2 className="text-2xl font-bold">{isRTL ? "סיימת את החפיסה!" : "Deck Complete!"}</h2>
@@ -91,48 +115,93 @@ export const FlashcardStudyPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Flip Card — key={currentIndex} ensures the DOM element is recreated
-          when advancing to the next card, so no flip animation runs with the
-          next card's content momentarily visible during the transition. */}
-      <div key={currentIndex} className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
-        <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
-          {/* Front */}
-          <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">
-            <Badge variant="secondary" className="mb-4 capitalize shrink-0">{current.cardType}</Badge>
-            <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
-              <p className="text-xl font-semibold text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.front}</p>
-            </div>
-            <p className="text-xs text-muted-foreground mt-4 shrink-0">{isRTL ? "לחץ להפוך" : "Click to flip"}</p>
+      {editing ? (
+        <div className="rounded-2xl border-2 border-primary/40 bg-card p-6 space-y-4 shadow-lg">
+          <p className="text-sm font-medium text-muted-foreground">{isRTL ? "עריכת כרטיסייה" : "Edit card"}</p>
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">{isRTL ? "צד קדמי (שאלה)" : "Front (question)"}</label>
+            <textarea
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+              rows={3}
+              dir={isHebrew ? "rtl" : "ltr"}
+              value={editFront}
+              onChange={e => setEditFront(e.target.value)}
+            />
           </div>
-          {/* Back */}
-          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-2xl border-2 border-primary/30 bg-primary/5 flex flex-col items-center p-6 shadow-lg overflow-hidden">
-            <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
-              <p className="text-lg text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.back}</p>
-            </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">{isRTL ? "צד אחורי (תשובה)" : "Back (answer)"}</label>
+            <textarea
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+              rows={3}
+              dir={isHebrew ? "rtl" : "ltr"}
+              value={editBack}
+              onChange={e => setEditBack(e.target.value)}
+            />
+          </div>
+          <div className={`flex gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+            <Button size="sm" onClick={saveEdit} disabled={updateCard.isPending || !editFront.trim() || !editBack.trim()}>
+              <Check className="w-4 h-4 me-1" />{isRTL ? "שמור" : "Save"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={updateCard.isPending}>
+              <X className="w-4 h-4 me-1" />{isRTL ? "ביטול" : "Cancel"}
+            </Button>
           </div>
         </div>
-      </div>
-
-      {flipped && (
-        <div className="grid grid-cols-4 gap-3">
-          {[
-            { result: "again" as const, label: isRTL ? "שוב" : "Again", color: "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950 dark:text-red-400" },
-            { result: "hard" as const, label: isRTL ? "קשה" : "Hard", color: "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-400" },
-            { result: "good" as const, label: isRTL ? "טוב" : "Good", color: "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-400" },
-            { result: "easy" as const, label: isRTL ? "קל" : "Easy", color: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-950 dark:text-green-400" },
-          ].map(btn => (
-            <button key={btn.result} onClick={() => handleReview(btn.result)}
-              className={`py-3 rounded-xl font-semibold text-sm transition-all ${btn.color}`}>
-              {btn.label}
+      ) : (
+        <>
+          {/* Flip Card — key={currentIndex} ensures the DOM element is recreated
+              when advancing to the next card, so no flip animation runs with the
+              next card's content momentarily visible during the transition. */}
+          <div className="relative">
+            <div key={currentIndex} className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
+              <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
+                {/* Front */}
+                <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">
+                  <Badge variant="secondary" className="mb-4 capitalize shrink-0">{current.cardType}</Badge>
+                  <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
+                    <p className="text-xl font-semibold text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.front}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-4 shrink-0">{isRTL ? "לחץ להפוך" : "Click to flip"}</p>
+                </div>
+                {/* Back */}
+                <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-2xl border-2 border-primary/30 bg-primary/5 flex flex-col items-center p-6 shadow-lg overflow-hidden">
+                  <div className="flex-1 w-full overflow-y-auto flex items-center justify-center">
+                    <p className="text-lg text-center leading-relaxed" dir={isHebrew ? "rtl" : "ltr"}>{current.back}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={startEdit}
+              className="absolute top-3 end-3 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors z-10"
+              title={isRTL ? "ערוך כרטיסייה" : "Edit card"}
+            >
+              <Pencil className="w-4 h-4" />
             </button>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {!flipped && (
-        <p className="text-center text-sm text-muted-foreground">
-          {isRTL ? "לחץ על הכרטיסייה כדי לראות את התשובה" : "Click the card to reveal the answer"}
-        </p>
+          {flipped && (
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { result: "again" as const, label: isRTL ? "שוב" : "Again", color: "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950 dark:text-red-400" },
+                { result: "hard" as const, label: isRTL ? "קשה" : "Hard", color: "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-400" },
+                { result: "good" as const, label: isRTL ? "טוב" : "Good", color: "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-400" },
+                { result: "easy" as const, label: isRTL ? "קל" : "Easy", color: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-950 dark:text-green-400" },
+              ].map(btn => (
+                <button key={btn.result} onClick={() => handleReview(btn.result)}
+                  className={`py-3 rounded-xl font-semibold text-sm transition-all ${btn.color}`}>
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!flipped && (
+            <p className="text-center text-sm text-muted-foreground">
+              {isRTL ? "לחץ על הכרטיסייה כדי לראות את התשובה" : "Click the card to reveal the answer"}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

@@ -220,4 +220,28 @@ router.post("/flashcards/:id/review", async (req, res) => {
   res.json(updated);
 });
 
+router.patch("/flashcards/:id", async (req, res) => {
+  const userId = req.user!.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+
+  const { front, back, cardType } = req.body as { front?: string; back?: string; cardType?: string };
+  if (!front?.trim() && !back?.trim() && !cardType) return res.status(400).json({ error: "Nothing to update" });
+
+  const [card] = await db.select().from(flashcardsTable).where(eq(flashcardsTable.id, id));
+  if (!card) return res.status(404).json({ error: "Not found" });
+
+  const [deck] = await db.select().from(flashcardDecksTable).where(eq(flashcardDecksTable.id, card.deckId));
+  if (!deck) return res.status(404).json({ error: "Not found" });
+  if (!await assertMaterialOwner(deck.materialId, userId)) return res.status(403).json({ error: "Forbidden" });
+
+  const updates: Partial<typeof flashcardsTable.$inferInsert> = {};
+  if (front?.trim()) updates.front = front.trim();
+  if (back?.trim()) updates.back = back.trim();
+  if (cardType) updates.cardType = cardType;
+
+  const [updated] = await db.update(flashcardsTable).set(updates).where(eq(flashcardsTable.id, id)).returning();
+  res.json(updated);
+});
+
 export default router;

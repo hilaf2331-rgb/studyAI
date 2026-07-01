@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2,
-  Mic, MessageSquare, Trophy, FolderOpen, Headphones, Pencil,
+  Mic, MessageSquare, Trophy, FolderOpen, Headphones,
   GaugeCircle, Flame, ClipboardList, Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -154,14 +154,14 @@ export const LandingPage: React.FC = () => {
                 glow="violet"
                 icon={<FolderOpen className="w-9 h-9 text-violet-500" strokeWidth={1.75} />}
                 title="קורסים — ניהול כל הסמסטר"
-                body="מאגדים את כל חומרי הקורס (מרובה הרצאות) תחת קורס אחד. גלוסר מונחים משותף לכל הקורס, ומבחן קורס ענק שמערבב שאלות מכל החומרים — בלחיצה אחת."
+                body="מאגדים את כל חומרי הקורס (מרובה הרצאות) תחת קורס אחד. מילון מונחים משותף לכל הקורס, ומבחן קורס ענק שמערבב שאלות מכל החומרים — בלחיצה אחת."
               />
 
               <FeatureCard
                 glow="cyan"
                 icon={<MessageSquare className="w-9 h-9 text-cyan-500" strokeWidth={1.75} />}
                 title="צ׳אט עם החומר שלכם"
-                body="שאלה שנשארה פתוחה אחרי הסיכום? פותחים צ׳אט עם ה-AI ושואלים בדיוק מה שרוצים — הוא עונה אך ורק על בסיס ההרצאה שהעליתם, לא מהידע הכללי שלו."
+                body="שאלה שנשארה פתוחה אחרי הסיכום? פותחים צ׳אט עם ה-AI ושואלים בדיוק מה שרוצים — הוא עונה אך ורק על בסיס המידע שהעליתם, לא מהידע הכללי שלו."
               />
 
               <FeatureCard
@@ -174,8 +174,8 @@ export const LandingPage: React.FC = () => {
               <FeatureCard
                 glow="rose"
                 icon={<Flame className="w-9 h-9 text-rose-500" strokeWidth={1.75} />}
-                title="מצב מרתון — לפני הבחינה"
-                body="פחות מ-24 שעות עד הבחינה? מצב מרתון מחליף את לוח הזמנים של החזרה המרווחת ב-שניות/שעות — הכרטיסיות החלשות חוזרות ביתר תדירות עד לרגע הכניסה לאולם."
+                title="מצב מרתון לפני הבחינה"
+                body="חוששים לגבי הבחינה ונשאר לכם 24 שעות? מצב מרתון נותן ביטחון ברגע האחרון — השאלות והידע עם הכי הרבה טעויות במהלך הלמידה חוזרים ביתר תדירות עד לרגע הכניסה לבחינה."
               />
 
               <FeatureCard
@@ -188,15 +188,8 @@ export const LandingPage: React.FC = () => {
               <FeatureCard
                 glow="teal"
                 icon={<Mic className="w-9 h-9 text-teal-500" strokeWidth={1.75} />}
-                title="הקלטת הרצאות ישירות מהאפליקציה"
-                body="לא הספקתם לצלם מסך? מקליטים ישירות מהאפליקציה — ה-AI מתמלל, מסכם ובונה ערכת לימוד מלאה מההקלטה, בלי לגעת בקובץ."
-              />
-
-              <FeatureCard
-                glow="pink"
-                icon={<Pencil className="w-9 h-9 text-pink-500" strokeWidth={1.75} />}
-                title="עריכה ידנית של כרטיסיות ושאלות"
-                body="ה-AI לא תמיד מושלם. עורכים כל כרטיסייה או שאלה ישירות מתוך מסך הלמידה — מתקנים, מדייקים ומותאמים לשפת המרצה — בלי לצאת מהתרגול."
+                title="הקלטת הרצאות ישירות מהאתר"
+                body="לא הספקתם לעקוב אחרי המרצה? מקליטים ישירות מהאתר — FocusStudy מתמלל, מסכם ובונה ערכת לימוד מלאה מההקלטה בלבד, כך שתקבלו בדיוק מה שהיה בשיעור מסוכם ומוכן."
               />
 
             </div>
@@ -206,11 +199,11 @@ export const LandingPage: React.FC = () => {
               <p className="text-xs font-bold text-muted-foreground mb-3 tracking-wide">ועוד כמה דברים שתשמחו לדעת:</p>
               <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
                 {[
-                  { icon: <Brain className="w-4 h-4 text-cyan-500 shrink-0" />, text: "תמיכה בחומרי אוצר מילים — שאלות בשתי כיוונים (ע׳→א׳ וא׳→ע׳)" },
-                  { icon: <ClipboardList className="w-4 h-4 text-violet-500 shrink-0" />, text: "גלוסר קורס — מוסיפים מונחים פעם אחת, ה-AI משתמש בהם בכל הסיכומים" },
-                  { icon: <Flame className="w-4 h-4 text-rose-500 shrink-0" />, text: "רצף לימוד — מעקב אחר כמה ימים רצופים למדתם" },
-                  { icon: <Users className="w-4 h-4 text-violet-500 shrink-0" />, text: "שיתוף בלינק — חבר מקבל את כל ערכת הלימוד בלחיצה אחת" },
-                  { icon: <RotateCw className="w-4 h-4 text-teal-500 shrink-0" />, text: "חזרה יומית — כל הכרטיסיות שמגיעות לחזרה מחכות במקום אחד" },
+                  { icon: <Brain className="w-4 h-4 text-cyan-500 shrink-0" />, text: "תמיכה באנגלית ובעברית, ואפילו כשהשפה מעורבבת!" },
+                  { icon: <ClipboardList className="w-4 h-4 text-violet-500 shrink-0" />, text: "מילון קורס — מוסיפים מונחים מיוחדים לקורס פעם אחת, ו-FocusStudy משתמש בהם בכל יצירת ערכת לימוד" },
+                  { icon: <Flame className="w-4 h-4 text-rose-500 shrink-0" />, text: "רצף לימוד — מעקב אחר כמה ימים רצופים למדתם. ככל שתכנסו כל יום כך יהיה לכם סטרייק!" },
+                  { icon: <Users className="w-4 h-4 text-violet-500 shrink-0" />, text: "שיתוף בלינק — אחד מקליט את המרצה. כל החברים מקבלים סיכום וכרטיסיות בלחיצה אחת" },
+                  { icon: <RotateCw className="w-4 h-4 text-teal-500 shrink-0" />, text: "חזרה יומית — כל הכרטיסיות לחזרה יומית מחכות במקום אחד" },
                   { icon: <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />, text: "ה-AI עונה רק מהחומר שלכם — אפס ניחושים מהידע הכללי" },
                 ].map((item, i) => (
                   <div key={i} className="flex items-start gap-2 py-1">
@@ -265,7 +258,7 @@ export const LandingPage: React.FC = () => {
                   <BookMarked className="w-7 h-7 text-emerald-500 shrink-0" strokeWidth={1.75} />
                   <p className="text-sm leading-relaxed">
                     <strong className="block mb-0.5">המינוח של המרצה שלכם — לא מינוח כללי</strong>
-                    מעלים את הגלוסר של הקורס, ו-FocusStudy ישתמש בדיוק במונחים
+                    מעלים את המילון של הקורס, ו-FocusStudy ישתמש בדיוק במונחים
                     ובהגדרות שלכם — הסיכום ידבר באותה שפה שתידרשו לה במבחן.
                   </p>
                 </div>

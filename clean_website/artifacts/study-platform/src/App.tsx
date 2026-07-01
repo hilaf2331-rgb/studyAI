@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dashboard } from "@/pages/dashboard";
 import { CoursesPage } from "@/pages/courses";
 import { CourseDetailPage } from "@/pages/course-detail";
+import { CourseExamPage } from "@/pages/course-exam";
 import { MaterialsPage } from "@/pages/materials";
 import { PodcastsPage } from "@/pages/podcasts";
 import { MaterialNewPage } from "@/pages/material-new";
@@ -145,6 +146,7 @@ function AppRoutes() {
       <Switch location={matchLocation}>
         <Route path="/" component={Dashboard} />
         <Route path="/courses" component={CoursesPage} />
+        <Route path="/courses/:id/exam" component={CourseExamPage} />
         <Route path="/courses/:id" component={CourseDetailPage} />
         <Route path="/materials" component={MaterialsPage} />
         <Route path="/podcasts" component={PodcastsPage} />

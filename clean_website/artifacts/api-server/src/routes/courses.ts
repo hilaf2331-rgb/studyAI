@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, coursesTable, materialsTable, glossaryTermsTable, courseAssetsTable } from "@workspace/db";
-import { eq, count, and } from "drizzle-orm";
+import { db, coursesTable, materialsTable, glossaryTermsTable, courseAssetsTable, questionSetsTable, questionsTable, examsTable } from "@workspace/db";
+import { eq, count, and, inArray } from "drizzle-orm";
 import { deleteCourseAudio } from "../lib/storage";
 import {
   CreateCourseBody, UpdateCourseBody, GetCourseParams, UpdateCourseParams, DeleteCourseParams,
@@ -76,6 +76,58 @@ router.delete("/courses/:id", async (req, res) => {
 
   await Promise.all(orphanedAssets.map((a) => deleteCourseAudio(a.storagePath)));
   res.status(204).end();
+});
+
+router.get("/courses/:id/exam-questions", async (req, res) => {
+  const userId = req.user!.userId;
+  const courseId = Number(req.params.id);
+  if (!Number.isInteger(courseId) || courseId <= 0) return res.status(400).json({ error: "Invalid id" });
+
+  const [course] = await db.select({ id: coursesTable.id }).from(coursesTable)
+    .where(and(eq(coursesTable.id, courseId), eq(coursesTable.userId, userId)));
+  if (!course) return res.status(404).json({ error: "Not found" });
+
+  const materials = await db.select({ id: materialsTable.id }).from(materialsTable)
+    .where(and(eq(materialsTable.courseId, courseId), eq(materialsTable.userId, userId)));
+
+  if (!materials.length) return res.json([]);
+
+  const materialIds = materials.map(m => m.id);
+
+  // Collect questions from question sets
+  const sets = await db.select({ id: questionSetsTable.id }).from(questionSetsTable)
+    .where(inArray(questionSetsTable.materialId, materialIds));
+
+  const setIds = sets.map(s => s.id);
+  const fromSets = setIds.length > 0
+    ? await db.select().from(questionsTable).where(inArray(questionsTable.setId, setIds))
+    : [];
+
+  // Collect questions from exams
+  const exams = await db.select({ id: examsTable.id }).from(examsTable)
+    .where(inArray(examsTable.materialId, materialIds));
+
+  const examIds = exams.map(e => e.id);
+  const fromExams = examIds.length > 0
+    ? await db.select().from(questionsTable).where(inArray(questionsTable.examId, examIds))
+    : [];
+
+  // Deduplicate by question text (case-insensitive), then shuffle
+  const seen = new Set<string>();
+  const all = [...fromSets, ...fromExams].filter(q => {
+    const key = q.question.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Fisher-Yates shuffle
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+
+  res.json(all);
 });
 
 // Ownership of the parent course is checked on every glossary route below

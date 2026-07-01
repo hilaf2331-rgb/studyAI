@@ -30,7 +30,7 @@ import { AudioPlayer } from "@/components/audio-player";
 import {
   ArrowLeft, ArrowRight, BookOpen, FileText, Plus, Trash2,
   BrainCircuit, HelpCircle, FileQuestion, Loader2, AlertCircle, CheckCircle2, Mic,
-  BookMarked, Pencil, Headphones, Upload, Music,
+  BookMarked, Pencil, Headphones, Upload, Music, Trophy,
 } from "lucide-react";
 
 function GlossarySection({ courseId, isRTL }: { courseId: number; isRTL: boolean }) {
@@ -420,7 +420,11 @@ export const CourseDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap">
+          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/courses/${courseId}/exam`)}>
+            <Trophy className="w-4 h-4" />
+            {isRTL ? "מבחן קורס" : "Course Exam"}
+          </Button>
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/recorder?courseId=${courseId}`)}>
             <Mic className="w-4 h-4" />
             {isRTL ? "הקלט הרצאה" : "Record Lecture"}

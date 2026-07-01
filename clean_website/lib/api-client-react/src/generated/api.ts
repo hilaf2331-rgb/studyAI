@@ -528,6 +528,83 @@ export const useDeleteCourse = <TError = ErrorType<unknown>,
       return useMutation(getDeleteCourseMutationOptions(options));
     }
 
+export const getGetCourseExamQuestionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/courses/${id}/exam-questions`
+}
+
+/**
+ * @summary Get all questions from all materials in a course, shuffled
+ */
+export const getCourseExamQuestions = async (id: number, options?: RequestInit): Promise<Question[]> => {
+
+  return customFetch<Question[]>(getGetCourseExamQuestionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCourseExamQuestionsQueryKey = (id: number,) => {
+    return [
+    `/api/courses/${id}/exam-questions`
+    ] as const;
+    }
+
+
+export const getGetCourseExamQuestionsQueryOptions = <TData = Awaited<ReturnType<typeof getCourseExamQuestions>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCourseExamQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCourseExamQuestionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCourseExamQuestions>>> = ({ signal }) => getCourseExamQuestions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCourseExamQuestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCourseExamQuestionsQueryResult = NonNullable<Awaited<ReturnType<typeof getCourseExamQuestions>>>
+export type GetCourseExamQuestionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get all questions from all materials in a course, shuffled
+ */
+
+export function useGetCourseExamQuestions<TData = Awaited<ReturnType<typeof getCourseExamQuestions>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCourseExamQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCourseExamQuestionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getListGlossaryTermsUrl = (id: number,) => {
 
 

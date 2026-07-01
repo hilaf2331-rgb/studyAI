@@ -105,6 +105,30 @@ export const DeleteCourseParams = zod.object({
 
 
 /**
+ * @summary Get all questions from all materials in a course, shuffled
+ */
+export const GetCourseExamQuestionsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetCourseExamQuestionsResponseItem = zod.object({
+  "id": zod.number(),
+  "setId": zod.number(),
+  "questionType": zod.enum(['open', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "explanation": zod.string().nullish(),
+  "modelAnswer": zod.string().nullish(),
+  "options": zod.array(zod.string()).optional(),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).optional(),
+  "concept": zod.string().nullish(),
+  "optionExplanations": zod.array(zod.string().nullable()).nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const GetCourseExamQuestionsResponse = zod.array(GetCourseExamQuestionsResponseItem)
+
+
+/**
  * @summary List glossary terms for a course
  */
 export const ListGlossaryTermsParams = zod.object({

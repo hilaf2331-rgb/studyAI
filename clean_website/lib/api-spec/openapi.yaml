@@ -132,6 +132,29 @@ paths:
         "204":
           description: Deleted
 
+  /courses/{id}/exam-questions:
+    get:
+      operationId: getCourseExamQuestions
+      tags: [courses]
+      summary: Get all questions from all materials in a course, shuffled
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Shuffled list of questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Question"
+        "404":
+          description: Course not found
+
   # ── Study Materials ───────────────────────────────────────────────────────
   /courses/{id}/glossary:
     get:

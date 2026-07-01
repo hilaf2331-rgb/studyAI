@@ -143,6 +143,7 @@ export const MaterialNewPage: React.FC = () => {
   const [text, setText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
@@ -171,6 +172,13 @@ export const MaterialNewPage: React.FC = () => {
     const f = e.target.files?.[0] || null;
     if (!f) { setFile(f); return; }
     if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ""));
+
+    // Block ZIP files universally — unsupported container format.
+    if (f.name.toLowerCase().endsWith(".zip") || f.type === "application/zip" || f.type.includes("x-zip")) {
+      setError(isRTL ? "קבצי ZIP אינם נתמכים. אנא חלצו את הקבצים ממנו תחילה." : "ZIP files are not supported. Please extract the files first.");
+      setFile(null);
+      return;
+    }
 
     let resolvedType: ContentType | undefined;
     if (category === "document") {
@@ -220,6 +228,41 @@ export const MaterialNewPage: React.FC = () => {
     if (resolvedType) setContentType(resolvedType);
   };
 
+  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    e.target.value = "";
+    if (!f) return;
+    if (imageFiles.length >= 5) {
+      setError(isRTL ? "ניתן להעלות עד 5 תמונות" : "You can upload up to 5 images");
+      return;
+    }
+    const maxBytes = MAX_FILE_BYTES.image!;
+    if (f.size > maxBytes) { setError(fileTooLargeMessage("image", isRTL)); return; }
+    setError("");
+    if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ""));
+    setContentType("image");
+    setImageFiles(prev => [...prev, f]);
+  };
+
+  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!selected.length) return;
+    if (imageFiles.length + selected.length > 5) {
+      setError(isRTL
+        ? `ניתן להעלות עד 5 תמונות בסך הכל (כרגע נבחרו ${imageFiles.length})`
+        : `Maximum 5 images total (${imageFiles.length} already selected)`);
+      return;
+    }
+    const maxBytes = MAX_FILE_BYTES.image!;
+    const oversized = selected.find(f => f.size > maxBytes);
+    if (oversized) { setError(fileTooLargeMessage("image", isRTL)); return; }
+    setError("");
+    if (!title && selected[0]) setTitle(selected[0].name.replace(/\.[^/.]+$/, ""));
+    setContentType("image");
+    setImageFiles(prev => [...prev, ...selected]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -228,7 +271,10 @@ export const MaterialNewPage: React.FC = () => {
     if ((contentType === "youtube" || contentType === "url") && !sourceUrl.trim()) {
       setError(isRTL ? "יש להזין קישור" : "URL is required"); return;
     }
-    if (cfg.acceptsFile && !file) {
+    if (cfg.acceptsFile && category === "image" && imageFiles.length === 0) {
+      setError(isRTL ? "יש לבחור תמונה אחת לפחות" : "Please select at least one image"); return;
+    }
+    if (cfg.acceptsFile && category !== "image" && !file) {
       setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
     }
 
@@ -239,7 +285,7 @@ export const MaterialNewPage: React.FC = () => {
       toast({ description: noContentMessage(isRTL), variant: "destructive" });
       return;
     }
-    if (cfg.acceptsFile && file && file.size === 0) {
+    if (cfg.acceptsFile && category !== "image" && file && file.size === 0) {
       toast({ description: noContentMessage(isRTL), variant: "destructive" });
       return;
     }
@@ -255,7 +301,7 @@ export const MaterialNewPage: React.FC = () => {
       const token = getStoredToken();
       let response: Response;
 
-      if (cfg.acceptsFile && file) {
+      if (cfg.acceptsFile && (category === "image" ? imageFiles.length > 0 : !!file)) {
         const fd = new FormData();
         fd.append("title", title.trim());
         fd.append("contentType", contentType);
@@ -263,7 +309,11 @@ export const MaterialNewPage: React.FC = () => {
         fd.append("subjectType", subjectType);
         if (courseId) fd.append("courseId", courseId);
         fd.append("uploadId", newUploadId);
-        fd.append("file", file);
+        if (category === "image") {
+          imageFiles.forEach(img => fd.append("files", img));
+        } else {
+          fd.append("file", file!);
+        }
 
         response = await fetch(apiUrl("/api/materials"), {
           method: "POST",
@@ -349,6 +399,7 @@ export const MaterialNewPage: React.FC = () => {
                       onClick={() => {
                         setCategory(cat);
                         setFile(null);
+                        setImageFiles([]);
                         setSourceUrl("");
                         if (cat === "text") setContentType("text");
                         else if (cat === "youtube") setContentType("youtube");
@@ -479,18 +530,46 @@ export const MaterialNewPage: React.FC = () => {
             {/* File upload */}
             {cfg.acceptsFile && category === "image" && (
               <div className="space-y-1.5">
-                <Label>{isRTL ? "צילום או בחירת תמונה" : "Take a Photo or Choose an Image"}</Label>
-                {file ? (
-                  <div
-                    onClick={() => setFile(null)}
-                    className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer border-primary bg-primary/5"
-                  >
-                    <div className="space-y-1">
-                      <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto" />
-                      <p className="font-medium text-sm">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
-                      <p className="text-xs text-muted-foreground">{isRTL ? "לחץ להחליף" : "Click to replace"}</p>
-                    </div>
+                <Label>{isRTL ? "צילום או בחירת תמונות (עד 5)" : "Take Photos or Choose Images (up to 5)"}</Label>
+                {imageFiles.length > 0 ? (
+                  <div className="space-y-2">
+                    {imageFiles.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="truncate">{f.name}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setImageFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="text-muted-foreground hover:text-destructive shrink-0 text-base leading-none px-1"
+                          aria-label={isRTL ? "הסר" : "Remove"}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {imageFiles.length < 5 && (
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed border-border hover:border-muted-foreground/40 transition-colors text-sm text-muted-foreground"
+                        >
+                          <Camera className="w-4 h-4" />
+                          {isRTL ? "הוסף צילום" : "Add photo"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed border-border hover:border-muted-foreground/40 transition-colors text-sm text-muted-foreground"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                          {isRTL ? `הוסף מהגלריה (${imageFiles.length}/5)` : `Add from gallery (${imageFiles.length}/5)`}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
@@ -517,20 +596,21 @@ export const MaterialNewPage: React.FC = () => {
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={handleFileChange}
+                  onChange={handleCameraChange}
                   className="hidden"
                 />
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  multiple
+                  onChange={handleGalleryChange}
                   className="hidden"
                 />
                 <p className="text-xs text-muted-foreground">
                   {isRTL
-                    ? "התמונה תתומלל אוטומטית באמצעות Gemini — מצוין לתמונות של דפים כתובים, שקפים או לוח"
-                    : "The image will be automatically transcribed using Gemini — great for photos of notes, slides, or a whiteboard"}
+                    ? "התמונות יתומללו אוטומטית באמצעות Gemini — מצוין לתמונות של דפים כתובים, שקפים או לוח"
+                    : "Images will be automatically transcribed using Gemini — great for photos of notes, slides, or a whiteboard"}
                 </p>
               </div>
             )}

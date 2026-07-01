@@ -26,6 +26,12 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
+// "file" = backward-compat single upload; "files" = multi-image (up to 5)
+const uploadFields = upload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "files", maxCount: 5 },
+]);
+
 const DOCUMENT_CONTENT_TYPES = new Set(["pdf", "docx", "pptx", "xlsx"]);
 
 // Thrown after extraction succeeds but the resulting text is over the beta's
@@ -112,11 +118,18 @@ router.get("/materials", async (req, res) => {
   res.json(withCounts.filter(Boolean));
 });
 
-router.post("/materials", generationRateLimiter, upload.single("file"), async (req, res) => {
+router.post("/materials", generationRateLimiter, uploadFields, async (req, res) => {
   const userId = req.user!.userId;
 
+  // Normalise the two upload paths into one variable each.
+  // "file" field = backward-compat single upload (all types).
+  // "files" field = multi-image upload (up to 5 images).
+  const filesMap = req.files as Record<string, Express.Multer.File[]> | undefined;
+  const reqFile = filesMap?.file?.[0];
+  const reqImages = filesMap?.files ?? [];
+
   let body: any;
-  if (req.file) {
+  if (reqFile || reqImages.length > 0) {
     body = req.body;
   } else {
     try {
@@ -134,13 +147,38 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
   const uploadId = body.uploadId || undefined;
   const subjectType = body.subjectType || "other";
 
+  // ZIP files are an unsupported container format -- reject before any work.
+  const allUploaded = reqImages.length > 0 ? reqImages : (reqFile ? [reqFile] : []);
+  for (const uf of allUploaded) {
+    const fname = uf.originalname.toLowerCase();
+    const mime = uf.mimetype.toLowerCase();
+    if (fname.endsWith(".zip") || mime === "application/zip" || mime.includes("x-zip")) {
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(400).json({
+        error: language === "he"
+          ? "קבצי ZIP אינם נתמכים. אנא חלצו את הקבצים ממנו תחילה."
+          : "ZIP files are not supported. Please extract the files first.",
+        code: "UNSUPPORTED_FILE_TYPE",
+      });
+    }
+  }
+
   // Reject oversized files outright before any parsing/transcription starts
   // -- there's no point spending CPU or Whisper/Gemini budget on a file that
   // would just get capped or time out anyway on Render's free tier.
   const maxBytes = MAX_FILE_BYTES[contentType];
-  if (req.file && maxBytes && req.file.size > maxBytes) {
+  if (reqFile && maxBytes && reqFile.size > maxBytes) {
     if (uploadId) clearGenerationProgress(uploadId);
     return res.status(413).json({ error: fileTooLargeMessage(contentType, language), code: "FILE_TOO_LARGE" });
+  }
+  // For multi-image: reject if any single image exceeds the image cap.
+  const imgMaxBytes = MAX_FILE_BYTES.image;
+  if (reqImages.length > 0 && imgMaxBytes) {
+    const oversized = reqImages.find(f => f.size > imgMaxBytes);
+    if (oversized) {
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(413).json({ error: fileTooLargeMessage("image", language), code: "FILE_TOO_LARGE" });
+    }
   }
 
   // Beta-only hard cap on total processing actions -- checked before any
@@ -176,16 +214,20 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
     } else if (contentType === "url" && sourceUrl) {
       const result = await extractFromUrl(sourceUrl, reportProgress);
       extractedText = result.text;
-    } else if (contentType === "pdf" && req.file) {
-      const result = await extractPDF(req.file.buffer);
+    } else if (contentType === "pdf" && reqFile) {
+      const result = await extractPDF(reqFile.buffer);
       extractedText = result.text;
-    } else if ((contentType === "docx" || contentType === "pptx" || contentType === "xlsx") && req.file) {
-      const result = await extractOffice(req.file.buffer, contentType, reportProgress);
+    } else if ((contentType === "docx" || contentType === "pptx" || contentType === "xlsx") && reqFile) {
+      const result = await extractOffice(reqFile.buffer, contentType, reportProgress);
       extractedText = result.text;
-    } else if (contentType === "image" && req.file) {
-      const result = await extractImage(req.file.buffer, req.file.mimetype, reportProgress);
-      extractedText = result.text;
-    } else if ((contentType === "audio" || contentType === "video") && req.file) {
+    } else if (contentType === "image" && (reqFile || reqImages.length > 0)) {
+      // Single image (legacy "file" field) or up to 5 images ("files" field).
+      const imageList = reqImages.length > 0 ? reqImages : [reqFile!];
+      const results = await Promise.all(
+        imageList.map((img, i) => extractImage(img.buffer, img.mimetype, i === 0 ? reportProgress : undefined))
+      );
+      extractedText = results.map(r => r.text).filter(Boolean).join("\n\n---\n\n");
+    } else if ((contentType === "audio" || contentType === "video") && reqFile) {
       // No client-supplied duration exists for an uploaded file (unlike the
       // live-recording flow in recordings.ts), so the free-tier cap can only
       // be enforced authoritatively, against Whisper's actual measured
@@ -214,9 +256,9 @@ router.post("/materials", generationRateLimiter, upload.single("file"), async (r
           if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
         },
         () => transcribeAudio(
-          req.file!.buffer,
-          req.file!.mimetype,
-          req.file!.originalname,
+          reqFile!.buffer,
+          reqFile!.mimetype,
+          reqFile!.originalname,
           reportProgress,
           { maxDurationSeconds: audioCapSeconds ?? undefined, glossaryHint }
         ),

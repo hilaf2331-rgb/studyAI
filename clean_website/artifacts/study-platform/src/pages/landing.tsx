@@ -174,8 +174,8 @@ export const LandingPage: React.FC = () => {
               <FeatureCard
                 glow="rose"
                 icon={<Flame className="w-9 h-9 text-rose-500" strokeWidth={1.75} />}
-                title="מצב קריאנץ׳ — לפני הבחינה"
-                body="פחות מ-24 שעות עד הבחינה? מצב קריאנץ׳ מחליף את לוח הזמנים של החזרה המרווחת ב-שניות/שעות — הכרטיסיות החלשות חוזרות ביתר תדירות עד לרגע הכניסה לאולם."
+                title="מצב מרתון — לפני הבחינה"
+                body="פחות מ-24 שעות עד הבחינה? מצב מרתון מחליף את לוח הזמנים של החזרה המרווחת ב-שניות/שעות — הכרטיסיות החלשות חוזרות ביתר תדירות עד לרגע הכניסה לאולם."
               />
 
               <FeatureCard
@@ -228,14 +228,14 @@ export const LandingPage: React.FC = () => {
               <TokenGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
                 <strong className="block mb-0.5">משלמים רק על מה שמשתמשים!</strong>
-                בלי התחייבות חודשית — קונים טוקנים לפי הצורך, ואין מגבלת שימוש יומית.
+                בלי התחייבות חודשית — קונים אסימונים לפי הצורך, ואין מגבלת שימוש יומית.
               </p>
             </div>
             <div className="group rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-5 flex items-start gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/20 hover:border-blue-400/50">
               <InfinityGlyph className="w-9 h-9 shrink-0 transition-transform duration-300 group-hover:scale-110" />
               <p className="text-sm leading-relaxed">
-                <strong className="block mb-0.5">הטוקנים לא פגים — אף פעם!</strong>
-                אם שילמתם ותיכנסו גם אחרי שנה, הטוקנים שלכם עדיין יחכו לכם באותו המצב.
+                <strong className="block mb-0.5">האסימונים לא פגים — אף פעם!</strong>
+                אם שילמתם ותיכנסו גם אחרי שנה, האסימונים שלכם עדיין יחכו לכם באותו המצב.
               </p>
             </div>
           </section>
@@ -306,8 +306,8 @@ export const LandingPage: React.FC = () => {
               היי, אני הילה. הקמתי את FocusStudy כי נמאס לי לשלם מנוי חודשי
               לאתרי למידה שלא תמיד השתמשתי בהם כל החודש — יש תקופות שרציתי
               ללמוד 5 פעמים ביום, ויש שבועות שלא נכנסתי כלל כי הייתי בחופשה.
-              לכן בניתי מערכת שעובדת לפי טוקנים: משלמים רק על מה שמשתמשים,
-              והטוקנים לא פגים בתוקף — אף פעם.
+              לכן בניתי מערכת שעובדת לפי אסימונים: משלמים רק על מה שמשתמשים,
+              והאסימונים לא פגים בתוקף — אף פעם.
             </p>
           </section>
 

@@ -126,6 +126,7 @@ async function runGenerateExam(material: MaterialRow, userId: number, body: Gene
             topics: body.topics,
             materialId,
             excludeQuestions,
+            subjectType: material.subjectType ?? undefined,
           }),
           AI_TASK_TIMEOUT_MS,
           "generateExamAI",

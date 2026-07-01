@@ -1905,11 +1905,42 @@ async function generateExamQuestionsForChunk(
   difficulty: string,
   topicsLine: string,
   excludeBlock: string,
+  subjectType?: string,
 ): Promise<GeneratedQuestion[]> {
   const sectionCoverageNote = isHe
     ? "\nחשוב: ודא שהשאלות מכסות חלקים שונים של החלק הנוכחי. אל תרכז את כל השאלות בפסקה הראשונה בלבד.\n"
     : "\nImportant: Ensure the questions cover different sections of this part. Do not focus all questions on the first paragraph.\n";
-  const userPrompt = isHe
+
+  const userPrompt = subjectType === "vocabulary"
+    ? `## Part ${index}/${total} of vocabulary material: "${materialTitle}"
+
+${chunk}
+${excludeBlock}
+---
+Task: Create up to ${questionsForChunk} vocabulary exam questions using ONLY the words/terms that appear in the vocabulary list above. Do not invent words or use terms not present in the list.
+
+Question types to generate:
+1. multiple_choice (≈60%): Alternate between two directions —
+   • English → Hebrew: show an English word, provide 4 Hebrew options (1 correct translation + 3 plausible distractors from the list).
+   • Hebrew → English: show a Hebrew word, provide 4 English options (1 correct translation + 3 plausible distractors from the list).
+   Distractors must be real words from the vocabulary list, not made-up words.
+2. open (≈40%): Translation questions with no options —
+   • "Translate to Hebrew: [English word]" → answer is the Hebrew translation.
+   • "Translate to English: [Hebrew word]" → answer is the English translation.
+   For open questions: options = [], correctIndex = 0, "answer" = the correct translation, "modelAnswer" = same as answer.
+
+JSON rules (apply to all types):
+- "concept": the English word being tested.
+- "explanation": a brief, encouraging note showing the word used in a short example sentence.
+- correctIndex for multiple_choice: 0-based index of the correct option in the options array.
+- optionExplanations: for wrong options only, a brief hint why that word is not the right answer; null for the correct option's position.
+- If there aren't enough words in this part for ${questionsForChunk} questions, create fewer.
+
+${universalOutputRules(false)}
+
+Return ONLY JSON:
+{"metadata": {"requested": ${questionsForChunk}, "generated": <actual count>}, "questions": [{"question": "Translate to Hebrew: apple", "answer": "תפוח", "explanation": "e.g. I eat an apple every morning.", "options": ["תפוח", "בננה", "תות", "ענב"], "correctIndex": 0, "questionType": "multiple_choice", "difficulty": "medium", "concept": "apple", "optionExplanations": [null, "banana is בננה", "strawberry is תות", "grape is ענב"]}]}`
+    : isHe
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
@@ -1989,7 +2020,7 @@ export function generateExamAI(
 async function generateExamAIImpl(
   opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
-  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions } = opts;
+  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions, subjectType } = opts;
   const isHe = language === "he";
   try {
   const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
@@ -2013,7 +2044,7 @@ async function generateExamAIImpl(
     for (let i = 0; i < parts.length; i++) {
       const chunkExcludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
       try {
-        const chunkQuestions = await withChunkRetry(`generateExamQuestionsForChunk(${i + 1}/${parts.length})`, () => generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock));
+        const chunkQuestions = await withChunkRetry(`generateExamQuestionsForChunk(${i + 1}/${parts.length})`, () => generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock, subjectType));
         const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
         allQuestions.push(...deduped);
         cumulativeExclude.push(...deduped.map((q) => q.question));
@@ -2045,7 +2076,51 @@ async function generateExamAIImpl(
     ? "\nחשוב: ודא שהשאלות מכסות חלקים שונים של החומר. אל תרכז את כל השאלות בפסקה הראשונה בלבד.\n"
     : "\nImportant: Ensure the questions cover different sections of the material. Do not focus all questions on the first paragraph.\n";
 
-  const userPrompt = isHe
+  const userPrompt = subjectType === "vocabulary"
+    ? `## Vocabulary material: "${materialTitle}"
+
+${contentSlice(aggregatedContent)}
+${excludeBlock}
+---
+Task: Create an exam with exactly ${questionCount} vocabulary questions using ONLY the words/terms that appear in the vocabulary list above. Do not invent words or use terms not present in the list.
+
+Question types to generate:
+1. multiple_choice (≈60%): Alternate between two directions —
+   • English → Hebrew: show an English word, provide 4 Hebrew options (1 correct translation + 3 plausible distractors from the list).
+   • Hebrew → English: show a Hebrew word, provide 4 English options (1 correct translation + 3 plausible distractors from the list).
+   Distractors must be real words from the vocabulary list, not made-up words.
+2. open (≈40%): Translation questions with no options —
+   • "Translate to Hebrew: [English word]" → answer is the Hebrew translation.
+   • "Translate to English: [Hebrew word]" → answer is the English translation.
+   For open questions: options = [], correctIndex = 0, "answer" = the correct translation, "modelAnswer" = same as answer.
+
+JSON rules (apply to all types):
+- "concept": the English word being tested.
+- "explanation": a brief, encouraging note showing the word used in a short example sentence.
+- correctIndex for multiple_choice: 0-based index of the correct option in the options array.
+- optionExplanations: for wrong options only, a brief hint why that word is not the right answer; null for the correct option's position.
+
+${universalOutputRules(false)}
+
+Return ONLY JSON matching this structure:
+{
+  "metadata": {"requested": ${questionCount}, "generated": <actual count of questions generated>},
+  "questions": [
+    {
+      "question": "Translate to Hebrew: apple",
+      "answer": "תפוח",
+      "explanation": "e.g. I eat an apple every morning — אני אוכל תפוח כל בוקר.",
+      "options": ["תפוח", "בננה", "תות", "ענב"],
+      "correctIndex": 0,
+      "questionType": "multiple_choice",
+      "difficulty": "medium",
+      "modelAnswer": null,
+      "concept": "apple",
+      "optionExplanations": [null, "banana is בננה", "strawberry is תות", "grape is ענב"]
+    }
+  ]
+}`
+    : isHe
     ? `## חומר לימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}

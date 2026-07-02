@@ -69,11 +69,11 @@ export const LandingPage: React.FC = () => {
               מעלים חומר לימוד —<br className="hidden sm:block" /> מקבלים{" "}
               <span
                 style={{
-                  backgroundImage: "linear-gradient(to left, hsl(170 75% 50%), hsl(195 85% 55%), hsl(217 85% 60%))",
+                  backgroundImage: "linear-gradient(to left, hsl(172 55% 52%), hsl(196 60% 56%), hsl(218 65% 62%))",
                   backgroundClip: "text",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
-                  color: "#22d3ee",
+                  color: "#5eead4",
                 }}
               >
                 ערכת לימוד מלאה

@@ -2,22 +2,24 @@ import { Router } from "express";
 import multer from "multer";
 import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTable, questionSetsTable, activityTable, flashcardsTable, questionsTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import { transcribeAudio, AudioDurationLimitError } from "../lib/extractor";
+import { transcribeAudio } from "../lib/extractor";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer } from "../lib/tokens";
-import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, freeTierAudioLimitMessage } from "../lib/validation";
+import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getAudioAffordability, isPayingCustomer } from "../lib/tokens";
+import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, insufficientTokensForAudioMessage, MAX_RECORDING_SECONDS } from "../lib/validation";
 import { runExclusive } from "../lib/processing-queue";
-import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
+import { getGenerationProgress, setGenerationProgress } from "../lib/progress";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
-// Same beta cap as the audio file-upload path in materials.ts -- a live
-// browser recording is just another audio upload from Render's perspective,
-// so it gets the same 25MB ceiling to stay clear of the free-tier HTTP
-// timeout. The 20-minute duration cap is enforced client-side (auto-stop) in
-// recorder.tsx; this is the server-side backstop in case that client check
-// is bypassed.
-const MAX_RECORDING_BYTES = 25 * 1024 * 1024;
+// recorder.tsx now records at a fixed 32kbps (see its MediaRecorder call),
+// so a full MAX_RECORDING_SECONDS (3h) recording is at most ~43MB
+// (32,000 bits/s * 10,800s / 8 = 43.2MB) -- this ceiling just needs enough
+// headroom above that worst case for muxing overhead. Raised from the old
+// 25MB (a leftover from when recordings were capped at 20 minutes) since
+// that would otherwise reject a long recording's raw upload before any of
+// the new duration/chunking logic below ever runs.
+const MAX_RECORDING_BYTES = 60 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RECORDING_BYTES } });
 
 router.get("/recordings", async (req, res) => {
@@ -53,7 +55,166 @@ router.get("/recordings/:id/audio", async (req, res) => {
   res.end(buf);
 });
 
-const MAX_RECORDING_SECONDS = 20 * 60;
+type RecordingRow = typeof recordingsTable.$inferSelect;
+type MaterialRow = typeof materialsTable.$inferSelect;
+
+// The actual Whisper transcription + three parallel Gemini calls, run after
+// the 202 has already gone out to the client -- same "fire-and-forget
+// background job, report progress via the polled uploadId key" pattern as
+// generate-all.ts's runGenerateAll, just covering transcription too (which
+// that route never had to, since it starts from already-extracted text).
+// Nothing in here can hold an HTTP response open, so it never has a `res` to
+// write to -- every exit path (success or failure) instead updates the
+// already-created material/recording rows and writes a terminal "done"/
+// "error" progress entry, since that's the only signal the polling frontend
+// ever gets.
+async function runRecordingPipeline(params: {
+  recording: RecordingRow;
+  material: MaterialRow;
+  userId: number;
+  buffer: Buffer;
+  mimeType: string;
+  title: string;
+  effectiveMaxSeconds: number | undefined;
+  glossaryHint: string | undefined;
+  bookmarkTimestamps: number[];
+  durationSeconds: number | undefined;
+  uploadId: string | undefined;
+  isPriority: boolean;
+}): Promise<void> {
+  const { recording, material, userId, buffer, mimeType, title, effectiveMaxSeconds, glossaryHint, bookmarkTimestamps, durationSeconds, uploadId, isPriority } = params;
+
+  await runExclusive(
+    (queuePosition) => {
+      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
+    },
+    async () => {
+      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 10, stage: "extracting" });
+
+      let extractedText = "";
+      let transcribedDurationSeconds: number | undefined;
+      let truncated = false;
+      let transcriptionError: string | undefined;
+      try {
+        const result = await transcribeAudio(buffer, mimeType, "recording.webm", (percentage) => {
+          if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 10 + Math.round(percentage * 0.4), stage: "extracting" });
+        }, {
+          maxDurationSeconds: effectiveMaxSeconds,
+          glossaryHint,
+        });
+        extractedText = result.text;
+        transcribedDurationSeconds = result.duration;
+        truncated = result.truncated ?? false;
+      } catch (err: any) {
+        logger.error({ err }, "Transcription failed");
+        transcriptionError = err.message;
+      }
+
+      // Hard block: a silent/near-empty recording transcribes successfully
+      // but to an empty or near-empty string. There is no fallback to the
+      // title (or any other metadata) here -- if the actual transcript
+      // doesn't clear the threshold, the job is aborted before any of the
+      // three Gemini calls below ever fire. The material/recording rows
+      // already exist (created before this background function ran), so
+      // this updates them to an error state instead of the old inline
+      // handler's res.status(400) -- there's no HTTP response to write to
+      // from here.
+      if (!transcriptionError && extractedText.trim().length < MIN_AUDIO_TRANSCRIPT_LENGTH) {
+        await db.update(materialsTable).set({ status: "error" }).where(eq(materialsTable.id, material.id));
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+          error: insufficientAudioContentMessage("he"),
+        });
+        return;
+      }
+
+      // Standardized rate: 1 Token per 10 minutes of audio (see
+      // lib/tokens.ts's deductTokensForTranscription), billed against
+      // Whisper's own measured duration -- never the client-supplied
+      // durationSeconds -- and only once a usable transcript exists (a
+      // rejected silent/near-empty recording above never reaches here).
+      if (!transcriptionError && transcribedDurationSeconds) {
+        await deductTokensForTranscription(userId, transcribedDurationSeconds);
+      }
+
+      if (transcriptionError) {
+        await db.update(materialsTable).set({ status: "error" }).where(eq(materialsTable.id, material.id));
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+          error: transcriptionError,
+        });
+        return;
+      }
+
+      // Parallel AI generation
+      const content = extractedText;
+      const language = "he" as const;
+      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 50, stage: "running" });
+      try {
+        await requireTokenBalance(userId);
+
+        // glossaryTerms is already fetched by the caller (before transcription)
+        // so Whisper's prompt hint and this summary call ground against the
+        // exact same course-specific terminology, queried only once.
+        const glossaryTerms = material.courseId
+          ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+              .from(glossaryTermsTable)
+              .where(eq(glossaryTermsTable.courseId, material.courseId))
+          : [];
+
+        const [summaryResult, flashResult, questionResult] = await Promise.all([
+          generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds, glossaryTerms }),
+          generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
+          generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
+        ]);
+
+        // Summary stage billed at the standardized page-based rate (1 Token
+        // per 5 "standard pages" of source material -- here, the Whisper
+        // transcript -- see lib/tokens.ts), which already covers the
+        // transcript text itself; flashcards/questions below only charge
+        // for their own generated output.
+        await deductTokensForSummary(userId, content);
+        await deductTokensForGeneration(
+          userId,
+          "",
+          JSON.stringify(flashResult) + JSON.stringify(questionResult),
+        );
+
+        const [[summary], [deck], [qSet]] = await Promise.all([
+          db.insert(summariesTable).values({ materialId: material.id, summaryType: "detailed", language, content: summaryResult.content, keyPoints: summaryResult.keyPoints }).returning(),
+          db.insert(flashcardDecksTable).values({ materialId: material.id, title: `${title} — כרטיסיות`, language }).returning(),
+          db.insert(questionSetsTable).values({ materialId: material.id, title: `${title} — חידון`, language }).returning(),
+        ]);
+
+        await Promise.all([
+          flashResult.length > 0 ? db.insert(flashcardsTable).values(flashResult.map(c => ({ deckId: deck.id, front: c.front, back: c.back, difficulty: c.difficulty || "medium", cardType: c.cardType || "qa", concept: c.concept || null }))) : Promise.resolve(),
+          questionResult.length > 0 ? db.insert(questionsTable).values(questionResult.map(q => ({ setId: qSet.id, questionType: q.questionType || "multiple_choice", question: q.question, answer: q.answer, explanation: q.explanation || null, options: q.options || [], difficulty: q.difficulty || "medium", concept: q.concept || null, optionExplanations: Array.isArray(q.optionExplanations) ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null)) : null }))) : Promise.resolve(),
+          db.update(recordingsTable).set({ summaryId: summary.id, deckId: deck.id, questionSetId: qSet.id }).where(eq(recordingsTable.id, recording.id)),
+          db.insert(activityTable).values({ userId, activityType: "summary", description: `הקלטה ועיבוד: "${title}"`, materialTitle: title }),
+          db.update(materialsTable).set({ status: "ready", extractedText: content }).where(eq(materialsTable.id, material.id)),
+        ]);
+
+        const kit = { summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length }, deck: { id: deck.id, cardCount: flashResult.length }, questionSet: { id: qSet.id, questionCount: questionResult.length } };
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 100, stage: "done",
+          result: { kit, recordingId: recording.id, truncated },
+        });
+      } catch (err: any) {
+        logger.error({ err }, "Kit generation failed after transcription");
+        // Transcription itself succeeded -- persist the transcript even
+        // though kit generation failed, so the material isn't stuck at
+        // "processing" forever and the student can retry generation later
+        // from the material page.
+        await db.update(materialsTable).set({ status: "ready", extractedText: content }).where(eq(materialsTable.id, material.id));
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+          error: err.message,
+        });
+      }
+    },
+    { isPriority },
+  );
+}
 
 router.post("/recordings", upload.single("audio"), async (req, res) => {
   const userId = req.user!.userId;
@@ -94,14 +255,33 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return res.status(413).json({ error: mediaTooLargeMessage("he"), code: "RECORDING_TOO_LONG" });
   }
 
-  // Free-tier students are capped at 20 minutes per recording; the cap is
-  // lifted entirely (null) for admins and anyone who has ever bought a
-  // token package. Checked here against the client-supplied duration before
-  // any Whisper cost is spent, and again authoritatively inside
-  // transcribeAudio() against the actual measured duration below.
-  const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
-  if (audioCapSeconds != null && durationSeconds && durationSeconds > audioCapSeconds) {
-    return res.status(413).json({ error: freeTierAudioLimitMessage("he"), code: "FREE_TIER_AUDIO_LIMIT" });
+  // Token-affordability negotiation: if the user's balance can't cover the
+  // full requested duration, tell the frontend exactly how many minutes ARE
+  // affordable instead of just rejecting outright. confirmedProcessSeconds
+  // is only sent on the retry after the frontend has shown the user this
+  // choice and they picked "continue with the affordable prefix" -- its
+  // presence means the client has already seen and accepted the negotiated
+  // duration.
+  const confirmedProcessSeconds = req.body.confirmedProcessSeconds ? Number(req.body.confirmedProcessSeconds) : undefined;
+  let effectiveMaxSeconds: number | undefined; // undefined = no truncation needed, full duration is affordable
+  if (durationSeconds) {
+    const affordability = await getAudioAffordability(userId, durationSeconds);
+    if (!affordability.canAffordFull) {
+      if (confirmedProcessSeconds == null) {
+        return res.status(402).json({
+          error: insufficientTokensForAudioMessage(Math.floor(affordability.affordableSeconds / 60), "he"),
+          code: "INSUFFICIENT_TOKENS_FOR_AUDIO",
+          requestedSeconds: durationSeconds,
+          affordableSeconds: affordability.affordableSeconds,
+          tokensNeeded: affordability.tokensNeeded,
+          tokensAvailable: affordability.tokensAvailable,
+        });
+      }
+      // Frontend confirmed proceeding with a truncated prefix -- clamp
+      // defensively in case the balance changed between the 402 and this
+      // retry.
+      effectiveMaxSeconds = Math.max(0, Math.min(confirmedProcessSeconds, affordability.affordableSeconds));
+    }
   }
 
   // Beta-only hard cap on total processing actions -- a live recording is a
@@ -142,144 +322,53 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     : [];
   const glossaryHint = glossaryTerms.length ? glossaryTerms.map((t) => t.term).join(", ") : undefined;
 
-  // The actual heavy work -- Whisper transcription plus three parallel
-  // Gemini calls -- runs through the shared processing queue (see
-  // lib/processing-queue.ts) so at most MAX_CONCURRENT_PROCESSING of these
-  // run at once across the whole process, regardless of how many students
-  // hit "stop recording" in the same few seconds.
-  await runExclusive(
-    (queuePosition) => {
-      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
-    },
-    async () => {
-      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 10, stage: "extracting" });
+  // Insert the material/recording rows immediately (status: "processing") so
+  // the response can go out right away -- Render's free-tier proxy kills a
+  // request held open past ~100-120s, and a multi-hour recording's
+  // transcription + three Gemini calls can take far longer than that. The
+  // frontend finds out how it went by polling
+  // GET /recordings/upload-progress/:uploadId instead.
+  const [material] = await db.insert(materialsTable).values({
+    userId,
+    courseId,
+    title,
+    contentType: "audio",
+    language: "he",
+    status: "processing",
+    extractedText: "",
+    duration: durationSeconds,
+  }).returning();
+  await incrementActionsUsed(userId);
 
-      let extractedText = "";
-      let transcribedDurationSeconds: number | undefined;
-      let transcriptionError: string | undefined;
-      try {
-        const result = await transcribeAudio(req.file!.buffer, mimeType, `recording.webm`, undefined, {
-          maxDurationSeconds: audioCapSeconds ?? undefined,
-          glossaryHint,
-        });
-        extractedText = result.text;
-        transcribedDurationSeconds = result.duration;
-      } catch (err: any) {
-        if (err instanceof AudioDurationLimitError) {
-          if (uploadId) clearGenerationProgress(uploadId);
-          return res.status(413).json({ error: err.message, code: err.code });
-        }
-        req.log.error({ err }, "Transcription failed");
-        transcriptionError = err.message;
-        extractedText = `[Transcription failed: ${err.message}]`;
-      }
+  const [recording] = await db.insert(recordingsTable).values({
+    userId,
+    materialId: material.id,
+    title,
+    recordedAt,
+    durationSeconds,
+    mimeType,
+    audioData,
+  }).returning();
 
-      // Hard block: a silent/near-empty recording transcribes successfully
-      // but to an empty or near-empty string. There is no fallback to the
-      // title (or any other metadata) here -- if the actual transcript
-      // doesn't clear the threshold, the request is rejected outright before
-      // anything is persisted, before incrementActionsUsed, and before any
-      // of the three Gemini calls below ever fire.
-      if (!transcriptionError && extractedText.trim().length < MIN_AUDIO_TRANSCRIPT_LENGTH) {
-        if (uploadId) clearGenerationProgress(uploadId);
-        return res.status(400).json({
-          error: "insufficient_content",
-          message: insufficientAudioContentMessage("he"),
-          code: "EMPTY_RECORDING",
-          minLength: MIN_AUDIO_TRANSCRIPT_LENGTH,
-          receivedLength: extractedText.trim().length,
-        });
-      }
+  res.status(202).json({ recording, material, status: "processing", uploadId });
 
-      // Standardized rate: 1 Token per 10 minutes of audio (see
-      // lib/tokens.ts's deductTokensForTranscription), billed against
-      // Whisper's own measured duration -- never the client-supplied
-      // durationSeconds -- and only once a usable transcript exists (a
-      // rejected silent/near-empty recording above never reaches here).
-      if (!transcriptionError && transcribedDurationSeconds) {
-        await deductTokensForTranscription(userId, transcribedDurationSeconds);
-      }
-
-      const [material] = await db.insert(materialsTable).values({
-        userId,
-        courseId,
-        title,
-        contentType: "audio",
-        language: "he",
-        status: transcriptionError ? "error" : "ready",
-        extractedText,
-        duration: durationSeconds,
-      }).returning();
-      await incrementActionsUsed(userId);
-
-      // Save recording row immediately so we can return something useful
-      const [recording] = await db.insert(recordingsTable).values({
-        userId,
-        materialId: material.id,
-        title,
-        recordedAt,
-        durationSeconds,
-        mimeType,
-        audioData,
-      }).returning();
-
-      if (transcriptionError) {
-        if (uploadId) clearGenerationProgress(uploadId);
-        return res.status(201).json({ recording, kit: null, transcriptionError });
-      }
-
-      // Parallel AI generation
-      const content = extractedText;
-      const language = "he" as const;
-      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 50, stage: "running" });
-      try {
-        await requireTokenBalance(userId);
-
-        // glossaryTerms is already fetched above (before transcription) so
-        // Whisper's prompt hint and this summary call ground against the
-        // exact same course-specific terminology, queried only once.
-        const [summaryResult, flashResult, questionResult] = await Promise.all([
-          generateSummary({ language, materialContent: content, materialTitle: title, summaryType: "detailed", bookmarkTimestamps, audioDurationSeconds: durationSeconds, glossaryTerms }),
-          generateFlashcardsAI({ language, materialContent: content, materialTitle: title, cardCount: 15, cardTypes: ["definition", "qa", "formula", "concept"] }),
-          generateQuestionsAI({ language, materialContent: content, materialTitle: title, questionCount: 10, questionTypes: ["multiple_choice", "true_false"], difficulty: "mixed" }),
-        ]);
-
-        // Summary stage billed at the standardized page-based rate (1 Token
-        // per 5 "standard pages" of source material -- here, the Whisper
-        // transcript -- see lib/tokens.ts), which already covers the
-        // transcript text itself; flashcards/questions below only charge
-        // for their own generated output.
-        await deductTokensForSummary(userId, content);
-        await deductTokensForGeneration(
-          userId,
-          "",
-          JSON.stringify(flashResult) + JSON.stringify(questionResult),
-        );
-
-        const [[summary], [deck], [qSet]] = await Promise.all([
-          db.insert(summariesTable).values({ materialId: material.id, summaryType: "detailed", language, content: summaryResult.content, keyPoints: summaryResult.keyPoints }).returning(),
-          db.insert(flashcardDecksTable).values({ materialId: material.id, title: `${title} — כרטיסיות`, language }).returning(),
-          db.insert(questionSetsTable).values({ materialId: material.id, title: `${title} — חידון`, language }).returning(),
-        ]);
-
-        await Promise.all([
-          flashResult.length > 0 ? db.insert(flashcardsTable).values(flashResult.map(c => ({ deckId: deck.id, front: c.front, back: c.back, difficulty: c.difficulty || "medium", cardType: c.cardType || "qa", concept: c.concept || null }))) : Promise.resolve(),
-          questionResult.length > 0 ? db.insert(questionsTable).values(questionResult.map(q => ({ setId: qSet.id, questionType: q.questionType || "multiple_choice", question: q.question, answer: q.answer, explanation: q.explanation || null, options: q.options || [], difficulty: q.difficulty || "medium", concept: q.concept || null, optionExplanations: Array.isArray(q.optionExplanations) ? q.optionExplanations.map((e) => (typeof e === "string" ? e : null)) : null }))) : Promise.resolve(),
-          db.update(recordingsTable).set({ summaryId: summary.id, deckId: deck.id, questionSetId: qSet.id }).where(eq(recordingsTable.id, recording.id)),
-          db.insert(activityTable).values({ userId, activityType: "summary", description: `הקלטה ועיבוד: "${title}"`, materialTitle: title }),
-        ]);
-
-        const kit = { summary: { id: summary.id, keyPointCount: summaryResult.keyPoints.length }, deck: { id: deck.id, cardCount: flashResult.length }, questionSet: { id: qSet.id, questionCount: questionResult.length } };
-        if (uploadId) clearGenerationProgress(uploadId);
-        return res.status(201).json({ recording: { ...recording, summaryId: summary.id, deckId: deck.id, questionSetId: qSet.id }, kit });
-      } catch (err: any) {
-        req.log.error({ err }, "Kit generation failed after transcription");
-        if (uploadId) clearGenerationProgress(uploadId);
-        return res.status(201).json({ recording, kit: null, generationError: err.message });
-      }
-    },
-    { isPriority },
-  );
+  void runRecordingPipeline({
+    recording,
+    material,
+    userId,
+    buffer: req.file.buffer,
+    mimeType,
+    title,
+    effectiveMaxSeconds,
+    glossaryHint,
+    bookmarkTimestamps,
+    durationSeconds,
+    uploadId,
+    isPriority,
+  }).catch((err) => {
+    logger.error({ err }, "recordings: unhandled background pipeline failure");
+    if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: "Something went wrong while processing your recording. Please try again." });
+  });
 });
 
 router.get("/recordings/upload-progress/:uploadId", async (req, res) => {

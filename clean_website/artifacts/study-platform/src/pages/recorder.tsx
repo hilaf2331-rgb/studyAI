@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
+import { AudioTokenLimitDialog } from "@/components/audio-token-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { NO_CONTENT_MESSAGE_HE, SILENT_AUDIO_MESSAGE_HE, validateRecording, friendlyRecordingErrorMessage } from "@/lib/content-check";
@@ -25,10 +26,12 @@ import {
 } from "lucide-react";
 
 // Hard ceiling matching the backend's MAX_RECORDING_SECONDS in
-// recordings.ts -- a live recording auto-stops here so a student can't
-// accidentally record for hours and blow past Render's free-tier HTTP
-// timeout once the file hits transcription + AI generation.
-const MAX_RECORDING_SECONDS = 20 * 60;
+// lib/validation.ts -- a live recording auto-stops here. Transcription now
+// runs backgrounded and chunked (lib/audio-chunker.ts), so this is no longer
+// tied to Render's free-tier HTTP timeout -- it's just a sane technical
+// bound on a single recording. The real per-user gate is token balance,
+// negotiated via the 402 INSUFFICIENT_TOKENS_FOR_AUDIO flow below.
+const MAX_RECORDING_SECONDS = 3 * 60 * 60;
 
 // Matches the backend's MIN_AUDIO_TRANSCRIPT_LENGTH check in recordings.ts:
 // anything shorter than this reliably transcribes to too little text and
@@ -64,8 +67,15 @@ const SAVE_STEPS_HE = [
 ];
 
 function formatDuration(seconds: number) {
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
+  // Recordings can now run up to 3 hours (MAX_RECORDING_SECONDS) -- switch to
+  // H:MM:SS past the first hour instead of letting the minutes column climb
+  // past 59 (e.g. "179:58" for a near-3-hour recording).
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
@@ -101,6 +111,20 @@ export const RecorderPage: React.FC = () => {
   const [autoStopped, setAutoStopped] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
+  // Set when the backend's 402 INSUFFICIENT_TOKENS_FOR_AUDIO response tells
+  // us the user's token balance can't cover the whole recording -- holds
+  // everything AudioTokenLimitDialog needs to negotiate a way forward (buy
+  // tokens / continue with an affordable prefix / download instead of
+  // uploading at all, since the Blob is already sitting in memory here).
+  const [audioLimitOpen, setAudioLimitOpen] = useState(false);
+  const [pendingUpload, setPendingUpload] = useState<{
+    blob: Blob;
+    recTitle: string;
+    requestedSeconds: number;
+    affordableSeconds: number;
+    tokensNeeded: number;
+    tokensAvailable: number;
+  } | null>(null);
 
   // Real-Time Bookmarking: timestamps (elapsed seconds) the student marked
   // as important during the live recording, surfaced to the backend so the
@@ -316,7 +340,13 @@ export const RecorderPage: React.FC = () => {
         : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "audio/webm";
       setMimeType(mime.split(";")[0]);
 
-      const mr = new MediaRecorder(stream, { mimeType: mime });
+      // Explicit low bitrate (32kbps mono is plenty for Whisper-quality speech)
+      // so a 3-hour lecture stays a predictable ~43MB regardless of a given
+      // browser's undocumented opus default -- without this, MAX_RECORDING_SECONDS
+      // being raised to 3 hours (see recordings.ts) would still hit the upload's
+      // own byte-size ceiling on some browsers whose default bitrate is much
+      // higher than what speech transcription actually needs.
+      const mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32_000 });
       mediaRecorderRef.current = mr;
       recordedAtRef.current = new Date();
 
@@ -413,7 +443,21 @@ export const RecorderPage: React.FC = () => {
     toast({ description: `סומן בדקה ${formatDuration(ts)}` });
   };
 
-  const performSave = useCallback(async (blob: Blob, recTitle: string) => {
+  // Tracks the in-flight progress poll interval so it can be torn down both
+  // on a terminal stage (done/error) and on unmount -- a long recording can
+  // now take much longer than before to finish processing (up to the new
+  // 3-hour ceiling), so this poll can no longer be assumed to wrap up
+  // quickly the way it did back when everything ran synchronously.
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+  }, []);
+
+  // confirmedProcessSeconds is only set on the retry after the user has
+  // already seen AudioTokenLimitDialog's negotiation and chosen "continue
+  // with the affordable prefix" -- its presence tells the backend this
+  // truncated duration was explicitly agreed to.
+  const performSave = useCallback(async (blob: Blob, recTitle: string, confirmedProcessSeconds?: number) => {
     setError("");
     setErrorCode(undefined);
     setRecState("saving");
@@ -422,20 +466,43 @@ export const RecorderPage: React.FC = () => {
 
     const stepInterval = setInterval(() => setSaveStep(s => Math.min(s + 1, SAVE_STEPS_HE.length - 1)), 6000);
 
-    // Polls the backend's queue/progress endpoint so a student stuck behind
-    // the concurrency limit during an exam-period rush sees "X uploads ahead
-    // of you" instead of a bar that looks stuck at 0% -- mirrors
-    // material-new.tsx's identical uploadId + poll pattern for file uploads.
+    // POST /api/recordings now responds 202 immediately (transcription +
+    // Gemini generation run backgrounded, see api-server's
+    // routes/recordings.ts) -- this same poll loop that used to only show
+    // "X uploads ahead of you" while queued now also watches for the
+    // background job's terminal stage ("done"/"error") before ever leaving
+    // the "saving" screen.
     const uploadId = crypto.randomUUID();
+    let settled = false;
     const pollInterval = setInterval(async () => {
+      if (settled) return;
       try {
         const res = await fetch(apiUrl(`/api/recordings/upload-progress/${uploadId}`), {
           headers: { Authorization: `Bearer ${getStoredToken()}` },
         });
         const progress = await res.json();
         setQueuePosition(progress.stage === "queued" ? progress.queuePosition ?? null : null);
+
+        if (progress.stage === "done") {
+          settled = true;
+          clearInterval(stepInterval);
+          clearInterval(pollInterval);
+          setQueuePosition(null);
+          if (progress.result?.kit) setKitResult(progress.result.kit);
+          clearCachedRecording();
+          setRecState("done");
+          loadHistory();
+        } else if (progress.stage === "error") {
+          settled = true;
+          clearInterval(stepInterval);
+          clearInterval(pollInterval);
+          setQueuePosition(null);
+          setError(progress.error || "אירעה שגיאה בעיבוד ההקלטה. נסה שנית.");
+          setRecState("error");
+        }
       } catch {}
-    }, 1000);
+    }, 1500);
+    pollIntervalRef.current = pollInterval;
 
     try {
       const fd = new FormData();
@@ -446,6 +513,7 @@ export const RecorderPage: React.FC = () => {
       fd.append("uploadId", uploadId);
       if (courseId) fd.append("courseId", courseId);
       if (bookmarks.length > 0) fd.append("bookmarks", JSON.stringify(bookmarks));
+      if (confirmedProcessSeconds != null) fd.append("confirmedProcessSeconds", String(confirmedProcessSeconds));
 
       const res = await fetch(apiUrl("/api/recordings"), {
         method: "POST",
@@ -454,13 +522,27 @@ export const RecorderPage: React.FC = () => {
       });
       const data = await res.json();
 
-      clearInterval(stepInterval);
-      clearInterval(pollInterval);
-      setQueuePosition(null);
-
       if (!res.ok) {
+        settled = true;
+        clearInterval(stepInterval);
+        clearInterval(pollInterval);
+        setQueuePosition(null);
+
         if (data.code === "BETA_LIMIT_REACHED") {
           setBetaLimitOpen(true);
+          setRecState("stopped");
+          return;
+        }
+        if (data.code === "INSUFFICIENT_TOKENS_FOR_AUDIO") {
+          setPendingUpload({
+            blob,
+            recTitle,
+            requestedSeconds: data.requestedSeconds,
+            affordableSeconds: data.affordableSeconds,
+            tokensNeeded: data.tokensNeeded,
+            tokensAvailable: data.tokensAvailable,
+          });
+          setAudioLimitOpen(true);
           setRecState("stopped");
           return;
         }
@@ -470,15 +552,12 @@ export const RecorderPage: React.FC = () => {
         return;
       }
 
-      if (data.kit) {
-        setKitResult(data.kit);
-      }
-      // Upload succeeded (or the job was at least registered) -- the local
-      // safety-net copy is no longer needed.
-      clearCachedRecording();
-      setRecState("done");
-      loadHistory();
+      // 202 accepted -- the recording/material rows already exist and the
+      // background pipeline is running. The poll loop above (already
+      // ticking) takes it from here and flips recState once it sees "done"
+      // or "error"; nothing left to do on this branch.
     } catch (err: any) {
+      settled = true;
       clearInterval(stepInterval);
       clearInterval(pollInterval);
       setQueuePosition(null);
@@ -653,7 +732,7 @@ export const RecorderPage: React.FC = () => {
                 </span>
               </div>
 
-              {/* Progress toward the 20-minute auto-stop limit */}
+              {/* Progress toward the 3-hour auto-stop limit */}
               <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                 <div
                   className={`h-full transition-all duration-500 ${elapsed >= MAX_RECORDING_SECONDS - 60 ? "bg-destructive" : "bg-primary"}`}
@@ -661,7 +740,7 @@ export const RecorderPage: React.FC = () => {
                 />
               </div>
               <p className="text-xs text-muted-foreground text-center -mt-1">
-                מקסימום 20 דקות להקלטה — ההקלטה תישמר ותעובד אוטומטית כשמגיעים למגבלה
+                מקסימום 3 שעות להקלטה — ההקלטה תישמר ותעובד אוטומטית כשמגיעים למגבלה
               </p>
               <p className="text-xs text-center -mt-1">
                 {elapsed < MIN_RECORDING_SECONDS ? (
@@ -730,7 +809,7 @@ export const RecorderPage: React.FC = () => {
               {autoStopped && (
                 <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-20 דקות, מעבד את החומר...
+                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-3 שעות, מעבד את החומר...
                 </div>
               )}
 
@@ -807,7 +886,7 @@ export const RecorderPage: React.FC = () => {
               {autoStopped && (
                 <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-20 דקות, מעבד את החומר...
+                  הקלטה נעצרה אוטומטית - הגעת למגבלת ה-3 שעות, מעבד את החומר...
                 </div>
               )}
               {queuePosition != null && (
@@ -1012,6 +1091,45 @@ export const RecorderPage: React.FC = () => {
       <audio ref={audioRef} className="hidden" />
 
       <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
+
+      {pendingUpload && (
+        <AudioTokenLimitDialog
+          open={audioLimitOpen}
+          onOpenChange={setAudioLimitOpen}
+          requestedSeconds={pendingUpload.requestedSeconds}
+          affordableSeconds={pendingUpload.affordableSeconds}
+          tokensNeeded={pendingUpload.tokensNeeded}
+          tokensAvailable={pendingUpload.tokensAvailable}
+          onBuyTokens={() => {
+            setAudioLimitOpen(false);
+            openPurchaseModal();
+          }}
+          onContinuePartial={() => {
+            setAudioLimitOpen(false);
+            performSave(pendingUpload.blob, pendingUpload.recTitle, pendingUpload.affordableSeconds);
+          }}
+          onDownloadInstead={() => {
+            // The Blob is already sitting in memory (and in IndexedDB via
+            // recording-cache) -- the user chose not to spend tokens
+            // uploading it, so hand them a local copy instead of just
+            // discarding the take. Keeps the cached copy intact (does NOT
+            // call clearCachedRecording) since nothing was actually saved
+            // server-side.
+            const blob = pendingUpload.blob;
+            const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${pendingUpload.recTitle || "הקלטה"}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            setAudioLimitOpen(false);
+            setRecState("stopped");
+          }}
+        />
+      )}
     </div>
   );
 };

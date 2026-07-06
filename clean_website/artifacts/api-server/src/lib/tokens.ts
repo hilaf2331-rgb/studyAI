@@ -1,7 +1,6 @@
 import { db, usersTable } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { estimateTokenCount } from "./chunker";
-import { FREE_TIER_MAX_AUDIO_SECONDS } from "./validation";
 
 // Every balance is stored and spent internally in raw cost-estimation units
 // (the same scale estimateTokenCount produces, easily thousands per
@@ -221,21 +220,54 @@ export async function incrementActionsUsed(userId: number): Promise<void> {
     .where(eq(usersTable.id, userId));
 }
 
-// Free-plan ceiling on transcribable audio length, lifted entirely for
-// admins and for anyone who has ever bought a token package (isPayingCustomer,
-// set one-way by routes/billing.ts's webhook on first credited purchase) --
-// returns null to mean "no cap", or the numeric cap in seconds otherwise.
-export async function getFreeTierAudioCapSeconds(userId: number): Promise<number | null> {
-  if (await isAdminUser(userId)) return null;
-  const [user] = await db.select({ isPayingCustomer: usersTable.isPayingCustomer }).from(usersTable).where(eq(usersTable.id, userId));
-  if (user?.isPayingCustomer) return null;
-  return FREE_TIER_MAX_AUDIO_SECONDS;
+// Duration is no longer gated by paying-customer status -- every user (free
+// or paying) can record up to MAX_RECORDING_SECONDS (lib/validation.ts, 3
+// hours); the real gate is whether their token balance can cover the
+// transcription cost of the requested length (1 Token = 10 minutes, see
+// TRANSCRIPTION_SECONDS_PER_TOKEN above). This tells the caller (recordings.ts,
+// materials.ts) exactly how much of the requested duration IS affordable
+// right now, so the frontend can offer "buy tokens" / "process just the first
+// N minutes" / "cancel" instead of a flat rejection. Only estimates the
+// transcription-stage cost -- the downstream summary/flashcards/questions
+// cost is unknowable before transcribing and stays separately gated by the
+// existing requireTokenBalance check later in the pipeline; that's an
+// accepted, pre-existing limitation this doesn't attempt to fix.
+export interface AudioAffordability {
+  canAffordFull: boolean;
+  affordableSeconds: number;
+  tokensNeeded: number; // whole Tokens, ceil, for display
+  tokensAvailable: number; // whole Tokens, floor, for display
+}
+
+// Pure arithmetic core of getAudioAffordability below, split out so the
+// affordability math itself (rounding directions, the canAffordFull
+// boundary, clamping) can be unit-tested without a DB connection -- the
+// exported async function only adds the admin bypass + balance lookup
+// around this.
+export function computeAudioAffordability(requestedSeconds: number, availableRaw: number): AudioAffordability {
+  const neededRaw = Math.ceil((requestedSeconds / TRANSCRIPTION_SECONDS_PER_TOKEN) * RAW_UNITS_PER_TOKEN);
+  const affordableSeconds = Math.max(0, Math.min(requestedSeconds, Math.floor((availableRaw / RAW_UNITS_PER_TOKEN) * TRANSCRIPTION_SECONDS_PER_TOKEN)));
+  return {
+    canAffordFull: availableRaw >= neededRaw,
+    affordableSeconds,
+    tokensNeeded: Math.ceil(neededRaw / RAW_UNITS_PER_TOKEN),
+    tokensAvailable: Math.floor(availableRaw / RAW_UNITS_PER_TOKEN),
+  };
+}
+
+export async function getAudioAffordability(userId: number, requestedSeconds: number): Promise<AudioAffordability> {
+  if (await isAdminUser(userId)) {
+    return { canAffordFull: true, affordableSeconds: requestedSeconds, tokensNeeded: 0, tokensAvailable: Infinity };
+  }
+  await maybeApplyMonthlyRefill(userId);
+  const balance = await getTokenBalance(userId);
+  const availableRaw = (balance?.tokensRemaining ?? 0) + (balance?.tokenBalance ?? 0);
+  return computeAudioAffordability(requestedSeconds, availableRaw);
 }
 
 // Whether this user gets priority treatment (e.g. jumping the processing
 // queue ahead of free-tier jobs, see lib/processing-queue.ts) -- true for
-// admins and for anyone who has ever bought a token package, same
-// isPayingCustomer flag used by getFreeTierAudioCapSeconds above.
+// admins and for anyone who has ever bought a token package.
 export async function isPayingCustomer(userId: number): Promise<boolean> {
   if (await isAdminUser(userId)) return true;
   const [user] = await db.select({ isPayingCustomer: usersTable.isPayingCustomer }).from(usersTable).where(eq(usersTable.id, userId));

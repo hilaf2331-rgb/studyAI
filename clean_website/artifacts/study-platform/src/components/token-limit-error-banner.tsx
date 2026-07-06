@@ -5,10 +5,13 @@ import { useLanguage } from "@/lib/i18n";
 import { AlertCircle, Coins } from "lucide-react";
 
 // Server-side codes that mean "this restriction lifts once the student buys
-// tokens" -- see lib/tokens.ts's getFreeTierAudioCapSeconds (FREE_TIER_AUDIO_LIMIT,
-// RECORDING_TOO_LONG) and lib/extractor.ts's YouTubeTooLongError (VIDEO_TOO_LONG),
-// plus a plain 402 InsufficientTokensError response which carries no code.
-const TOKEN_UPSELL_CODES = new Set(["FREE_TIER_AUDIO_LIMIT", "RECORDING_TOO_LONG", "VIDEO_TOO_LONG"]);
+// tokens" -- RECORDING_TOO_LONG (the absolute MAX_RECORDING_SECONDS ceiling,
+// lib/validation.ts) and lib/extractor.ts's YouTubeTooLongError
+// (VIDEO_TOO_LONG), plus a plain 402 InsufficientTokensError response which
+// carries no code. INSUFFICIENT_TOKENS_FOR_AUDIO (lib/tokens.ts's
+// getAudioAffordability) is handled separately via AudioTokenLimitDialog's
+// buy/partial/cancel negotiation instead of this generic banner.
+const TOKEN_UPSELL_CODES = new Set(["RECORDING_TOO_LONG", "VIDEO_TOO_LONG"]);
 
 export function isTokenUpsellError(data: { code?: string } | null | undefined, status?: number): boolean {
   if (status === 402) return true;

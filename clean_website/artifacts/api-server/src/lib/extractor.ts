@@ -11,11 +11,18 @@ import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
 import { sanitizeExtractedText } from "./sanitize";
-import { freeTierAudioLimitMessage } from "./validation";
+import { probeDurationSeconds, transcodeAndSegment } from "./audio-chunker";
 
 export type ExtractedContent = {
   text: string;
   duration?: number;
+  // Set true when the recording was longer than the caller's
+  // maxDurationSeconds (e.g. the user's token balance couldn't cover the
+  // whole thing) and was cut short by transcodeAndSegment's ffmpeg `-t`
+  // flag before ever reaching Whisper -- lets callers surface "we only
+  // processed the first N minutes" to the user instead of silently
+  // returning a shorter transcript than they might expect.
+  truncated?: boolean;
 };
 
 export type ProgressCallback = (percentage: number) => void;
@@ -303,27 +310,19 @@ export async function extractOffice(buffer: Buffer, fileType: OfficeFileType, on
   return { text };
 }
 
-// Thrown once Whisper's actual measured duration (not the client-supplied
-// estimate) exceeds the free tier's cap -- the authoritative backstop for
-// callers like materials.ts's file-upload path, which has no pre-known
-// duration to check before transcription even starts. By this point the
-// OpenAI transcription cost has already been spent; there's no way to know
-// the real duration any earlier for an uploaded file.
-export class AudioDurationLimitError extends Error {
-  readonly code = "FREE_TIER_AUDIO_LIMIT";
-  constructor(language: "he" | "en" = "he") {
-    super(freeTierAudioLimitMessage(language));
-    this.name = "AudioDurationLimitError";
-  }
-}
-
-export async function transcribeAudio(
+// Single Whisper HTTP call over one already-Whisper-sized buffer -- extracted
+// out of transcribeAudio below so the chunking branch there can call this
+// once per ~15-minute segment instead of duplicating the FormData/fetch/
+// response-parsing logic. No duration check here anymore: truncation now
+// happens BEFORE this ever runs (transcodeAndSegment's ffmpeg `-t` flag), so
+// there's nothing left to reject after the fact for a duration reason.
+async function transcribeSingleChunk(
   buffer: Buffer,
   mimeType: string,
   filename: string,
-  onProgress?: ProgressCallback,
-  options?: { maxDurationSeconds?: number; glossaryHint?: string }
-): Promise<ExtractedContent> {
+  onProgress: ProgressCallback | undefined,
+  glossaryHint: string | undefined,
+): Promise<{ text: string; duration?: number }> {
   // Fail fast with a clear message if the key is unset, rather than letting
   // the request go out with an "Authorization: Bearer undefined" header and
   // surfacing as an opaque 401 from OpenAI deep inside the fetch call below.
@@ -347,8 +346,8 @@ export async function transcribeAudio(
   // acronyms and jargon, instead of only correcting them after the fact in
   // the Gemini summary stage. Capped well under Whisper's ~224-token prompt
   // limit so a huge glossary can't silently get truncated mid-term.
-  if (options?.glossaryHint) {
-    form.append("prompt", options.glossaryHint.slice(0, 800));
+  if (glossaryHint) {
+    form.append("prompt", glossaryHint.slice(0, 800));
   }
 
   onProgress?.(10);
@@ -386,12 +385,112 @@ export async function transcribeAudio(
   const result = (await response.json()) as { text: string; duration?: number };
   onProgress?.(100);
   const duration = result.duration ? Math.round(result.duration) : undefined;
-  if (options?.maxDurationSeconds != null && duration != null && duration > options.maxDurationSeconds) {
-    throw new AudioDurationLimitError("he");
-  }
   return {
     text: sanitizeExtractedText(result.text || ""),
     duration,
+  };
+}
+
+// Chunk size for the segmented-transcription path below. 15 minutes keeps
+// each chunk's ogg/opus output comfortably under Whisper's 25MB cap (mono/
+// 16kHz/32kbps opus runs well under 1MB/minute) with plenty of headroom for
+// unusually dense audio, while still keeping the number of sequential
+// Whisper calls for a full 3-hour recording (the new MAX_RECORDING_SECONDS
+// ceiling) to a manageable dozen or so.
+export const AUDIO_CHUNK_SECONDS = 15 * 60;
+
+// Derives a filename extension ffmpeg/ffprobe can use to sniff the input
+// container from the browser/upload-supplied MIME type -- best-effort, since
+// an unrecognized MIME still falls back to a sane default rather than
+// blocking the probe/transcode step outright. Exported so routes/materials.ts
+// can reuse it for its own pre-transcription probeDurationSeconds() call.
+export function extensionFromMimeType(mimeType: string): string {
+  const base = mimeType.split(";")[0].trim().toLowerCase();
+  const map: Record<string, string> = {
+    "audio/webm": ".webm",
+    "video/webm": ".webm",
+    "audio/mp4": ".mp4",
+    "video/mp4": ".mp4",
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/ogg": ".ogg",
+    "audio/m4a": ".m4a",
+    "audio/x-m4a": ".m4a",
+  };
+  return map[base] ?? ".webm";
+}
+
+// Transcribes a recording of essentially any length by trimming/segmenting it
+// with ffmpeg BEFORE it ever reaches Whisper, instead of the old approach of
+// calling Whisper over the whole buffer and only checking the duration
+// afterward (which spent the OpenAI cost on audio that was going to be
+// rejected anyway). options.maxDurationSeconds is the token-affordability
+// cutoff negotiated with the user up front (see lib/tokens.ts's
+// getAudioAffordability) -- when the probed duration exceeds it, ffmpeg's
+// `-t` flag trims the file to exactly that many seconds before any
+// transcription call is made, so nothing is ever billed or rejected after
+// the fact for this reason anymore.
+export async function transcribeAudio(
+  buffer: Buffer,
+  mimeType: string,
+  filename: string,
+  onProgress?: ProgressCallback,
+  options?: { maxDurationSeconds?: number; glossaryHint?: string; onChunkProgress?: (current: number, total: number) => void }
+): Promise<ExtractedContent> {
+  const extension = extensionFromMimeType(mimeType);
+  const probedSeconds = await probeDurationSeconds(buffer, extension);
+
+  // Duration couldn't be determined at all (exotic codec, corrupt upload) --
+  // fall back to the pre-chunking behavior of just handing the whole buffer
+  // to Whisper directly, exactly as before this feature existed. There is no
+  // safe way to enforce maxDurationSeconds without a known duration to trim
+  // against.
+  if (probedSeconds == null) {
+    return transcribeSingleChunk(buffer, mimeType, filename, onProgress, options?.glossaryHint);
+  }
+
+  const effectiveSeconds = options?.maxDurationSeconds != null
+    ? Math.min(probedSeconds, options.maxDurationSeconds)
+    : probedSeconds;
+  const needsTrimming = options?.maxDurationSeconds != null && probedSeconds > options.maxDurationSeconds;
+
+  // Cheapest path: short recording that doesn't need trimming -- skip the
+  // transcode entirely and hand the original buffer straight to Whisper,
+  // exactly like before chunking existed. This keeps the common case (a
+  // normal-length lecture) exactly as fast/cheap as it always was.
+  if (effectiveSeconds <= AUDIO_CHUNK_SECONDS && !needsTrimming) {
+    const result = await transcribeSingleChunk(buffer, mimeType, filename, onProgress, options?.glossaryHint);
+    return { ...result, truncated: false };
+  }
+
+  const chunks = await transcodeAndSegment(buffer, extension, {
+    chunkSeconds: AUDIO_CHUNK_SECONDS,
+    maxTotalSeconds: effectiveSeconds,
+  });
+
+  // Sequential, not parallel -- keeps OpenAI rate-limit exposure identical to
+  // today's one-call-at-a-time model instead of firing a dozen Whisper
+  // requests at once for a long recording.
+  const texts: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkResult = await transcribeSingleChunk(
+      chunks[i].buffer,
+      "audio/ogg",
+      `chunk_${i}.ogg`,
+      undefined,
+      options?.glossaryHint,
+    );
+    texts.push(chunkResult.text.trim());
+    options?.onChunkProgress?.(i + 1, chunks.length);
+    onProgress?.(Math.round(((i + 1) / chunks.length) * 100));
+  }
+
+  return {
+    text: sanitizeExtractedText(texts.join(" ")),
+    duration: Math.round(effectiveSeconds),
+    truncated: needsTrimming,
   };
 }
 

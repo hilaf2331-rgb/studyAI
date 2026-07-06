@@ -73,13 +73,14 @@ export function contentTooLongMessage(language: "he" | "en" = "he"): string {
     : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
 }
 
-// Shared with the direct browser-recording upload route (recordings.ts),
-// which enforces the same 25MB/20-minute audio cap as the file-upload path
-// in materials.ts -- same Render free-tier rationale, same message.
+// Shared with the direct browser-recording upload route (recordings.ts) and
+// the audio/video file-upload path in materials.ts -- each enforces its own
+// byte-size ceiling (see MAX_RECORDING_BYTES / MAX_FILE_BYTES.audio), but
+// both use this same user-facing message.
 export function mediaTooLargeMessage(language: "he" | "en" = "he"): string {
   return language === "he"
-    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
 }
 
 // Recordings.ts's server-side backstop: a zero-byte upload or a transcript
@@ -94,17 +95,26 @@ export function insufficientAudioContentMessage(language: "he" | "en" = "he"): s
     : "No content was detected in the recording (it may have been silent or too short). Please check the recording and try again.";
 }
 
-// Free-plan ceiling on transcribable audio length, enforced both as a fast
-// pre-flight check (client-supplied duration, before any Whisper call is
-// made) and as a server-side backstop against the actual measured duration
-// (lib/extractor.ts's transcribeAudio) -- lifted entirely for anyone who has
-// ever bought a token package (lib/tokens.ts's getFreeTierAudioCapSeconds).
-export const FREE_TIER_MAX_AUDIO_SECONDS = 20 * 60;
+// Absolute ceiling on a single recording's length, applying to literally
+// everyone including admins -- this replaced the old 20-minute cap that
+// existed only because the whole transcription+generation pipeline used to
+// run synchronously inside one HTTP request, and Render's free-tier proxy
+// kills requests after ~100-120s. Now that transcription is backgrounded
+// (see routes/recordings.ts's runRecordingPipeline) and chunked before ever
+// reaching Whisper (lib/audio-chunker.ts), there's no HTTP-timeout reason to
+// cap duration tightly -- this is now just a sane technical bound on a single
+// upload, not a monetization gate. The real per-user gate is token balance
+// (see getAudioAffordability in lib/tokens.ts), checked separately.
+export const MAX_RECORDING_SECONDS = 3 * 60 * 60;
 
-export function freeTierAudioLimitMessage(language: "he" | "en" = "he"): string {
+// Shown when the user's token balance can't cover the full requested
+// recording length -- pairs with getAudioAffordability (lib/tokens.ts),
+// which computes affordableMinutes so the frontend can offer "buy tokens" /
+// "process just the first N minutes" / "cancel" instead of a flat rejection.
+export function insufficientTokensForAudioMessage(affordableMinutes: number, language: "he" | "en" = "he"): string {
   return language === "he"
-    ? "בתוכנית החינמית ניתן לתמלל הקלטות של עד 20 דקות. שדרגו לחשבון בתשלום כדי לתמלל הרצאות באורך מלא."
-    : "Free accounts can transcribe recordings up to 20 minutes. Top up your account to transcribe full-length lectures.";
+    ? `אין לך מספיק טוקנים לתמלול ההקלטה כולה. עם היתרה הנוכחית ניתן לתמלל כ-${affordableMinutes} דקות.`
+    : `You don't have enough tokens to transcribe the whole recording. Your current balance covers about ${affordableMinutes} minutes.`;
 }
 
 /**

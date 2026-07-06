@@ -1,9 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useListCourses, getListMaterialsQueryKey, useGetUploadProgress, getGetUploadProgressQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { usePurchaseModal } from "@/lib/purchase-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +16,7 @@ import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, Ch
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
 import { BetaLimitDialog } from "@/components/beta-limit-dialog";
+import { AudioTokenLimitDialog } from "@/components/audio-token-limit-dialog";
 import { Progress } from "@/components/ui/progress";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
@@ -48,11 +50,22 @@ const MAX_FILE_BYTES: Partial<Record<ContentType, number>> = {
   pptx: 15 * 1024 * 1024,
   xlsx: 15 * 1024 * 1024,
   image: 8 * 1024 * 1024,
-  audio: 25 * 1024 * 1024,
+  // Matches the backend's MAX_FILE_BYTES.audio (routes/materials.ts), raised
+  // from 25MB to the route's global 50MB multer ceiling now that duration
+  // alone goes up to 3 hours -- an uploaded file's bitrate isn't bounded the
+  // way the in-app recorder's is, so this is the realistic ceiling for a
+  // dragged-in audio file.
+  audio: 50 * 1024 * 1024,
   video: 50 * 1024 * 1024,
 };
 
-const MAX_AUDIO_SECONDS = 20 * 60;
+// Matches the backend's absolute MAX_RECORDING_SECONDS ceiling
+// (lib/validation.ts, 3 hours) -- transcription now runs backgrounded and
+// chunked (lib/audio-chunker.ts), so this is no longer tied to Render's
+// free-tier HTTP timeout; it's just a sane technical bound on a single
+// upload. The real per-user gate is token balance, negotiated via the 402
+// INSUFFICIENT_TOKENS_FOR_AUDIO flow in handleSubmit below.
+const MAX_AUDIO_SECONDS = 3 * 60 * 60;
 const MAX_VIDEO_SECONDS = 5 * 60;
 
 // Drives the simulated progress bar's pace -- bigger files realistically
@@ -78,8 +91,8 @@ function fileTooLargeMessage(resolvedType: ContentType, isRTL: boolean): string 
       : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
   }
   return isRTL
-    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
 }
 
 // Reads duration from file metadata via a throwaway <audio>/<video> element
@@ -150,8 +163,28 @@ export const MaterialNewPage: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [betaLimitOpen, setBetaLimitOpen] = useState(false);
+  // Set once the audio/video background path (routes/materials.ts's
+  // runMaterialAudioExtraction) has accepted the upload with a 202 -- the
+  // material row already exists at this point, so once uploadProgress's
+  // stage flips to "done" the effect below can navigate straight there
+  // without waiting for another response.
+  const [pendingMaterialId, setPendingMaterialId] = useState<number | null>(null);
+  // Set when the backend's 402 INSUFFICIENT_TOKENS_FOR_AUDIO response tells
+  // us the user's token balance can't cover the whole file's transcription
+  // cost -- holds what AudioTokenLimitDialog needs to negotiate a way
+  // forward (buy tokens / continue with an affordable prefix). No
+  // "download instead" option here (unlike recorder.tsx) since the file
+  // already lives on the user's own disk.
+  const [audioLimitOpen, setAudioLimitOpen] = useState(false);
+  const [pendingAudioLimit, setPendingAudioLimit] = useState<{
+    requestedSeconds: number;
+    affordableSeconds: number;
+    tokensNeeded: number;
+    tokensAvailable: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const { open: openPurchaseModal } = usePurchaseModal();
 
   const cfg = PICKER_CONFIG[category];
 
@@ -263,40 +296,24 @@ export const MaterialNewPage: React.FC = () => {
     setImageFiles(prev => [...prev, ...selected]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Does the actual POST /api/materials submission -- factored out of
+  // handleSubmit so onContinuePartial (AudioTokenLimitDialog) can re-invoke
+  // it with confirmedProcessSeconds set, after the initial attempt came back
+  // with a 402 negotiating a shorter, affordable duration. Only the audio/
+  // video file-upload branch can ever produce that 402 or a 202 in the first
+  // place -- every other content type still always responds 201
+  // synchronously, exactly as before.
+  const submitMaterial = useCallback(async (confirmedProcessSeconds?: number) => {
     setError("");
     setErrorCode(undefined);
-    if (!title.trim()) { setError(isRTL ? "יש להזין כותרת" : "Title is required"); return; }
-    if ((contentType === "youtube" || contentType === "url") && !sourceUrl.trim()) {
-      setError(isRTL ? "יש להזין קישור" : "URL is required"); return;
-    }
-    if (cfg.acceptsFile && category === "image" && imageFiles.length === 0) {
-      setError(isRTL ? "יש לבחור תמונה אחת לפחות" : "Please select at least one image"); return;
-    }
-    if (cfg.acceptsFile && category !== "image" && !file) {
-      setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
-    }
-
-    // Content-presence gate -- runs before the request ever leaves the
-    // browser, so an empty/near-empty upload never burns a beta action or
-    // an extraction/AI call that was always going to produce nothing useful.
-    if (contentType === "text" && text.trim().length < MIN_TEXT_CHARS) {
-      toast({ description: noContentMessage(isRTL), variant: "destructive" });
-      return;
-    }
-    if (cfg.acceptsFile && category !== "image" && file && file.size === 0) {
-      toast({ description: noContentMessage(isRTL), variant: "destructive" });
-      return;
-    }
-    if (contentType === "audio" && file && (await isAudioSilent(file))) {
-      toast({ description: noContentMessage(isRTL), variant: "destructive" });
-      return;
-    }
-
     const newUploadId = crypto.randomUUID();
     setUploadId(newUploadId);
     setIsSubmitting(true);
+    // Tracks whether this call ended up waiting on the audio/video
+    // background path -- if so, the isSubmitting/uploadId cleanup below must
+    // be skipped so useGetUploadProgress keeps polling and the effect below
+    // can pick up where this leaves off once the job reaches "done"/"error".
+    let awaitingBackground = false;
     try {
       const token = getStoredToken();
       let response: Response;
@@ -314,6 +331,7 @@ export const MaterialNewPage: React.FC = () => {
         } else {
           fd.append("file", file!);
         }
+        if (confirmedProcessSeconds != null) fd.append("confirmedProcessSeconds", String(confirmedProcessSeconds));
 
         response = await fetch(apiUrl("/api/materials"), {
           method: "POST",
@@ -346,11 +364,35 @@ export const MaterialNewPage: React.FC = () => {
           setBetaLimitOpen(true);
           return;
         }
+        if (data.code === "INSUFFICIENT_TOKENS_FOR_AUDIO") {
+          setPendingAudioLimit({
+            requestedSeconds: data.requestedSeconds,
+            affordableSeconds: data.affordableSeconds,
+            tokensNeeded: data.tokensNeeded,
+            tokensAvailable: data.tokensAvailable,
+          });
+          setAudioLimitOpen(true);
+          return;
+        }
         const err: any = new Error(data.error || "Failed to create material");
         err.code = data.code;
         throw err;
       }
 
+      if (response.status === 202) {
+        // Audio/video background path (routes/materials.ts's
+        // runMaterialAudioExtraction): the material row already exists with
+        // status "processing". Keep isSubmitting/uploadId set so the
+        // existing useGetUploadProgress polling below keeps running -- the
+        // effect watching uploadProgress?.stage takes it from here once the
+        // job reaches "done" or "error".
+        const data = await response.json();
+        setPendingMaterialId(data.material.id);
+        awaitingBackground = true;
+        return;
+      }
+
+      // Every other content type still responds 201 synchronously.
       const material = await response.json();
       qc.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
       // autogen=1 tells MaterialDetailPage to kick off generate-all itself
@@ -361,9 +403,67 @@ export const MaterialNewPage: React.FC = () => {
       setError(err.message || "Something went wrong");
       setErrorCode(err.code);
     } finally {
+      if (!awaitingBackground) {
+        setIsSubmitting(false);
+        setUploadId(null);
+      }
+    }
+  }, [cfg, category, imageFiles, file, title, contentType, language, subjectType, courseId, text, sourceUrl, qc, setLocation]);
+
+  // Once the audio/video background extraction (pendingMaterialId) reaches a
+  // terminal stage, finish exactly like the synchronous 201 path above would
+  // have: invalidate the materials list and navigate to the material page
+  // (using the id already known from the 202 response -- no need to
+  // re-fetch it here, MaterialDetailPage re-fetches on mount anyway).
+  useEffect(() => {
+    if (pendingMaterialId == null || !uploadProgress) return;
+    if (uploadProgress.stage === "done") {
+      const materialId = pendingMaterialId;
+      setPendingMaterialId(null);
       setIsSubmitting(false);
       setUploadId(null);
+      qc.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
+      setLocation(`/materials/${materialId}?autogen=1`);
+    } else if (uploadProgress.stage === "error") {
+      setPendingMaterialId(null);
+      setIsSubmitting(false);
+      setUploadId(null);
+      setError(uploadProgress.error || (isRTL ? "העיבוד נכשל. נסה שוב." : "Processing failed. Please try again."));
     }
+  }, [uploadProgress, pendingMaterialId, qc, setLocation, isRTL]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setErrorCode(undefined);
+    if (!title.trim()) { setError(isRTL ? "יש להזין כותרת" : "Title is required"); return; }
+    if ((contentType === "youtube" || contentType === "url") && !sourceUrl.trim()) {
+      setError(isRTL ? "יש להזין קישור" : "URL is required"); return;
+    }
+    if (cfg.acceptsFile && category === "image" && imageFiles.length === 0) {
+      setError(isRTL ? "יש לבחור תמונה אחת לפחות" : "Please select at least one image"); return;
+    }
+    if (cfg.acceptsFile && category !== "image" && !file) {
+      setError(isRTL ? "יש לבחור קובץ" : "Please select a file"); return;
+    }
+
+    // Content-presence gate -- runs before the request ever leaves the
+    // browser, so an empty/near-empty upload never burns a beta action or
+    // an extraction/AI call that was always going to produce nothing useful.
+    if (contentType === "text" && text.trim().length < MIN_TEXT_CHARS) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
+    }
+    if (cfg.acceptsFile && category !== "image" && file && file.size === 0) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
+    }
+    if (contentType === "audio" && file && (await isAudioSilent(file))) {
+      toast({ description: noContentMessage(isRTL), variant: "destructive" });
+      return;
+    }
+
+    await submitMaterial();
   };
 
   return (
@@ -651,7 +751,7 @@ export const MaterialNewPage: React.FC = () => {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 15MB (כ-40 עמודים)" : "PDF, Word, PowerPoint, Excel up to 15MB (~40 pages)")}
-                        {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 25MB ועד 20 דקות" : "MP3, M4A, WAV, OGG up to 25MB and 20 minutes")}
+                        {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 50MB ועד 3 שעות" : "MP3, M4A, WAV, OGG up to 50MB and 3 hours")}
                         {category === "video" && (isRTL ? "MP4, WebM, MOV עד 50MB ועד 5 דקות" : "MP4, WebM, MOV up to 50MB and 5 minutes")}
                       </p>
                     </div>
@@ -697,6 +797,29 @@ export const MaterialNewPage: React.FC = () => {
       </Card>
 
       <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
+
+      {pendingAudioLimit && (
+        <AudioTokenLimitDialog
+          open={audioLimitOpen}
+          onOpenChange={setAudioLimitOpen}
+          requestedSeconds={pendingAudioLimit.requestedSeconds}
+          affordableSeconds={pendingAudioLimit.affordableSeconds}
+          tokensNeeded={pendingAudioLimit.tokensNeeded}
+          tokensAvailable={pendingAudioLimit.tokensAvailable}
+          onBuyTokens={() => {
+            setAudioLimitOpen(false);
+            openPurchaseModal();
+          }}
+          onContinuePartial={() => {
+            const affordableSeconds = pendingAudioLimit.affordableSeconds;
+            setAudioLimitOpen(false);
+            void submitMaterial(affordableSeconds);
+          }}
+          // No onDownloadInstead here -- unlike recorder.tsx's live-mic flow,
+          // this file already lives on the user's own disk, so there's
+          // nothing useful to "download".
+        />
+      )}
     </div>
   );
 };

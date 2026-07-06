@@ -4,15 +4,19 @@ import { randomBytes } from "crypto";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, count, and, inArray, desc } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
-import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, YouTubeVideoNotFoundError, YouTubeTooLongError, AudioDurationLimitError } from "../lib/extractor";
-import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage } from "../lib/validation";
+import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, extensionFromMimeType, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
+import { probeDurationSeconds } from "../lib/audio-chunker";
+import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage, MAX_RECORDING_SECONDS, insufficientTokensForAudioMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { runExclusive } from "../lib/processing-queue";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
-import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getFreeTierAudioCapSeconds, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
+import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getAudioAffordability, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
+import { logger } from "../lib/logger";
 
 const router = Router();
+
+type MaterialRow = typeof materialsTable.$inferSelect;
 
 // Render's free tier is the binding constraint for every beta-only cap in
 // this file: a video upload (heaviest case) can be up to 50MB, so multer's
@@ -46,6 +50,19 @@ class ContentTooLongError extends Error {
   }
 }
 
+// Thrown when an uploaded audio/video file's ffprobe-measured duration
+// exceeds the absolute MAX_RECORDING_SECONDS ceiling (3 hours) -- same
+// "reject outright before any material row is created" logic as
+// ContentTooLongError/YouTubeTooLongError above, just decided from ffprobe's
+// duration instead of extracted text length or YouTube metadata.
+class RecordingTooLongError extends Error {
+  readonly code = "RECORDING_TOO_LONG";
+  constructor(message: string) {
+    super(message);
+    this.name = "RecordingTooLongError";
+  }
+}
+
 // File-size ceilings are checked manually (not via multer) so each content
 // type can have its own beta cap instead of one limit shared by everything.
 const MAX_FILE_BYTES: Partial<Record<string, number>> = {
@@ -54,7 +71,16 @@ const MAX_FILE_BYTES: Partial<Record<string, number>> = {
   pptx: 15 * 1024 * 1024,
   xlsx: 15 * 1024 * 1024,
   image: 8 * 1024 * 1024,
-  audio: 25 * 1024 * 1024,
+  // Raised from the old 25MB (a leftover from the 20-minute cap) to match
+  // multer's own global ceiling for this route (MAX_UPLOAD_BYTES) -- an
+  // uploaded audio file's bitrate isn't under our control the way
+  // recorder.tsx's live-mic recording is (see its fixed 32kbps
+  // audioBitsPerSecond), so a real 3-hour lecture file above ~50MB will
+  // still be rejected here even though its duration alone would be allowed.
+  // Supporting arbitrarily large uploaded files would need streaming the
+  // upload to disk/object storage instead of multer's in-memory buffer,
+  // which is out of scope for this change.
+  audio: MAX_UPLOAD_BYTES,
   video: 50 * 1024 * 1024,
 };
 
@@ -65,10 +91,10 @@ function fileTooLargeMessage(contentType: string, language: "he" | "en"): string
       ? "התמונה כבדה מדי! בשלב הבטא ניתן להעלות תמונות עד גודל של 8MB."
       : "This image is too large! During the beta we only support images up to 8MB.";
   }
-  // audio + video share one message per the beta's combined media cap.
+  // audio + video share one message per the combined media cap.
   return language === "he"
-    ? "קובץ המדיה ארוך או כבד מדי! בשלב הבטא אנו תומכים בהקלטות של עד 20 דקות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! During the beta we only support recordings up to 20 minutes and direct video up to 5 minutes.";
+    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
+    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
 }
 
 async function getMaterialWithCounts(id: number, userId: number) {
@@ -100,6 +126,69 @@ async function getMaterialWithCounts(id: number, userId: number) {
     wordCount: getWordCount(material.extractedText),
     tooShortForGeneration: isContentTooShort(material.extractedText),
   };
+}
+
+// Backgrounded transcription for the audio/video file-upload branch of
+// POST /materials, run after the 202 has already gone out -- mirrors
+// routes/recordings.ts's runRecordingPipeline, but only covers extraction
+// (no summary/flashcards/questions here: that stays a separate follow-up
+// POST /materials/:id/generate-all call the frontend already makes today,
+// same as every other content type in this route). Nothing in here can hold
+// an HTTP response open, so every exit path updates the already-created
+// material row and writes a terminal "done"/"error" progress entry instead.
+async function runMaterialAudioExtraction(params: {
+  material: MaterialRow;
+  userId: number;
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+  effectiveMaxSeconds: number | undefined;
+  glossaryHint: string | undefined;
+  uploadId: string | undefined;
+  isPriority: boolean;
+}): Promise<void> {
+  const { material, userId, buffer, mimeType, filename, effectiveMaxSeconds, glossaryHint, uploadId, isPriority } = params;
+
+  await runExclusive(
+    (queuePosition) => {
+      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
+    },
+    async () => {
+      try {
+        const result = await transcribeAudio(
+          buffer,
+          mimeType,
+          filename,
+          (percentage) => {
+            if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage, stage: "extracting" });
+          },
+          { maxDurationSeconds: effectiveMaxSeconds, glossaryHint },
+        );
+
+        // Standardized rate: 1 Token per 10 minutes of audio (see
+        // lib/tokens.ts's deductTokensForTranscription), billed against
+        // Whisper's own measured duration.
+        if (result.duration) await deductTokensForTranscription(userId, result.duration);
+
+        await db.update(materialsTable)
+          .set({ status: "ready", extractedText: result.text, duration: result.duration })
+          .where(eq(materialsTable.id, material.id));
+
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 100, stage: "done",
+          result: { materialId: material.id, truncated: result.truncated ?? false },
+        });
+      } catch (err: any) {
+        logger.error({ err, materialId: material.id }, "materials: audio/video background extraction failed");
+        await db.update(materialsTable).set({ status: "error" }).where(eq(materialsTable.id, material.id));
+        if (uploadId) setGenerationProgress(uploadId, {
+          currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+          error: err.message || "Extraction failed",
+        });
+      }
+    },
+    { isPriority },
+  );
 }
 
 router.get("/materials", async (req, res) => {
@@ -193,6 +282,119 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
     throw err;
   }
 
+  // Audio/video file uploads get their own backgrounded path: Whisper
+  // transcription (now possibly chunked across many ffmpeg-segmented pieces,
+  // see lib/audio-chunker.ts) can take far longer than Render's free-tier
+  // proxy allows a single HTTP request to stay open, so this branch responds
+  // 202 immediately and finishes transcription in runMaterialAudioExtraction
+  // after the response has gone out -- exactly like routes/recordings.ts's
+  // live-recording flow. Every other content type below (pdf/docx/text/url/
+  // image/youtube) is unaffected and keeps responding 201 synchronously.
+  if ((contentType === "audio" || contentType === "video") && reqFile) {
+    try {
+      // Unlike the live-recording flow (recordings.ts), there's no client-
+      // supplied duration for an uploaded file -- ffprobe is the only source
+      // of truth here, and it's cheap enough to run before committing to
+      // anything (no Whisper cost spent yet).
+      const extension = extensionFromMimeType(reqFile.mimetype);
+      const probedSeconds = await probeDurationSeconds(reqFile.buffer, extension);
+
+      if (probedSeconds != null && probedSeconds > MAX_RECORDING_SECONDS) {
+        throw new RecordingTooLongError(fileTooLargeMessage(contentType, language));
+      }
+
+      // Token-affordability negotiation, same shape/logic as recordings.ts --
+      // run BEFORE clearGenerationProgress/material-row creation so a
+      // rejected negotiation never leaves partial state behind. If ffprobe
+      // couldn't read the duration at all, this pre-check is skipped
+      // entirely (best-effort, matching fetchYouTubeDurationSeconds's
+      // fallback philosophy elsewhere in this codebase) and
+      // MAX_RECORDING_SECONDS is passed straight through as the ffmpeg trim
+      // bound so worst-case cost still has a ceiling even without a
+      // pre-negotiated agreement -- deductTokensForTranscription's floor-at-
+      // zero balance handling is the backstop for that case, same as today.
+      const confirmedProcessSeconds = req.body.confirmedProcessSeconds ? Number(req.body.confirmedProcessSeconds) : undefined;
+      let effectiveMaxSeconds: number | undefined = probedSeconds == null ? MAX_RECORDING_SECONDS : undefined;
+      if (probedSeconds != null) {
+        const affordability = await getAudioAffordability(userId, probedSeconds);
+        if (!affordability.canAffordFull) {
+          if (confirmedProcessSeconds == null) {
+            if (uploadId) clearGenerationProgress(uploadId);
+            return res.status(402).json({
+              error: insufficientTokensForAudioMessage(Math.floor(affordability.affordableSeconds / 60), language),
+              code: "INSUFFICIENT_TOKENS_FOR_AUDIO",
+              requestedSeconds: probedSeconds,
+              affordableSeconds: affordability.affordableSeconds,
+              tokensNeeded: affordability.tokensNeeded,
+              tokensAvailable: affordability.tokensAvailable,
+            });
+          }
+          effectiveMaxSeconds = Math.max(0, Math.min(confirmedProcessSeconds, affordability.affordableSeconds));
+        }
+      }
+
+      // Paying users (and admins) cut ahead of any free-tier jobs already
+      // waiting -- see lib/processing-queue.ts's priority insertion logic.
+      const isPriority = await isPayingCustomer(userId);
+      // The glossary is the "Supreme Source of Truth" for this material's
+      // whole pipeline -- fetched up front, before transcription even starts,
+      // so Whisper itself gets a chance to recognize the course's own
+      // acronyms/jargon correctly (via the prompt hint below), instead of
+      // only being corrected after the fact in the Gemini summary stage.
+      const glossaryTerms = courseId
+        ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
+            .from(glossaryTermsTable)
+            .where(eq(glossaryTermsTable.courseId, courseId))
+        : [];
+      const glossaryHint = glossaryTerms.length ? glossaryTerms.map((t) => t.term).join(", ") : undefined;
+
+      const [material] = await db.insert(materialsTable).values({
+        title,
+        contentType,
+        language,
+        courseId,
+        userId,
+        status: "processing",
+        extractedText: "",
+        subjectType,
+      }).returning();
+
+      await db.insert(activityTable).values({
+        userId,
+        activityType: "upload",
+        description: `Uploaded "${material.title}"`,
+        materialTitle: material.title,
+      });
+      await incrementActionsUsed(userId);
+
+      res.status(202).json({ material, status: "processing", uploadId });
+
+      void runMaterialAudioExtraction({
+        material,
+        userId,
+        buffer: reqFile.buffer,
+        mimeType: reqFile.mimetype,
+        filename: reqFile.originalname,
+        effectiveMaxSeconds,
+        glossaryHint,
+        uploadId,
+        isPriority,
+      }).catch((err) => {
+        logger.error({ err }, "materials: unhandled background audio/video extraction failure");
+        if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: "Something went wrong while processing this file. Please try again." });
+      });
+      return;
+    } catch (err: any) {
+      if (err instanceof RecordingTooLongError) {
+        if (uploadId) clearGenerationProgress(uploadId);
+        return res.status(413).json({ error: err.message, code: err.code });
+      }
+      req.log.error({ err }, "Audio/video upload failed before dispatch");
+      if (uploadId) clearGenerationProgress(uploadId);
+      return res.status(500).json({ error: err.message || "Something went wrong. Please try again." });
+    }
+  }
+
   const reportProgress = uploadId
     ? (percentage: number) => setGenerationProgress(uploadId, {
         currentChunk: 0,
@@ -227,49 +429,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
         imageList.map((img, i) => extractImage(img.buffer, img.mimetype, i === 0 ? reportProgress : undefined))
       );
       extractedText = results.map(r => r.text).filter(Boolean).join("\n\n---\n\n");
-    } else if ((contentType === "audio" || contentType === "video") && reqFile) {
-      // No client-supplied duration exists for an uploaded file (unlike the
-      // live-recording flow in recordings.ts), so the free-tier cap can only
-      // be enforced authoritatively, against Whisper's actual measured
-      // duration, inside transcribeAudio() itself.
-      const audioCapSeconds = await getFreeTierAudioCapSeconds(userId);
-      // Paying users (and admins) cut ahead of any free-tier jobs already
-      // waiting -- see lib/processing-queue.ts's priority insertion logic.
-      const isPriority = await isPayingCustomer(userId);
-      // The glossary is the "Supreme Source of Truth" for this material's
-      // whole pipeline -- fetched up front, before transcription even starts,
-      // so Whisper itself gets a chance to recognize the course's own
-      // acronyms/jargon correctly (via the prompt hint below), instead of
-      // only being corrected after the fact in the Gemini summary stage.
-      const glossaryTerms = courseId
-        ? await db.select({ term: glossaryTermsTable.term, definition: glossaryTermsTable.definition })
-            .from(glossaryTermsTable)
-            .where(eq(glossaryTermsTable.courseId, courseId))
-        : [];
-      const glossaryHint = glossaryTerms.length ? glossaryTerms.map((t) => t.term).join(", ") : undefined;
-      // Shares the same concurrency-limited queue as recordings.ts -- both
-      // routes hit the identical heavy Whisper call against the same
-      // process's CPU/memory budget, so they need one shared cap rather than
-      // two independent ones that could still add up past it.
-      const result = await runExclusive(
-        (queuePosition) => {
-          if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "queued", queuePosition });
-        },
-        () => transcribeAudio(
-          reqFile!.buffer,
-          reqFile!.mimetype,
-          reqFile!.originalname,
-          reportProgress,
-          { maxDurationSeconds: audioCapSeconds ?? undefined, glossaryHint }
-        ),
-        { isPriority },
-      );
-      extractedText = result.text;
-      duration = result.duration;
-      // Standardized rate: 1 Token per 10 minutes of audio (see
-      // lib/tokens.ts's deductTokensForTranscription), billed against
-      // Whisper's own measured duration.
-      if (duration) await deductTokensForTranscription(userId, duration);
     } else if (!extractedText && sourceUrl) {
       extractedText = sourceUrl;
     } else {
@@ -305,14 +464,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
     // as the two YouTube cases above, reject outright instead of creating a
     // material whose later generation calls would just time out.
     if (err instanceof ContentTooLongError) {
-      if (uploadId) clearGenerationProgress(uploadId);
-      return res.status(413).json({ error: err.message, code: err.code });
-    }
-    // A free-tier file over the 20-minute cap is a plan-limit issue, not a
-    // processing failure -- reject outright instead of creating a material
-    // (the Groq transcription cost has already been spent, but there's no
-    // point also burning the AI-generation calls below on truncated value).
-    if (err instanceof AudioDurationLimitError) {
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(413).json({ error: err.message, code: err.code });
     }

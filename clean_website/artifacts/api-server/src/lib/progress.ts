@@ -14,6 +14,23 @@ export interface GenerateAllResult {
   exam?: { id: number; questionCount: number };
   partialFailure?: boolean;
   exhaustedWarning?: boolean;
+  // Populated by routes/recordings.ts's backgrounded runRecordingPipeline on
+  // success -- the live-recording flow's equivalent of summary/deck/
+  // questionSet above, just bundled as one `kit` object since the frontend
+  // (recorder.tsx) always reads all three together rather than as they
+  // stream in individually.
+  kit?: { summary: { id: number; keyPointCount: number }; deck: { id: number; cardCount: number }; questionSet: { id: number; questionCount: number } };
+  recordingId?: number;
+  // True when the recording was longer than the user's token balance could
+  // cover and was cut short before transcription (see lib/extractor.ts's
+  // transcribeAudio `truncated` field) -- lets recorder.tsx tell the student
+  // only the first N minutes were actually processed.
+  truncated?: boolean;
+  // Populated by routes/materials.ts's backgrounded runMaterialAudioExtraction
+  // on success -- material-new.tsx already has the material id from the
+  // initial 202 response, so this is only informational/for parity with the
+  // other background jobs' result shapes.
+  materialId?: number;
 }
 
 export interface GenerationProgress {

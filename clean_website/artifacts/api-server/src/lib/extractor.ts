@@ -12,6 +12,7 @@ import FormData from "form-data";
 import fetch from "node-fetch";
 import { sanitizeExtractedText } from "./sanitize";
 import { probeDurationSeconds, transcodeAndSegment } from "./audio-chunker";
+import { MAX_RECORDING_SECONDS } from "./validation";
 
 export type ExtractedContent = {
   text: string;
@@ -79,19 +80,24 @@ async function fetchYouTubeOEmbed(url: string): Promise<{ title: string; author?
   return { title: data.title, author: data.author_name };
 }
 
-// During beta, a 40-minute lecture reliably blows past Render's free-tier
-// request timeout mid-extraction and then burns through the Gemini rate
-// limit on retry -- there's no hosting-tier fix for that without upgrading,
-// so the video length itself is capped instead.
-const MAX_YOUTUBE_DURATION_SECONDS = 25 * 60;
+// Same absolute ceiling as a lecture recording (lib/validation.ts's
+// MAX_RECORDING_SECONDS, 3 hours) -- there's no reason a YouTube import
+// should be more restrictive than uploading the same lecture directly. The
+// old 25-minute cap existed only because extraction ran synchronously
+// inside POST /materials and could blow past Render's free-tier request
+// timeout mid-extraction (the Gemini-native-video-watch fallback path in
+// particular, for videos without captions); now that routes/materials.ts
+// backgrounds this extraction (202 + poll, same pattern as audio/video
+// uploads), that's no longer a hard constraint.
+const MAX_YOUTUBE_DURATION_SECONDS = MAX_RECORDING_SECONDS;
 
 export class YouTubeTooLongError extends Error {
   readonly code = "VIDEO_TOO_LONG";
   constructor(language: "he" | "en") {
     super(
       language === "he"
-        ? "סרטון ארוך מדי! בשלב הבטא אנו תומכים בסרטונים של עד 25 דקות בלבד."
-        : "Video too long! During the beta we only support videos up to 25 minutes."
+        ? "סרטון ארוך מדי! אנו תומכים בסרטונים של עד 3 שעות."
+        : "Video too long! We only support videos up to 3 hours."
     );
     this.name = "YouTubeTooLongError";
   }

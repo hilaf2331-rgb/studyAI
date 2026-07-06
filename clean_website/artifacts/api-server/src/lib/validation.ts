@@ -55,13 +55,19 @@ export function getWordCount(text: string | null | undefined): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-// Documents/URLs over ~40 pages reliably blow past Render's 100s free-tier
-// HTTP timeout once that much text hits Gemini for summarization, and the
-// resulting chunked-summarization burns through Gemini's rate limit in one
-// shot -- there's no hosting-tier fix for that without upgrading, so the
-// extracted text length itself is capped instead, same beta-limit pattern
-// as the YouTube duration cap.
-export const MAX_CONTENT_WORDS = 15000;
+// The old 15,000-word (~40 page) cap existed because generation used to run
+// synchronously and both the extraction call AND the Gemini summarization
+// had to fit inside Render's ~100s free-tier HTTP timeout. Extraction itself
+// (parsing a PDF/DOCX) is local CPU work that finishes in seconds regardless
+// of page count, and generation (POST /materials/:id/generate-all, see
+// routes/generate-all.ts) has been backgrounded for a while now -- it
+// chunks arbitrarily long text with its own per-chunk Gemini cooldown,
+// untethered from any HTTP timeout. So this is now just a sane upper bound
+// against pathological input (a corrupted file that "extracts" megabytes of
+// garbage) rather than a load-bearing timeout workaround -- real cost is
+// gated by the student's token balance (deductTokensForSummary/
+// requireTokenBalance in lib/tokens.ts), not this word count.
+export const MAX_CONTENT_WORDS = 100_000;
 
 export function isContentTooLong(text: string | null | undefined): boolean {
   return getWordCount(text) > MAX_CONTENT_WORDS;
@@ -69,18 +75,18 @@ export function isContentTooLong(text: string | null | undefined): boolean {
 
 export function contentTooLongMessage(language: "he" | "en" = "he"): string {
   return language === "he"
-    ? "הקובץ או האתר מכילים יותר מדי טקסט! בשלב הבטא אנו תומכים בסיכום של עד 40 עמודי חומר במכה אחת."
-    : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
+    ? "הקובץ או האתר מכילים יותר מדי טקסט לעיבוד במכה אחת (מעל כ-300 עמודים)."
+    : "This file or website contains too much text to process at once (over roughly 300 pages).";
 }
 
-// Shared with the direct browser-recording upload route (recordings.ts) and
-// the audio/video file-upload path in materials.ts -- each enforces its own
-// byte-size ceiling (see MAX_RECORDING_BYTES / MAX_FILE_BYTES.audio), but
-// both use this same user-facing message.
+// Used by the direct browser-recording upload route (recordings.ts), which
+// enforces its own byte-size ceiling (MAX_RECORDING_BYTES) -- materials.ts's
+// audio/video file-upload path has its own near-identical fileTooLargeMessage
+// instead, since it covers video too.
 export function mediaTooLargeMessage(language: "he" | "en" = "he"): string {
   return language === "he"
-    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
+    ? "ההקלטה ארוכה או כבדה מדי! אנו תומכים בהקלטות של עד 3 שעות."
+    : "This recording is too long or too large! We support recordings up to 3 hours.";
 }
 
 // Recordings.ts's server-side backstop: a zero-byte upload or a transcript

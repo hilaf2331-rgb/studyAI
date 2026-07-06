@@ -66,7 +66,15 @@ const MAX_FILE_BYTES: Partial<Record<ContentType, number>> = {
 // upload. The real per-user gate is token balance, negotiated via the 402
 // INSUFFICIENT_TOKENS_FOR_AUDIO flow in handleSubmit below.
 const MAX_AUDIO_SECONDS = 3 * 60 * 60;
-const MAX_VIDEO_SECONDS = 5 * 60;
+// Unified with MAX_AUDIO_SECONDS -- the backend's audio/video upload branch
+// (routes/materials.ts) already treats both content types identically (same
+// background extraction, same MAX_RECORDING_SECONDS ceiling), so there's no
+// reason a video file should be capped 36x tighter than an audio file. The
+// real remaining ceiling for a video file is MAX_FILE_BYTES.video (50MB) --
+// a raw multi-hour video (as opposed to audio-only) will typically hit that
+// long before 3 hours regardless, since video's per-minute size is much
+// larger than pure audio.
+const MAX_VIDEO_SECONDS = MAX_AUDIO_SECONDS;
 
 // Drives the simulated progress bar's pace -- bigger files realistically
 // take longer to extract/transcribe, so the crawl should be slower for them
@@ -87,12 +95,12 @@ function fileTooLargeMessage(resolvedType: ContentType, isRTL: boolean): string 
   }
   if (resolvedType === "pdf" || resolvedType === "docx" || resolvedType === "pptx" || resolvedType === "xlsx") {
     return isRTL
-      ? "הקובץ או האתר מכילים יותר מדי טקסט! בשלב הבטא אנו תומכים בסיכום של עד 40 עמודי חומר במכה אחת."
-      : "This file or website contains too much text! During the beta we only support summarizing up to roughly 40 pages of material at once.";
+      ? "הקובץ או האתר מכילים יותר מדי טקסט לעיבוד במכה אחת (מעל כ-300 עמודים)."
+      : "This file or website contains too much text to process at once (over roughly 300 pages).";
   }
   return isRTL
-    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
+    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות ובווידאו של עד 3 שעות."
+    : "This media file is too long or too large! We support recordings and video up to 3 hours.";
 }
 
 // Reads duration from file metadata via a throwaway <audio>/<video> element
@@ -750,9 +758,9 @@ export const MaterialNewPage: React.FC = () => {
                         {isRTL ? "לחץ להעלאת קובץ" : "Click to upload file"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 15MB (כ-40 עמודים)" : "PDF, Word, PowerPoint, Excel up to 15MB (~40 pages)")}
+                        {category === "document" && (isRTL ? "PDF, Word, PowerPoint, Excel עד 15MB (כ-300 עמודים)" : "PDF, Word, PowerPoint, Excel up to 15MB (~300 pages)")}
                         {category === "audio" && (isRTL ? "MP3, M4A, WAV, OGG עד 50MB ועד 3 שעות" : "MP3, M4A, WAV, OGG up to 50MB and 3 hours")}
-                        {category === "video" && (isRTL ? "MP4, WebM, MOV עד 50MB ועד 5 דקות" : "MP4, WebM, MOV up to 50MB and 5 minutes")}
+                        {category === "video" && (isRTL ? "MP4, WebM, MOV עד 50MB ועד 3 שעות" : "MP4, WebM, MOV up to 50MB and 3 hours")}
                       </p>
                     </div>
                   )}

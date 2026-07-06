@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable, glossaryTermsTable } from "@workspace/db";
 import { eq, count, and, inArray, desc } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
-import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, extensionFromMimeType, YouTubeVideoNotFoundError, YouTubeTooLongError } from "../lib/extractor";
+import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, extensionFromMimeType } from "../lib/extractor";
 import { probeDurationSeconds } from "../lib/audio-chunker";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage, MAX_RECORDING_SECONDS, insufficientTokensForAudioMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
@@ -91,10 +91,11 @@ function fileTooLargeMessage(contentType: string, language: "he" | "en"): string
       ? "התמונה כבדה מדי! בשלב הבטא ניתן להעלות תמונות עד גודל של 8MB."
       : "This image is too large! During the beta we only support images up to 8MB.";
   }
-  // audio + video share one message per the combined media cap.
+  // audio + video share one message per the combined media cap -- both are
+  // now capped at the same MAX_RECORDING_SECONDS ceiling (3 hours).
   return language === "he"
-    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות של עד 3 שעות ווידאו ישיר של עד 5 דקות."
-    : "This media file is too long or too large! We support recordings up to 3 hours and direct video up to 5 minutes.";
+    ? "קובץ המדיה ארוך או כבד מדי! אנו תומכים בהקלטות ובווידאו של עד 3 שעות."
+    : "This media file is too long or too large! We support recordings and video up to 3 hours.";
 }
 
 async function getMaterialWithCounts(id: number, userId: number) {
@@ -189,6 +190,58 @@ async function runMaterialAudioExtraction(params: {
     },
     { isPriority },
   );
+}
+
+// Backgrounded YouTube extraction, same "202 now, real work after" reasoning
+// as runMaterialAudioExtraction above -- extractYouTube's fallback chain
+// (Gemini watching the video natively, only reached when a video has no
+// captions) can take a while for a long video, and MAX_YOUTUBE_DURATION_SECONDS
+// (lib/extractor.ts) was raised from 25 minutes to the same 3-hour ceiling as
+// a recording specifically because this no longer has to fit inside one HTTP
+// request. Unlike the audio/video branch there's no queue/concurrency limit
+// here -- extractYouTube doesn't touch the same Whisper/CPU budget
+// runExclusive protects, it's just network calls + (occasionally) a single
+// Gemini call.
+async function runYoutubeExtraction(params: {
+  material: MaterialRow;
+  userId: number;
+  sourceUrl: string;
+  language: string;
+  uploadId: string | undefined;
+}): Promise<void> {
+  const { material, sourceUrl, language, uploadId } = params;
+  try {
+    const result = await extractYouTube(
+      sourceUrl,
+      (percentage) => {
+        if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage, stage: "extracting" });
+      },
+      language as "he" | "en",
+    );
+
+    await db.update(materialsTable)
+      .set({ status: "ready", extractedText: result.text, duration: result.duration })
+      .where(eq(materialsTable.id, material.id));
+
+    if (uploadId) setGenerationProgress(uploadId, {
+      currentChunk: 0, totalChunks: 0, percentage: 100, stage: "done",
+      result: { materialId: material.id },
+    });
+  } catch (err: any) {
+    // A confirmed-nonexistent/private video or a video over the length cap
+    // is a user input issue rather than a processing failure, but there's no
+    // HTTP response left to reject cleanly from here (the 202 already went
+    // out) -- so both surface the same way as any other extraction failure:
+    // the material is marked "error" and the specific, friendly message
+    // (YouTubeVideoNotFoundError/YouTubeTooLongError already carry one) is
+    // what the frontend's poll picks up.
+    logger.error({ err, materialId: material.id }, "materials: YouTube background extraction failed");
+    await db.update(materialsTable).set({ status: "error" }).where(eq(materialsTable.id, material.id));
+    if (uploadId) setGenerationProgress(uploadId, {
+      currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error",
+      error: err.message || "Extraction failed",
+    });
+  }
 }
 
 router.get("/materials", async (req, res) => {
@@ -395,6 +448,32 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
     }
   }
 
+  // YouTube imports get the same backgrounded treatment as audio/video above
+  // -- extractYouTube's Gemini-native-video-watch fallback (used when a video
+  // has no captions) can run long for a lengthy video, so this responds 202
+  // immediately and finishes extraction in runYoutubeExtraction after the
+  // response has gone out, instead of holding the request open.
+  if (contentType === "youtube" && sourceUrl) {
+    const [material] = await db.insert(materialsTable).values({
+      title, contentType, language, courseId, sourceUrl, userId,
+      status: "processing", extractedText: "", subjectType,
+    }).returning();
+
+    await db.insert(activityTable).values({
+      userId, activityType: "upload",
+      description: `Uploaded "${material.title}"`, materialTitle: material.title,
+    });
+    await incrementActionsUsed(userId);
+
+    res.status(202).json({ material, status: "processing", uploadId });
+
+    void runYoutubeExtraction({ material, userId, sourceUrl, language, uploadId }).catch((err) => {
+      logger.error({ err }, "materials: unhandled background YouTube extraction failure");
+      if (uploadId) setGenerationProgress(uploadId, { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "error", error: "Something went wrong while processing this video. Please try again." });
+    });
+    return;
+  }
+
   const reportProgress = uploadId
     ? (percentage: number) => setGenerationProgress(uploadId, {
         currentChunk: 0,
@@ -409,11 +488,7 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
   let processingError: string | undefined;
 
   try {
-    if (contentType === "youtube" && sourceUrl) {
-      const result = await extractYouTube(sourceUrl, reportProgress, language);
-      extractedText = result.text;
-      duration = result.duration;
-    } else if (contentType === "url" && sourceUrl) {
+    if (contentType === "url" && sourceUrl) {
       const result = await extractFromUrl(sourceUrl, reportProgress);
       extractedText = result.text;
     } else if (contentType === "pdf" && reqFile) {
@@ -444,25 +519,9 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
       throw new ContentTooLongError(language);
     }
   } catch (err: any) {
-    // A confirmed-nonexistent/private video is a user input error, not a
-    // processing failure -- reject it outright with a clean 404 instead of
-    // creating a material record (with a placeholder/guessed summary) for a
-    // link that was never valid to begin with.
-    if (err instanceof YouTubeVideoNotFoundError) {
-      if (uploadId) clearGenerationProgress(uploadId);
-      return res.status(404).json({ error: err.message, code: err.code });
-    }
-    // Same logic as above -- a video over the beta's length cap is a user
-    // input issue, not a processing failure, so it's rejected outright
-    // instead of creating a material that would just time out anyway.
-    if (err instanceof YouTubeTooLongError) {
-      if (uploadId) clearGenerationProgress(uploadId);
-      return res.status(413).json({ error: err.message, code: err.code });
-    }
-    // A document/URL that extracted to more text than the beta's per-upload
-    // cap is a user input issue, not a processing failure -- same reasoning
-    // as the two YouTube cases above, reject outright instead of creating a
-    // material whose later generation calls would just time out.
+    // A document/URL that extracted to more text than the per-upload cap is
+    // a user input issue, not a processing failure -- reject outright instead
+    // of creating a material whose later generation calls would just time out.
     if (err instanceof ContentTooLongError) {
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(413).json({ error: err.message, code: err.code });

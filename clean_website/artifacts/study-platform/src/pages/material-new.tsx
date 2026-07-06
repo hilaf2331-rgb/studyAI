@@ -772,6 +772,29 @@ export const MaterialNewPage: React.FC = () => {
                       : "Recording will be auto-transcribed using Groq Whisper"}
                   </p>
                 )}
+                {contentType === "video" && (
+                  // A video file's 50MB ceiling is on the raw upload itself
+                  // (video+audio together), so it's reached much sooner than
+                  // 3 hours for anything but a short/low-res clip -- the
+                  // in-app recorder produces an audio-only file at a fixed
+                  // low bitrate (see recorder.tsx), so a full lecture
+                  // realistically fits there but not as a raw video upload.
+                  <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-lg">
+                    <Mic className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      {isRTL
+                        ? "להקלטת שיעור ארוך? עדיף להשתמש בהקלטת קול באתר — קובץ קטן משמעותית ותומך בהקלטות עד 3 שעות. "
+                        : "Recording a full lecture? Using the in-app voice recorder is better — a much smaller file that comfortably supports up to 3 hours. "}
+                      <button
+                        type="button"
+                        onClick={() => setLocation("/recorder")}
+                        className="underline font-medium text-foreground hover:text-primary"
+                      >
+                        {isRTL ? "מעבר להקלטת קול" : "Go to voice recorder"}
+                      </button>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 

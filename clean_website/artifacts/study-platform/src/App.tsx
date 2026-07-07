@@ -39,7 +39,7 @@ import { AuthPage } from "@/pages/auth";
 import { LandingPage } from "@/pages/landing";
 import { RecorderPage } from "@/pages/recorder";
 import { ProfilePage } from "@/pages/profile";
-import { ContactPage } from "@/pages/contact";
+import { ContactPage, PublicContactPage } from "@/pages/contact";
 import { TermsPage } from "@/pages/terms";
 import { PrivacyPage } from "@/pages/privacy";
 import { SharedViewPage } from "@/pages/shared-view";
@@ -149,6 +149,12 @@ function AppRoutes() {
     // gate itself lives at "/login" (linked from the landing page's nav
     // button and bottom CTA) -- any other path also falls back to it.
     if (location === "/") return <PageTransition locationKey={location}><LandingPage /></PageTransition>;
+    // Checked only here (not alongside /terms /privacy /pricing above) so a
+    // logged-IN visit to /contact still goes through the authenticated
+    // <Switch> below and keeps its normal SidebarLayout chrome unchanged --
+    // this branch only swaps in the bare, header-only rendering for a
+    // visitor who isn't logged in at all.
+    if (location === "/contact") return <PageTransition locationKey={location}><PublicContactPage /></PageTransition>;
     return <PageTransition locationKey={location}><AuthPage /></PageTransition>;
   }
 

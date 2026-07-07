@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Coins, Sparkles, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { TIERS, type Tier, type TierId } from "@/lib/pricing-tiers";
+import { PublicPageHeader } from "@/components/public-page-header";
 
 // Stashed in localStorage right before sending a logged-out visitor to
 // "/login" from here, then consumed by App.tsx's effect once `user` flips
@@ -47,17 +48,13 @@ export const PricingPage: React.FC = () => {
 
   return (
     <div className="relative min-h-screen flex flex-col bg-background" dir="rtl">
-      <header className="relative z-10 px-4 sm:px-10 pt-5">
-        <div className="flex items-center justify-between gap-4 mx-auto max-w-4xl rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-2.5 shadow-lg shadow-black/20">
-          <Link href="/landing" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="FocusStudy" className="w-8 h-8 object-contain" />
-            <span className="text-lg font-bold tracking-tight">FocusStudy</span>
+      <PublicPageHeader
+        links={
+          <Link href="/contact" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
+            צור קשר
           </Link>
-          <Link href="/login">
-            <Button size="sm">{user ? "לאזור האישי" : "התחברות / הרשמה"}</Button>
-          </Link>
-        </div>
-      </header>
+        }
+      />
 
       <main className="relative flex-1 flex flex-col items-center px-6 sm:px-10 py-8 sm:py-12">
         <div className="w-full max-w-4xl space-y-8">

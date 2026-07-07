@@ -6,6 +6,7 @@ import router from "./routes";
 import authRouter from "./routes/auth";
 import { billingPublicRouter } from "./routes/billing";
 import { sharedPublicRouter } from "./routes/shared";
+import contactRouter from "./routes/contact";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { RateLimitExhaustedError, SystemBlockedError, AIServiceError, AIServiceOverloadedError } from "./lib/ai";
@@ -80,6 +81,10 @@ app.use("/api", globalRateLimiter);
 app.use("/api", authRouter);
 app.use("/api", billingPublicRouter);
 app.use("/api", sharedPublicRouter);
+// Public so the landing page's "Contact Us" link and a logged-out visitor
+// on /contact can send a message without an account -- covered by
+// globalRateLimiter above the same as every other /api route.
+app.use("/api", contactRouter);
 app.use("/api", requireAuth, router);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "wouter";
 import { useSubmitContactMessage } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { PublicPageHeader } from "@/components/public-page-header";
 
 export const ContactPage: React.FC = () => {
   const { isRTL } = useLanguage();
@@ -117,3 +119,26 @@ export const ContactPage: React.FC = () => {
     </div>
   );
 };
+
+// Logged-out rendering of the same form (see App.tsx's "/contact" branch,
+// checked only while !user -- a logged-in visit still goes through the
+// authenticated <Switch> and keeps the normal SidebarLayout chrome
+// unchanged). ContactPage itself needs no auth to submit (POST /api/contact
+// is mounted as a public route, see api-server's app.ts) -- this wrapper
+// only adds the nav header that SidebarLayout would otherwise provide, so a
+// visitor arriving with no account isn't dropped on a bare form with no way
+// back to the rest of the site.
+export const PublicContactPage: React.FC = () => (
+  <div className="relative min-h-screen flex flex-col bg-background" dir="rtl">
+    <PublicPageHeader
+      links={
+        <Link href="/pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
+          מחירים
+        </Link>
+      }
+    />
+    <main className="relative flex-1 flex items-start justify-center px-6 sm:px-10 py-8 sm:py-12">
+      <ContactPage />
+    </main>
+  </div>
+);

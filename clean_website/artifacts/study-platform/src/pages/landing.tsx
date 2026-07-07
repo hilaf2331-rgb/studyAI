@@ -50,9 +50,14 @@ export const LandingPage: React.FC = () => {
             <img src="/logo.png" alt="FocusStudy" className="w-8 h-8 object-contain" />
             <span className="text-lg font-bold tracking-tight">FocusStudy</span>
           </div>
-          <Link href="/login">
-            <Button size="sm">התחברות / הרשמה</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
+              מחירים
+            </Link>
+            <Link href="/login">
+              <Button size="sm">התחברות / הרשמה</Button>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -318,6 +323,8 @@ export const LandingPage: React.FC = () => {
       </main>
 
       <footer className="relative z-10 flex items-center justify-center gap-3 text-xs text-muted-foreground py-5">
+        <Link href="/pricing" className="hover:text-foreground hover:underline">מחירים</Link>
+        <span>•</span>
         <Link href="/terms" className="hover:text-foreground hover:underline">תקנון ותנאי שימוש</Link>
         <span>•</span>
         <Link href="/privacy" className="hover:text-foreground hover:underline">מדיניות פרטיות</Link>

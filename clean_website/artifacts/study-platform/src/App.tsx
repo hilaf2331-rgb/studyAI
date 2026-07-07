@@ -16,6 +16,8 @@ import { Spinner } from "@/components/ui/spinner";
 import NotFound from "@/pages/not-found";
 import { setAuthTokenGetter, saveSharedMaterial } from "@workspace/api-client-react";
 import { PENDING_SAVE_SHARE_ID_KEY } from "@/pages/shared-view";
+import { PENDING_PURCHASE_TIER_ID_KEY, PricingPage } from "@/pages/pricing";
+import { getTierById } from "@/lib/pricing-tiers";
 import { useToast } from "@/hooks/use-toast";
 
 import { Dashboard } from "@/pages/dashboard";
@@ -83,11 +85,29 @@ function AppRoutes() {
       .catch(() => toast({ variant: "destructive", description: "השמירה נכשלה, נסו שנית" }));
   }, [user, toast]);
 
-  // Legal pages must stay reachable with no login required -- the payment
-  // gateway's approval process and logged-out visitors both need to read
-  // them, so they're checked before the auth/loading gates below.
+  // Completes the "Buy Now" flow for a visitor who wasn't logged in when
+  // they picked a tier on the public pricing page -- that click stashed the
+  // tier id here instead of redirecting to PayPal immediately, then sent
+  // them to "/login" to sign up/sign in. Once `user` flips truthy, resume
+  // straight to that tier's hosted checkout instead of leaving them back on
+  // the dashboard with no idea they were mid-purchase.
+  useEffect(() => {
+    if (!user) return;
+    const pendingTierId = localStorage.getItem(PENDING_PURCHASE_TIER_ID_KEY);
+    if (!pendingTierId) return;
+    localStorage.removeItem(PENDING_PURCHASE_TIER_ID_KEY);
+    const tier = getTierById(pendingTierId);
+    if (tier) window.location.href = tier.paypalUrl;
+  }, [user]);
+
+  // Legal pages, the pricing page, and the marketing page must all stay
+  // reachable with no login required -- the payment gateway's approval
+  // process needs to see pricing and the checkout flow without an account,
+  // and logged-out visitors need to read the legal pages -- so they're
+  // checked before the auth/loading gates below.
   if (location === "/terms") return <PageTransition locationKey={location}><TermsPage /></PageTransition>;
   if (location === "/privacy") return <PageTransition locationKey={location}><PrivacyPage /></PageTransition>;
+  if (location === "/pricing") return <PageTransition locationKey={location}><PricingPage /></PageTransition>;
 
   // Lets the logo in the authenticated sidebar jump straight to the
   // marketing page even though "/" itself renders <Dashboard> once logged

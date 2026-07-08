@@ -309,11 +309,27 @@ export const LandingPage: React.FC = () => {
           <section className="text-center space-y-3 max-w-2xl mx-auto">
             <p className="text-xs font-bold tracking-wide text-primary uppercase">הסיפור מאחורי FocusStudy</p>
             <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
-              היי, אני הילה. הקמתי את FocusStudy כי נמאס לי לשלם מנוי חודשי
-              לאתרי למידה שלא תמיד השתמשתי בהם כל החודש — יש תקופות שרציתי
-              ללמוד 5 פעמים ביום, ויש שבועות שלא נכנסתי כלל כי הייתי בחופשה.
-              לכן בניתי מערכת שעובדת לפי אסימונים: משלמים רק על מה שמשתמשים,
-              והאסימונים לא פגים בתוקף — אף פעם.
+              היי לכל הסטודנטים! שמי הילה, וגם אני, כמוכם, רוצה ללמוד.
+            </p>
+            <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+              בחנתי את האפשרויות שעומדות מולי ללמוד בקלות, והאמת? פשוט התייאשתי.
+              אתרים שלוקחים מנויים חודשיים שעולים המון כסף, פלטפורמות גנריות
+              למדי שיוצרות הכל אותו דבר, לוקחים וזורקים לאשפתות. הבנתי
+              שהפתרונות שקיימים לא רואים אותי, כסטודנטית, רק רואים אפשרות
+              להתעשר ממני. והבנתי דבר אחד — זה לא חייב להיות ככה.
+            </p>
+            <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+              לכן בניתי את FocusStudy — הפלטפורמה שמפקסת אתכם לפני מבחן, בלי
+              מנויים חודשיים יקרים, עם התאמה לסוג החומר והצרכים שלכם. והכי
+              טוב? שיתוף בחינם לגמרי.
+            </p>
+            <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+              כי מה שחשוב לי בתור סטודנטית, הם אתם הסטודנטים. אם מישהו אחד
+              יוצר באתר שלי, אני רוצה שעוד אנשים יהנו מהתוצר. אתם יוצרים
+              ב-FocusStudy, שולחים לחברים, וכולם מרוויחים.
+            </p>
+            <p className="text-sm sm:text-base font-semibold pt-1">
+              אז יאללה, בואו נתחיל ללמוד!
             </p>
           </section>
 

@@ -6,6 +6,7 @@ import { eq, count, and, inArray, desc } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, extensionFromMimeType } from "../lib/extractor";
 import { probeDurationSeconds } from "../lib/audio-chunker";
+import { verifyUploadedFile } from "../lib/upload-security";
 import { isContentTooShort, getWordCount, isContentTooLong, contentTooLongMessage, MAX_RECORDING_SECONDS, insufficientTokensForAudioMessage } from "../lib/validation";
 import { getGenerationProgress, setGenerationProgress, clearGenerationProgress } from "../lib/progress";
 import { runExclusive } from "../lib/processing-queue";
@@ -321,6 +322,22 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
       if (uploadId) clearGenerationProgress(uploadId);
       return res.status(413).json({ error: fileTooLargeMessage("image", language), code: "FILE_TOO_LARGE" });
     }
+  }
+
+  // Defense-in-depth: req.file.mimetype is just the Content-Type the
+  // client's multipart form declared, never verified against the actual
+  // bytes -- a renamed executable or a format-confusion attack would sail
+  // straight through the checks above. Runs magic-number verification
+  // (file-type), a zip-bomb check for OOXML (docx/pptx/xlsx are ZIP
+  // archives under the hood), and an image-dimension bomb check, all before
+  // any real parser (extractPDF/extractOffice/extractImage/transcribeAudio)
+  // ever touches the buffer. See lib/upload-security.ts.
+  try {
+    if (reqFile) await verifyUploadedFile(reqFile.buffer, contentType);
+    for (const img of reqImages) await verifyUploadedFile(img.buffer, "image");
+  } catch (err: any) {
+    if (uploadId) clearGenerationProgress(uploadId);
+    return res.status(400).json({ error: err.message, code: err.code || "INVALID_FILE" });
   }
 
   // Beta-only hard cap on total processing actions -- checked before any

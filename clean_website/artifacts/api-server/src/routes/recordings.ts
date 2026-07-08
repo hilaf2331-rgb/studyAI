@@ -3,6 +3,7 @@ import multer from "multer";
 import { db, recordingsTable, materialsTable, summariesTable, flashcardDecksTable, questionSetsTable, activityTable, flashcardsTable, questionsTable, glossaryTermsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
+import { verifyUploadedFile } from "../lib/upload-security";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
 import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getAudioAffordability, isPayingCustomer } from "../lib/tokens";
 import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, insufficientTokensForAudioMessage, MAX_RECORDING_SECONDS } from "../lib/validation";
@@ -229,6 +230,16 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
       message: insufficientAudioContentMessage("he"),
       code: "EMPTY_RECORDING",
     });
+  }
+
+  // Defense-in-depth: req.file.mimetype is just the Content-Type the
+  // client declared, never verified against the actual bytes -- checked
+  // before this buffer is ever handed to ffmpeg/Whisper. See
+  // lib/upload-security.ts.
+  try {
+    await verifyUploadedFile(req.file.buffer, "audio");
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message, code: err.code || "INVALID_FILE" });
   }
 
   const title = (req.body.title as string) || `הקלטה ${new Date().toLocaleDateString("he-IL")}`;

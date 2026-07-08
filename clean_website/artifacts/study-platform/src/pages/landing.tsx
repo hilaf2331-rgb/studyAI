@@ -51,10 +51,15 @@ export const LandingPage: React.FC = () => {
             <span className="text-lg font-bold tracking-tight">FocusStudy</span>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
+            {/* Hidden below sm: on a narrow phone width, two extra text
+                links plus the button overflow this rounded-full pill and
+                wrap onto a second line, breaking the nav's shape -- tablet/
+                desktop have the room, mobile visitors can still reach both
+                via the footer links further down the page. */}
+            <Link href="/pricing" className="hidden sm:inline-block text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
               מחירים
             </Link>
-            <Link href="/contact" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
+            <Link href="/contact" className="hidden sm:inline-block text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2">
               צור קשר
             </Link>
             <Link href="/login">

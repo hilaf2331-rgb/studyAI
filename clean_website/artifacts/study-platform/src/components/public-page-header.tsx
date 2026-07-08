@@ -20,7 +20,11 @@ export const PublicPageHeader: React.FC<{ links?: React.ReactNode }> = ({ links 
           <span className="text-lg font-bold tracking-tight">FocusStudy</span>
         </Link>
         <div className="flex items-center gap-2">
-          {links}
+          {/* Hidden below sm: an extra text link plus the button overflow
+              this rounded-full pill on a narrow phone width and wrap onto a
+              second line, breaking the nav's shape -- see landing.tsx's
+              identical fix. */}
+          {links && <div className="hidden sm:flex items-center gap-2">{links}</div>}
           <Link href="/login">
             <Button size="sm">{user ? "לאזור האישי" : "התחברות / הרשמה"}</Button>
           </Link>

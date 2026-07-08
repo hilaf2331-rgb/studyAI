@@ -37,9 +37,9 @@ minimumReleaseAgeExclude:
   - stripe-replit-sync
 
 onlyBuiltDependencies:
+  - '@ffmpeg-installer/linux-x64'
   - '@swc/core'
   - esbuild
-  - ffmpeg-static
   - msw
   - sharp
   - unrs-resolver

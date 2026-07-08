@@ -2,32 +2,26 @@
 // ceiling (see MAX_RECORDING_SECONDS in lib/validation.ts) would blow way
 // past that regardless of how a browser/phone encodes it -- so every long
 // recording needs to be trimmed to an affordable length AND cut into
-// Whisper-sized pieces before it ever reaches OpenAI. ffmpeg-static /
-// ffprobe-static each bundle a static, platform-specific binary (no system
-// ffmpeg install required, which matters on Render's minimal runtime image),
-// so this shells out to them directly via execFile rather than pulling in
-// fluent-ffmpeg's abstraction layer for what's really just two well-defined
-// command lines.
+// Whisper-sized pieces before it ever reaches OpenAI. @ffmpeg-installer/ffmpeg
+// and ffprobe-static each bundle their platform's binary directly inside the
+// npm package itself (resolved from the npm registry, same as every other
+// dependency) rather than fetching it from a separate host at install time --
+// deliberately NOT ffmpeg-static, whose postinstall downloads its binary from
+// GitHub Releases and calls process.exit(1) if that fetch fails for any
+// reason (rate limit, network blip, a host block), which fails Render's
+// entire `pnpm install` and takes the whole deploy down over what should be
+// a self-contained dependency. Shells out to both directly via execFile
+// rather than pulling in fluent-ffmpeg's abstraction layer for what's really
+// just two well-defined command lines.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffprobePath from "ffprobe-static";
 
 const execFileAsync = promisify(execFile);
-
-// ffmpeg-static's typings mark the default export nullable for platforms it
-// doesn't ship a binary for -- Render always runs linux/x64, which it does
-// support, so a null here means something is broken in the deployed image
-// rather than a case worth silently degrading around.
-function requireFfmpegPath(): string {
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg binary not available on this platform -- audio chunking/transcoding is unavailable");
-  }
-  return ffmpegPath;
-}
 
 // Best-effort duration probe used both to decide whether a recording needs
 // chunking at all, and to size the last chunk's approxDurationSeconds below.
@@ -92,7 +86,7 @@ export async function transcodeAndSegment(
   extension: string,
   opts: { chunkSeconds: number; maxTotalSeconds?: number; totalSeconds?: number },
 ): Promise<AudioChunk[]> {
-  const ffmpeg = requireFfmpegPath();
+  const ffmpeg = ffmpegInstaller.path;
   const dir = await mkdtemp(join(tmpdir(), "studyai-audio-"));
   const inputPath = join(dir, `input${normalizeExtension(extension)}`);
   const outPattern = join(dir, "chunk_%04d.ogg");

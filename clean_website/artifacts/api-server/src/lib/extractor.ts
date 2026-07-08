@@ -471,10 +471,19 @@ export async function transcribeAudio(
     return { ...result, truncated: false };
   }
 
-  const chunks = await transcodeAndSegment(buffer, extension, {
+  const allChunks = await transcodeAndSegment(buffer, extension, {
     chunkSeconds: AUDIO_CHUNK_SECONDS,
     maxTotalSeconds: effectiveSeconds,
   });
+
+  // ffmpeg's segment muxer sometimes flushes a near-empty trailing file when
+  // the total duration lands at (or very near) a chunk boundary -- e.g. a
+  // 40s recording split into 15s chunks with a 30s cutoff produces a third,
+  // ~0-duration segment as well as the two real 15s ones. Sending that to
+  // Whisper would waste a call and risks a known Whisper failure mode:
+  // hallucinating plausible-sounding text from near-silent/near-empty audio,
+  // which would silently inject fabricated sentences into the transcript.
+  const chunks = allChunks.filter((c) => c.approxDurationSeconds >= 1);
 
   // Sequential, not parallel -- keeps OpenAI rate-limit exposure identical to
   // today's one-call-at-a-time model instead of firing a dozen Whisper

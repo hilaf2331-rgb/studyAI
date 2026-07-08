@@ -29,6 +29,23 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
+      // Both locate their binary at runtime via a path computed relative to
+      // their own __dirname (ffprobe-static: path.join(__dirname, "bin",
+      // platform, arch, ...); @ffmpeg-installer/ffmpeg: walks up from
+      // __dirname looking for a sibling node_modules/@ffmpeg-installer/
+      // <platform> directory) -- this banner below stubs __dirname/
+      // __filename for the bundle's own ESM output, so once esbuild inlines
+      // either package's code, "its own __dirname" becomes wherever
+      // dist/index.mjs lives instead of the package's real location inside
+      // node_modules, and the binary can never be found (this is exactly
+      // what broke the 3-hour recording feature's audio chunking on Render:
+      // it deployed and started, but crashed as soon as any request tried
+      // to transcribe audio). Externalizing keeps these as real runtime
+      // require()/import calls resolved by Node against the actual
+      // node_modules directory that ships alongside dist/, same reasoning
+      // as sharp/better-sqlite3 below.
+      "ffprobe-static",
+      "@ffmpeg-installer/*",
       "sharp",
       "better-sqlite3",
       "sqlite3",

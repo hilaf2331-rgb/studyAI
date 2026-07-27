@@ -3,8 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/lib/i18n";
-import { Coins, Sparkles, X } from "lucide-react";
+import { Coins, Sparkles, X, Loader2 } from "lucide-react";
 import { TIERS, type Tier, type TierId } from "@/lib/pricing-tiers";
+import { useCreateHypPayment } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 // Per-tier ambient glow, always-on at low intensity and stronger on
 // hover/selected -- bronze/silver/gold colors chosen to read as the
@@ -30,7 +32,9 @@ const TIER_GLOW_ACTIVE: Record<TierId, string> = {
 
 export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boolean) => void }> = ({ open, onOpenChange }) => {
   const { isRTL } = useLanguage();
+  const { toast } = useToast();
   const [activeTierId, setActiveTierId] = useState<TierId | null>(null);
+  const createHypPayment = useCreateHypPayment();
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -39,11 +43,23 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
     onOpenChange(next);
   };
 
-  // Synchronous, same-tab redirect triggered directly inside the click
-  // handler -- keeps it a genuine user gesture so mobile browsers don't
-  // block it, and lands the student straight on the hosted PayPal checkout.
+  // Unlike the old static PayPal checkout links, a Hyp Pay payment page has
+  // to be signed server-side per purchase attempt (see api-server's
+  // POST /billing/hyp/create), so this is now an async call before the
+  // same-tab redirect rather than a synchronous window.location.href.
   const handlePurchaseClick = (tier: Tier) => {
-    window.location.href = tier.paypalUrl;
+    createHypPayment.mutate({ data: { tierId: tier.id } }, {
+      onSuccess: (result) => {
+        window.location.href = result.paymentUrl;
+      },
+      onError: () => {
+        toast({
+          variant: "destructive",
+          title: isRTL ? "משהו השתבש" : "Something went wrong",
+          description: isRTL ? "לא הצלחנו להתחיל את התשלום. נסו שוב בעוד רגע." : "We couldn't start the payment. Please try again in a moment.",
+        });
+      },
+    });
   };
 
   return (
@@ -109,13 +125,17 @@ export const PurchaseModal: React.FC<{ open: boolean; onOpenChange: (open: boole
                   </p>
                 </div>
                 <Button
-                  className="w-full"
+                  className="w-full gap-2"
                   variant={tier.id === "silver" ? "default" : "outline"}
+                  disabled={createHypPayment.isPending}
                   onClick={(e) => {
                     e.stopPropagation();
                     handlePurchaseClick(tier);
                   }}
                 >
+                  {createHypPayment.isPending && createHypPayment.variables?.data.tierId === tier.id && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
                   {isRTL ? "רכישה" : "Buy Now"}
                 </Button>
               </div>

@@ -4,7 +4,7 @@ import { useLanguage } from "@/lib/i18n";
 import { useGetTokenBalance, getGetTokenBalanceQueryKey } from "@workspace/api-client-react";
 
 // Purely presentational -- driven by usePurchaseCelebration().show() (see
-// lib/purchase-celebration.tsx), called by the real PayPal return-redirect
+// lib/purchase-celebration.tsx), called by the real Hyp Pay return-redirect
 // once a purchase completes, to show this "feel-good" moment.
 export const PurchaseSuccessCelebration: React.FC<{ tokensAdded: number | null; onClose: () => void }> = ({ tokensAdded, onClose }) => {
   const { isRTL } = useLanguage();

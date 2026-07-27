@@ -7,21 +7,20 @@ interface PurchaseCelebrationContextValue {
 
 const PurchaseCelebrationContext = createContext<PurchaseCelebrationContextValue | null>(null);
 
-// Mounted once near the app root (see App.tsx) so the real PayPal
+// Mounted once near the app root (see App.tsx) so the real Hyp Pay
 // return-redirect (parsed from the URL below) can trigger the success modal
 // through one shared show() call.
 export function PurchaseCelebrationProvider({ children }: { children: React.ReactNode }) {
   const [tokensAdded, setTokensAdded] = useState<number | null>(null);
   const show = useCallback((tokens: number) => setTokensAdded(tokens), []);
 
-  // PayPal's hosted (NCP) checkout buttons are each configured in PayPal's
-  // own dashboard with a "Return to website" URL (see purchase-modal.tsx's
-  // TIERS comment for the exact URL to set per tier) that lands the student
-  // back on the app with "?purchase=success&tokens=N" on the query string --
-  // the tier's token count comes back encoded right on the redirect rather
-  // than needing any shared tier-id -> tokens mapping between the frontend
-  // and the webhook. Runs on every route since the return URL can land on
-  // any page (dashboard, landing, etc).
+  // The api-server's /webhooks/hyp/return handler (see routes/billing.ts)
+  // verifies the Hyp Pay payment server-side, then redirects the browser
+  // back here with "?purchase=success&tokens=N" on the query string -- the
+  // tier's token count comes back encoded right on the redirect rather than
+  // needing any shared tier-id -> tokens mapping on the frontend. Runs on
+  // every route since that redirect can land on any page (dashboard,
+  // landing, etc).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("purchase") !== "success") return;

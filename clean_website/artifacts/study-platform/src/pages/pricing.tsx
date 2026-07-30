@@ -2,10 +2,12 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Coins, Sparkles, ArrowLeft } from "lucide-react";
+import { Coins, Sparkles, ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { TIERS, type Tier, type TierId } from "@/lib/pricing-tiers";
 import { PublicPageHeader } from "@/components/public-page-header";
+import { useCreateHypPayment } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 // Stashed in localStorage right before sending a logged-out visitor to
 // "/login" from here, then consumed by App.tsx's effect once `user` flips
@@ -32,14 +34,27 @@ const TIER_GLOW: Record<TierId, string> = {
 // checkout flow without an account -- has somewhere to land. Buying still
 // requires an account: a logged-out click stashes the chosen tier and sends
 // the visitor to log in/register first; App.tsx picks the stashed tier back
-// up once auth resolves and continues straight to PayPal checkout.
+// up once auth resolves and continues straight to Hyp Pay checkout.
 export const PricingPage: React.FC = () => {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const createHypPayment = useCreateHypPayment();
 
   const handleBuyClick = (tier: Tier) => {
     if (user) {
-      window.location.href = tier.paypalUrl;
+      createHypPayment.mutate({ data: { tierId: tier.id } }, {
+        onSuccess: (result) => {
+          window.location.href = result.paymentUrl;
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "משהו השתבש",
+            description: "לא הצלחנו להתחיל את התשלום. נסו שוב בעוד רגע.",
+          });
+        },
+      });
       return;
     }
     localStorage.setItem(PENDING_PURCHASE_TIER_ID_KEY, tier.id);
@@ -98,10 +113,14 @@ export const PricingPage: React.FC = () => {
                   </p>
                 </div>
                 <Button
-                  className="w-full"
+                  className="w-full gap-2"
                   variant={tier.id === "silver" ? "default" : "outline"}
+                  disabled={createHypPayment.isPending}
                   onClick={() => handleBuyClick(tier)}
                 >
+                  {createHypPayment.isPending && createHypPayment.variables?.data.tierId === tier.id && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
                   {user ? "רכישה" : "התחברות ורכישה"}
                 </Button>
               </div>

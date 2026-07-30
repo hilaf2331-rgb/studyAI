@@ -1329,6 +1329,18 @@ export const SaveBitNameResponse = zod.object({
 
 
 /**
+ * @summary Start a Max Business (Hyp Pay) hosted-checkout purchase for a token bundle, returning the payment page URL to redirect the customer to
+ */
+export const CreateHypPaymentBody = zod.object({
+  "tierId": zod.enum(['bronze', 'silver', 'gold'])
+})
+
+export const CreateHypPaymentResponse = zod.object({
+  "paymentUrl": zod.string()
+})
+
+
+/**
  * @summary Send a support message from the Contact Us page to the FocusStudy team
  */
 

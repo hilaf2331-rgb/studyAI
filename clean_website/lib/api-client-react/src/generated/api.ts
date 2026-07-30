@@ -33,6 +33,8 @@ import type {
   CourseAssetWithCourse,
   CourseInput,
   CourseUpdate,
+  CreateHypPaymentInput,
+  CreateHypPaymentResult,
   DailyReviewCards,
   DailyReviewCount,
   DashboardStats,
@@ -4610,6 +4612,77 @@ export const useSaveBitName = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSaveBitNameMutationOptions(options));
+    }
+
+export const getCreateHypPaymentUrl = () => {
+
+
+
+
+  return `/api/billing/hyp/create`
+}
+
+/**
+ * @summary Start a Max Business (Hyp Pay) hosted-checkout purchase for a token bundle, returning the payment page URL to redirect the customer to
+ */
+export const createHypPayment = async (createHypPaymentInput: CreateHypPaymentInput, options?: RequestInit): Promise<CreateHypPaymentResult> => {
+
+  return customFetch<CreateHypPaymentResult>(getCreateHypPaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createHypPaymentInput,)
+  }
+);}
+
+
+
+
+export const getCreateHypPaymentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHypPayment>>, TError,{data: BodyType<CreateHypPaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHypPayment>>, TError,{data: BodyType<CreateHypPaymentInput>}, TContext> => {
+
+const mutationKey = ['createHypPayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHypPayment>>, {data: BodyType<CreateHypPaymentInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createHypPayment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHypPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createHypPayment>>>
+    export type CreateHypPaymentMutationBody = BodyType<CreateHypPaymentInput>
+    export type CreateHypPaymentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a Max Business (Hyp Pay) hosted-checkout purchase for a token bundle, returning the payment page URL to redirect the customer to
+ */
+export const useCreateHypPayment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHypPayment>>, TError,{data: BodyType<CreateHypPaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createHypPayment>>,
+        TError,
+        {data: BodyType<CreateHypPaymentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateHypPaymentMutationOptions(options));
     }
 
 export const getSubmitContactMessageUrl = () => {

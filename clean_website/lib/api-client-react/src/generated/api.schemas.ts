@@ -950,6 +950,23 @@ export interface SaveBitNameResult {
   bitName: string;
 }
 
+export type CreateHypPaymentInputTierId = typeof CreateHypPaymentInputTierId[keyof typeof CreateHypPaymentInputTierId];
+
+
+export const CreateHypPaymentInputTierId = {
+  bronze: 'bronze',
+  silver: 'silver',
+  gold: 'gold',
+} as const;
+
+export interface CreateHypPaymentInput {
+  tierId: CreateHypPaymentInputTierId;
+}
+
+export interface CreateHypPaymentResult {
+  paymentUrl: string;
+}
+
 export interface ContactMessageInput {
   /** @minLength 1 */
   name: string;

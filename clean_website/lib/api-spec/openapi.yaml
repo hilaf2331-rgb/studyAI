@@ -1264,6 +1264,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/SaveBitNameResult"
 
+  /billing/hyp/create:
+    post:
+      operationId: createHypPayment
+      tags: [billing]
+      summary: Start a Max Business (Hyp Pay) hosted-checkout purchase for a token bundle, returning the payment page URL to redirect the customer to
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHypPaymentInput"
+      responses:
+        "200":
+          description: Payment page URL created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateHypPaymentResult"
+
   /contact:
     post:
       operationId: submitContactMessage
@@ -2287,6 +2306,21 @@ components:
         ok:
           type: boolean
         bitName:
+          type: string
+
+    CreateHypPaymentInput:
+      type: object
+      required: [tierId]
+      properties:
+        tierId:
+          type: string
+          enum: [bronze, silver, gold]
+
+    CreateHypPaymentResult:
+      type: object
+      required: [paymentUrl]
+      properties:
+        paymentUrl:
           type: string
 
     ContactMessageInput:

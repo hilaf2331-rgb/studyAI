@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { db, usersTable, transactionsTable } from "@workspace/db";
-import { eq, sql, ilike } from "drizzle-orm";
+import { eq, and, sql, ilike } from "drizzle-orm";
 import { logger } from "../lib/logger";
-import { verifyPaypalWebhookSignature, getPaypalOrderDetails } from "../lib/paypal";
+import { createHypPaymentUrl, verifyHypReturn } from "../lib/hyp";
 import { RAW_UNITS_PER_TOKEN } from "../lib/tokens";
 
 export type TokenPackageId = "bronze" | "silver" | "gold";
@@ -33,12 +33,16 @@ export const TOKEN_PACKAGES_BY_PRICE: Record<number, TokenPackage> = {
   79: { id: "gold", tokens: 2_000_000, priceILS: 79 },
 };
 
-// Used by the real /webhooks/paypal handler (and any future provider) to
-// credit a captured purchase. Idempotent per (provider, providerTransactionId)
-// via transactionsTable's UNIQUE constraint -- see the 23505 handling in the
-// paypal webhook below for how a retried delivery is detected and no-op'd
-// rather than double-crediting. Returns the raw-unit amount actually
-// credited.
+// Used by providers (like the Zapier/Bit-PayBox webhook below) that only
+// learn about a purchase once it's already completed, in a single step.
+// Idempotent per (provider, providerTransactionId) via transactionsTable's
+// UNIQUE constraint -- see the 23505 handling below for how a retried
+// delivery is detected and no-op'd rather than double-credited. Returns the
+// raw-unit amount actually credited. Max Business (Hyp Pay) instead reserves
+// a "pending" row up front in POST /billing/hyp/create and flips it to
+// "completed" in the /webhooks/hyp/return handler below, since it needs a
+// place to stash (userId, package) before the customer ever reaches Hyp's
+// checkout -- see that handler for why creditTokenPackage doesn't fit there.
 async function creditTokenPackage(
   userId: number,
   pkg: TokenPackage,
@@ -65,17 +69,18 @@ async function creditTokenPackage(
   return rawTokens;
 }
 
-// Token bundles sold via hosted PayPal (NCP) checkout -- the live, user-
-// facing purchase flow (see study-platform's purchase-modal.tsx). `tokens`
-// here is the simplified whole-Token count shown everywhere in the UI;
-// raw cost-estimation units are credited to tokenBalance via
+// Token bundles sold via Max Business's hosted Hyp Pay checkout -- the live,
+// user-facing purchase flow (see study-platform's purchase-modal.tsx).
+// `tokens` here is the simplified whole-Token count shown everywhere in the
+// UI; raw cost-estimation units are credited to tokenBalance via
 // RAW_UNITS_PER_TOKEN so the underlying per-request metering never changes.
-// Keyed by the ILS amount on the captured PayPal order, since that's the
-// only thing distinguishing which of the 3 hosted checkout buttons was used.
-export const PAYPAL_PACKAGES_BY_PRICE: Record<number, TokenPackage> = {
-  39: { id: "bronze", tokens: 40, priceILS: 39 },
-  79: { id: "silver", tokens: 80, priceILS: 79 },
-  119: { id: "gold", tokens: 150, priceILS: 119 },
+// Keyed by tier id (not price) since, unlike the old PayPal webhook, the Hyp
+// return handler already knows exactly which package was bought from the
+// pending transaction row created in POST /billing/hyp/create.
+export const HYP_PACKAGES_BY_ID: Record<TokenPackageId, TokenPackage> = {
+  bronze: { id: "bronze", tokens: 40, priceILS: 39 },
+  silver: { id: "silver", tokens: 80, priceILS: 79 },
+  gold: { id: "gold", tokens: 150, priceILS: 119 },
 };
 
 // Authenticated: a logged-in user saves the display name they use in their
@@ -92,6 +97,60 @@ billingAuthRouter.post("/billing/bit-name", async (req, res) => {
 
   await db.update(usersTable).set({ bitName }).where(eq(usersTable.id, userId));
   res.json({ ok: true, bitName });
+});
+
+// Authenticated: starts a Max Business (Hyp Pay) hosted-checkout purchase.
+// Reserves a "pending" transaction row keyed by a freshly generated Order
+// number *before* asking Hyp for the payment page URL, so the public
+// /webhooks/hyp/return handler below always has a known (userId, package) to
+// credit once Hyp confirms the charge -- Hyp only echoes Order back
+// unmodified, so this row is the only place that mapping lives.
+billingAuthRouter.post("/billing/hyp/create", async (req, res) => {
+  const userId = req.user!.userId;
+  const tierId = typeof req.body?.tierId === "string" ? req.body.tierId : "";
+  const pkg = HYP_PACKAGES_BY_ID[tierId as TokenPackageId];
+  if (!pkg) {
+    return res.status(400).json({
+      error: "Invalid tierId",
+      availableTierIds: Object.keys(HYP_PACKAGES_BY_ID),
+    });
+  }
+
+  const [user] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const order = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const rawTokens = pkg.tokens * RAW_UNITS_PER_TOKEN;
+
+  await db.insert(transactionsTable).values({
+    userId,
+    packageId: pkg.id,
+    tokens: rawTokens,
+    priceIls: pkg.priceILS,
+    provider: "hyp",
+    providerTransactionId: order,
+    status: "pending",
+  });
+
+  let paymentUrl: string;
+  try {
+    paymentUrl = await createHypPaymentUrl({
+      amountILS: pkg.priceILS,
+      order,
+      clientName: user.name ?? undefined,
+      email: user.email,
+      info: `StudyAI ${pkg.id}`,
+    });
+  } catch (err) {
+    logger.error({ err, order }, "[billing] failed to create Hyp payment page");
+    return res.status(502).json({ error: "Failed to start payment" });
+  }
+
+  res.json({ paymentUrl });
 });
 
 export default billingAuthRouter;
@@ -155,8 +214,8 @@ billingPublicRouter.post("/webhooks/payment", async (req, res) => {
   // Instead, derive a deterministic key from (bitName, amount, a 5-minute
   // time bucket) -- a retried delivery of the *same* notification lands in
   // the same bucket and hashes to the same providerTransactionId, so the
-  // table's UNIQUE constraint (and the 23505 handling below, same pattern as
-  // the PayPal webhook) catches it as "already processed" instead of
+  // table's UNIQUE constraint (and the 23505 handling below) catches it
+  // as "already processed" instead of
   // double-crediting. A genuinely new payment from the same person for the
   // same amount more than 5 minutes later gets its own bucket and is
   // credited normally.
@@ -195,99 +254,90 @@ billingPublicRouter.post("/webhooks/payment", async (req, res) => {
   res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens });
 });
 
-// Public: PayPal's own webhook delivery for the hosted (NCP) checkout
-// buttons. Verified via PayPal's own verify-webhook-signature API (see
-// lib/paypal.ts) rather than a shared secret, since that's how PayPal -- not
-// Zapier -- proves a delivery is genuinely theirs.
-billingPublicRouter.post("/webhooks/paypal", async (req, res) => {
-  const event = req.body;
+// Public: the browser lands here after the customer finishes (or abandons)
+// a Max Business (Hyp Pay) hosted checkout -- this exact path is configured
+// once as the "success URL" in the Hyp Pay account (see Hyp Portal ->
+// Settings -> Payment Page and API -> Post-transaction address). Per Hyp's
+// own recommendation we don't configure a separate error URL, so a failed
+// payment never reaches this route at all; Hyp shows the error on its own
+// page and lets the customer retry.
+//
+// GET (not POST) because this is a plain top-level browser redirect Hyp
+// performs after the payment page, not a server-to-server webhook delivery.
+billingPublicRouter.get("/webhooks/hyp/return", async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || "https://focusstudy.net";
+  const queryIndex = req.originalUrl.indexOf("?");
+  const rawQuery = queryIndex >= 0 ? req.originalUrl.slice(queryIndex + 1) : "";
+  const params = new URLSearchParams(rawQuery);
+  const order = params.get("Order");
+  const ccode = params.get("CCode");
+  const hypId = params.get("Id");
 
-  // CHECKOUT.ORDER.APPROVED can fire before money has actually moved;
-  // PAYMENT.CAPTURE.COMPLETED is PayPal's "funds captured" event and the only
-  // one that should ever result in a credit.
-  if (event?.event_type !== "PAYMENT.CAPTURE.COMPLETED") {
-    return res.json({ ok: true, ignored: true });
+  if (!order || ccode !== "0") {
+    logger.info({ order, ccode }, "[billing] hyp return: missing order or non-success CCode, not crediting");
+    return res.redirect(302, frontendUrl);
   }
 
-  const transmissionId = req.headers["paypal-transmission-id"];
-  const transmissionTime = req.headers["paypal-transmission-time"];
-  const certUrl = req.headers["paypal-cert-url"];
-  const authAlgo = req.headers["paypal-auth-algo"];
-  const transmissionSig = req.headers["paypal-transmission-sig"];
-  if (
-    typeof transmissionId !== "string" || typeof transmissionTime !== "string" ||
-    typeof certUrl !== "string" || typeof authAlgo !== "string" || typeof transmissionSig !== "string"
-  ) {
-    logger.warn("[billing] paypal webhook missing required PayPal-* headers");
-    return res.status(400).json({ error: "Missing PayPal verification headers" });
-  }
-
-  const verified = await verifyPaypalWebhookSignature(
-    { transmissionId, transmissionTime, certUrl, authAlgo, transmissionSig },
-    event,
-  );
+  // Confirms this redirect genuinely came from Hyp (and its params weren't
+  // tampered with in the browser) before trusting anything in it -- Hyp's
+  // documented server-side validation step, the same role
+  // verifyPaypalWebhookSignature played for the old PayPal integration.
+  const verified = await verifyHypReturn(rawQuery);
   if (!verified) {
-    logger.warn("[billing] paypal webhook signature verification failed");
-    return res.status(401).json({ error: "Signature verification failed" });
+    logger.warn({ order, hypId }, "[billing] hyp return: VERIFY failed");
+    return res.redirect(302, frontendUrl);
   }
 
-  const captureId: string | undefined = event.resource?.id;
-  const orderId: string | undefined = event.resource?.supplementary_data?.related_ids?.order_id;
-  if (!captureId || !orderId) {
-    logger.warn({ captureId, orderId }, "[billing] paypal webhook missing capture/order id");
-    return res.status(400).json({ error: "Missing capture or order id" });
+  const [pending] = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.providerTransactionId, order), eq(transactionsTable.provider, "hyp")));
+
+  if (!pending) {
+    logger.warn({ order }, "[billing] hyp return: no matching pending transaction for this order");
+    return res.redirect(302, frontendUrl);
   }
 
-  // The capture event's own payload doesn't reliably carry the payer's
-  // email, so the order itself is the one authoritative source for both a
-  // confirmed amount and the payer's email together.
-  const order = await getPaypalOrderDetails(orderId);
-  if (!order || order.status !== "COMPLETED" || order.currencyCode !== "ILS") {
-    logger.warn({ orderId, order }, "[billing] paypal webhook: order not completed or wrong currency");
-    return res.status(400).json({ error: "Order not completed or unexpected currency" });
+  const pkgForCelebration = HYP_PACKAGES_BY_ID[pending.packageId as TokenPackageId];
+
+  // Already credited by an earlier hit on this same return URL (e.g. the
+  // customer refreshed the success page) -- redirect straight to the
+  // celebration without crediting twice.
+  if (pending.status === "completed") {
+    return res.redirect(302, `${frontendUrl}/?purchase=success&tokens=${pkgForCelebration?.tokens ?? ""}`);
   }
 
-  const amount = Math.round(Number(order.amountValue));
-  const pkg = PAYPAL_PACKAGES_BY_PRICE[amount];
-  if (!pkg) {
-    logger.warn({ amount, orderId }, "[billing] paypal webhook: amount matches no known package");
-    return res.status(400).json({ error: "Amount matches no known package" });
+  const amountParam = Number(params.get("Amount"));
+  if (Number.isFinite(amountParam) && Math.round(amountParam) !== pending.priceIls) {
+    logger.warn({ order, amountParam, expected: pending.priceIls }, "[billing] hyp return: amount mismatch");
+    return res.redirect(302, frontendUrl);
   }
 
-  if (!order.payerEmail) {
-    logger.warn({ orderId }, "[billing] paypal webhook: order has no payer email");
-    return res.status(400).json({ error: "Order has no payer email" });
+  // Flips the reserved row from "pending" to "completed" and credits the
+  // balance atomically, guarded by the WHERE status = 'pending' below so a
+  // concurrent/duplicate hit on this route (e.g. the customer double-taps
+  // back) can never double-credit the same order.
+  const credited = await db.transaction(async (tx) => {
+    const [row] = await tx.update(transactionsTable)
+      .set({ status: "completed" })
+      .where(and(eq(transactionsTable.providerTransactionId, order), eq(transactionsTable.status, "pending")))
+      .returning();
+    if (!row) return null;
+    await tx.update(usersTable)
+      .set({
+        tokenBalance: sql`${usersTable.tokenBalance} + ${row.tokens}`,
+        isPayingCustomer: true,
+      })
+      .where(eq(usersTable.id, row.userId));
+    return row;
+  });
+
+  if (credited) {
+    logger.info(
+      { userId: credited.userId, order, hypId, packageId: credited.packageId },
+      "[billing] credited tokens from Hyp payment return",
+    );
+  } else {
+    logger.info({ order }, "[billing] hyp return: already processed concurrently, skipping credit");
   }
 
-  const [user] = await db.select({ id: usersTable.id })
-    .from(usersTable)
-    .where(ilike(usersTable.email, order.payerEmail));
-
-  if (!user) {
-    logger.warn({ payerEmail: order.payerEmail }, "[billing] paypal webhook: no user matches this payer email");
-    return res.status(404).json({ error: "No user found with this payer email" });
-  }
-
-  // Credit in raw cost-estimation units -- tokenBalance/transactionsTable
-  // stay denominated in the same scale per-request metering already uses;
-  // pkg.tokens is only the simplified whole-Token count shown in the UI.
-  let rawTokens: number;
-  try {
-    rawTokens = await creditTokenPackage(user.id, pkg, "paypal", captureId);
-  } catch (err: any) {
-    // captureId is PayPal's real, stable transaction id, so a unique-
-    // violation here means this exact capture was already credited by an
-    // earlier delivery of the same webhook -- treat the retry as a no-op
-    // rather than double-crediting or erroring. drizzle-orm wraps the raw pg
-    // error in a DrizzleQueryError, so the original error code lives on
-    // `.cause`, not directly on the thrown error.
-    if (err?.code === "23505" || err?.cause?.code === "23505") {
-      logger.info({ captureId }, "[billing] paypal webhook: capture already processed, ignoring retry");
-      return res.json({ ok: true, alreadyProcessed: true });
-    }
-    throw err;
-  }
-
-  logger.info({ userId: user.id, packageId: pkg.id, tokens: pkg.tokens, rawTokens, captureId }, "[billing] credited tokens from PayPal webhook");
-  res.json({ ok: true, userId: user.id, tokensAdded: pkg.tokens });
+  res.redirect(302, `${frontendUrl}/?purchase=success&tokens=${pkgForCelebration?.tokens ?? ""}`);
 });

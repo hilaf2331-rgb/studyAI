@@ -20,7 +20,7 @@ export const TermsPage: React.FC = () => {
 
         <header className="space-y-2">
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight">תקנון ותנאי שימוש</h1>
-          <p className="text-sm text-muted-foreground">עודכן לאחרונה: יוני 2026</p>
+          <p className="text-sm text-muted-foreground">עודכן לאחרונה: יולי 2026</p>
         </header>
 
         <article className="prose prose-sm sm:prose-base dark:prose-invert max-w-none space-y-6 leading-relaxed">

@@ -141,9 +141,14 @@ billingAuthRouter.post("/billing/hyp/create", async (req, res) => {
     paymentUrl = await createHypPaymentUrl({
       amountILS: pkg.priceILS,
       order,
-      clientName: user.name ?? undefined,
+      // ClientName is deliberately omitted: Hyp's payment page appears to
+      // expect Hebrew text in a legacy encoding rather than UTF-8, so a
+      // Hebrew user.name renders as mojibake on their pre-filled "first
+      // name" field. Leaving it out lets the customer type it themselves
+      // instead of showing them garbled text -- it's optional and unused
+      // by our own crediting logic either way.
       email: user.email,
-      info: `StudyAI ${pkg.id}`,
+      info: `FocusStudy ${pkg.id}`,
     });
   } catch (err) {
     logger.error({ err, order }, "[billing] failed to create Hyp payment page");

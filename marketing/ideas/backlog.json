@@ -1,0 +1,75 @@
+{
+  "schema": {
+    "format": "image | reel | banner | video",
+    "channel_hint": "instagram | facebook | heygen | any",
+    "status": "new | claimed | used | rejected"
+  },
+  "ideas": [
+    {
+      "id": "idea-2026-07-31-001",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "image",
+      "channel_hint": "instagram",
+      "title": "מחזור חזרות יומי (Daily Review)",
+      "angle": "כרטיסיית סטטיסטיקה שמראה 'כמה כרטיסים חיכו לך היום' והתחושה של לסיים את כל החזרות היומיות - מדגיש את מנגנון ה-spaced repetition.",
+      "source": "feature:clean_website/artifacts/study-platform/src/pages/daily-review.tsx",
+      "script_or_caption_draft": "היום סיימת את כל החזרות שלך? ה-Daily Review בונה לך תזכורת חכמה בדיוק מתי המוח שוכח - כדי שתזכרו לתמיד, לא רק למבחן.",
+      "status": "new"
+    },
+    {
+      "id": "idea-2026-07-31-002",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "reel",
+      "channel_hint": "heygen",
+      "title": "מהקלטת שיעור להקלטת קול - לחומר לימוד מלא תוך דקות",
+      "angle": "סקרין-רקורדינג/אווטאר מדגים: מקליטים הרצאה או שיעור (recorder), והמערכת הופכת אותה לסיכום, פלאשקארדס ומבחן אוטומטית.",
+      "source": "feature:clean_website/artifacts/study-platform/src/pages/recorder.tsx + material-new.tsx",
+      "script_or_caption_draft": "מקליטים שיעור. תוך דקות מקבלים: סיכום, כרטיסיות ומבחן תרגול - בלי לשבת שעות לעבד לבד. ככה נראה ללמוד ב-2026.",
+      "status": "new"
+    },
+    {
+      "id": "idea-2026-07-31-003",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "image",
+      "channel_hint": "instagram",
+      "title": "פודקאסט אישי מהחומר שלך",
+      "angle": "הדגשת האפשרות להאזין לחומר הלימוד כמו פודקאסט - ללמוד תוך כדי נסיעה/הליכה.",
+      "source": "feature:clean_website/artifacts/study-platform/src/pages/podcasts.tsx + audio-player.tsx",
+      "script_or_caption_draft": "הפכנו את חומר הלימוד שלך לפודקאסט אישי. תלמדו בדרך לאוניברסיטה, באוטובוס, בהליכה - בלי לפתוח ספר.",
+      "status": "new"
+    },
+    {
+      "id": "idea-2026-07-31-004",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "banner",
+      "channel_hint": "any",
+      "title": "באנר פרימיום/תמחור - חבילת מבחנים ללא הגבלה",
+      "angle": "באנר קידום ל-pricing page, ממוקד בסטודנטים לקראת תקופת מבחנים.",
+      "source": "feature:clean_website/artifacts/study-platform/src/pages/pricing.tsx",
+      "script_or_caption_draft": "עונת מבחנים מתקרבת. תרגול בלתי מוגבל, סיכומים וכרטיסיות - בלחיצה אחת.",
+      "status": "new"
+    },
+    {
+      "id": "idea-2026-07-31-005",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "reel",
+      "channel_hint": "heygen",
+      "title": "צ'אט עם חומר הלימוד שלך",
+      "angle": "אווטאר מסביר את פיצ'ר הצ'אט - שואלים שאלה על החומר וה-AI עונה ישירות מתוך המקורות שהעליתם.",
+      "source": "feature:clean_website/artifacts/study-platform/src/pages/chat.tsx",
+      "script_or_caption_draft": "לא הבנת קטע בחומר? פשוט תשאלו אותו. הצ'אט שלנו עונה ישירות מתוך הסיכום, ההרצאה או המאמר שהעלית.",
+      "status": "new"
+    },
+    {
+      "id": "idea-2026-07-31-006",
+      "created_at": "2026-07-31T00:00:00Z",
+      "format": "image",
+      "channel_hint": "facebook",
+      "title": "שאלות ממוקדות לפי נושאי חולשה (Targeted Questions)",
+      "angle": "המערכת מזהה על אילו נושאים טעית הכי הרבה ובונה תרגול ממוקד רק בהם.",
+      "source": "feature:clean_website/lib/api-zod (targetedQuestion, weakConceptSource)",
+      "script_or_caption_draft": "במקום לתרגל הכל מחדש, המערכת שלנו יודעת בדיוק איפה טעית - ובונה לך תרגול שממוקד רק שם.",
+      "status": "new"
+    }
+  ]
+}

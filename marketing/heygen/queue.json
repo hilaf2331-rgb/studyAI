@@ -1,0 +1,7 @@
+{
+  "schema": {
+    "status": "pending_credits | generating | ready_for_review | published | failed",
+    "idea_id": "matching id from marketing/ideas/backlog.json"
+  },
+  "videos": []
+}

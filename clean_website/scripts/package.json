@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "ideas:generate": "tsx ./src/marketing/idea-agent.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

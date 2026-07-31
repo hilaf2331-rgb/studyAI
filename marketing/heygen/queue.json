@@ -1,7 +1,12 @@
 {
   "schema": {
     "status": "pending_credits | generating | ready_for_review | published | failed",
-    "idea_id": "matching id from marketing/ideas/backlog.json"
+    "idea_id": "matching id from marketing/ideas/backlog.json",
+    "heygen_video_id": "HeyGen's own video id, set once submitted",
+    "submitted_at": "ISO timestamp of the /v2/video/generate call",
+    "updated_at": "ISO timestamp of the last status change",
+    "video_url": "set once status is ready_for_review",
+    "error": "set once status is failed, HeyGen's error message"
   },
   "videos": []
 }

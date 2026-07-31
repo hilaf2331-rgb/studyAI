@@ -45,6 +45,11 @@ interface BacklogIdea {
   // trend-research skill existed.
   trend_reference?: string;
   script_or_caption_draft: string;
+  // The exact words to be spoken by a HeyGen avatar -- no stage directions,
+  // beat labels, or on-screen-text notes, just the narration itself in
+  // order. Optional field -- absent on ideas seeded before this existed;
+  // the heygen-agent skips those rather than reading stage directions aloud.
+  voiceover_text?: string;
   status: string;
 }
 
@@ -61,6 +66,7 @@ interface GeneratedIdea {
   angle: string;
   trend_reference: string;
   script_or_caption_draft: string;
+  voiceover_text: string;
 }
 
 function loadBacklog(): Backlog {
@@ -176,7 +182,8 @@ async function generateIdeasForCandidates(
 - title: כותרת קצרה לרעיון
 - angle: משפט או שניים שמסבירים את זווית השיווק
 - trend_reference: שם הטרנד (מהתקציר) שעליו מבוסס התסריט, ומשפט קצר למה הוא מתאים לפיצ'ר הזה
-- script_or_caption_draft: תסריט מקיף ומפורט (לא רק כותרת/קאפשן) -- כתוב beat-by-beat: השורה/תמונה הפותחת (hook), מה קורה בכל שנייה/קטע לאורך הסרטון, טקסט-על-מסך אם רלוונטי, וסיום/CTA. חייב לשקף בפועל את מבנה הטרנד שנבחר, לא רק להזכיר את שמו`;
+- script_or_caption_draft: תסריט מקיף ומפורט (לא רק כותרת/קאפשן) -- כתוב beat-by-beat: השורה/תמונה הפותחת (hook), מה קורה בכל שנייה/קטע לאורך הסרטון, טקסט-על-מסך אם רלוונטי, וסיום/CTA. חייב לשקף בפועל את מבנה הטרנד שנבחר, לא רק להזכיר את שמו
+- voiceover_text: אך ורק המילים שיוקראו בקול על ידי אווטאר (לצורך יצירת וידאו אוטומטית) -- ברצף טבעי מההתחלה ועד הסוף, בלי שום תווית בימוי כמו "Hook:" או "טקסט על מסך:", בלי תיאורי מצלמה/עריכה, רק הנאום עצמו בעברית תקינה ורהוטה`;
 
   const prompt = `## תקציר מחקר טרנדים חברתיים (${TREND_LOOKBACK_DAYS} הימים האחרונים)\n${trendBrief}\n\n---\n\nהנה קטעי קוד מדפי פיצ'ר שעדיין לא כוסו ב-backlog השיווקי. עבור כל אחד, החלט אם שווה רעיון תוכן, ואם כן -- כתוב אותו לפי ההנחיות, מבוסס בפועל על אחד הטרנדים שלמעלה:\n\n${candidates
     .map((c) => `## קובץ: ${c.file}\n\`\`\`tsx\n${c.snippet}\n\`\`\``)
@@ -235,7 +242,7 @@ async function main() {
   let added = 0;
   for (const idea of generated) {
     if (added >= MAX_NEW_IDEAS_PER_RUN) break;
-    if (!idea.title || !idea.format || !idea.channel_hint || !idea.script_or_caption_draft) continue;
+    if (!idea.title || !idea.format || !idea.channel_hint || !idea.script_or_caption_draft || !idea.voiceover_text) continue;
     if (existingTitles.has(normalizeTitle(idea.title))) continue;
 
     const newIdea: BacklogIdea = {
@@ -248,6 +255,7 @@ async function main() {
       source: `feature:${PAGES_SOURCE_PREFIX}/${idea.file}`,
       trend_reference: idea.trend_reference,
       script_or_caption_draft: idea.script_or_caption_draft,
+      voiceover_text: idea.voiceover_text,
       status: "new",
     };
     backlog.ideas.push(newIdea);

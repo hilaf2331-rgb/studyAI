@@ -3,7 +3,8 @@
     "format": "image | reel | banner | video",
     "channel_hint": "instagram | facebook | heygen | any",
     "status": "new | claimed | used | rejected",
-    "trend_reference": "optional -- which researched social trend (see marketing/trends/*.md) the script is modeled on"
+    "trend_reference": "optional -- which researched social trend (see marketing/trends/*.md) the script is modeled on",
+    "voiceover_text": "optional -- exact words for a HeyGen avatar to speak (no stage directions), used by the heygen-agent"
   },
   "ideas": [
     {

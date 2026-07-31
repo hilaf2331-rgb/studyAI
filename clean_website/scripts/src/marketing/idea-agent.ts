@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
@@ -7,8 +7,11 @@ import { GoogleGenAI } from "@google/genai";
 // is four levels up.
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const BACKLOG_PATH = join(REPO_ROOT, "marketing/ideas/backlog.json");
+const TRENDS_DIR = join(REPO_ROOT, "marketing/trends");
 const PAGES_DIR = join(REPO_ROOT, "clean_website/artifacts/study-platform/src/pages");
 const PAGES_SOURCE_PREFIX = "clean_website/artifacts/study-platform/src/pages";
+const TREND_LOOKBACK_DAYS = 30;
+const TREND_PLATFORMS = ["Instagram (Reels)", "TikTok", "X (Twitter)", "Facebook", "YouTube Shorts"];
 
 // Account/legal/meta pages aren't student-facing "features" worth marketing --
 // skip them outright rather than asking Gemini to filter them every run.
@@ -37,6 +40,10 @@ interface BacklogIdea {
   title: string;
   angle: string;
   source: string;
+  // Which researched trend format (see marketing/trends/*.md) the script below
+  // was modeled on. Optional field -- absent on ideas seeded before the
+  // trend-research skill existed.
+  trend_reference?: string;
   script_or_caption_draft: string;
   status: string;
 }
@@ -52,6 +59,7 @@ interface GeneratedIdea {
   channel_hint: "instagram" | "facebook" | "heygen" | "any";
   title: string;
   angle: string;
+  trend_reference: string;
   script_or_caption_draft: string;
 }
 
@@ -95,18 +103,70 @@ function safeJsonParse(rawText: string): any {
   return JSON.parse(candidate);
 }
 
+// Researches real, current social-media trends via Gemini's Google Search
+// grounding tool (not the model's training data) so the ideas below are based
+// on what's actually working on each platform right now, not stale patterns.
+// Cached to one file per calendar day -- re-running the agent several times
+// in the same day reuses the existing research instead of re-querying.
+async function researchSocialTrends(ai: GoogleGenAI): Promise<string> {
+  const today = new Date().toISOString().slice(0, 10);
+  const cachePath = join(TRENDS_DIR, `${today}.md`);
+  if (existsSync(cachePath)) {
+    console.log(`Using cached trend research from ${cachePath}`);
+    return readFileSync(cachePath, "utf-8");
+  }
+
+  const now = new Date();
+  const lookbackStart = new Date(now.getTime() - TREND_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+
+  const prompt = `חקור ביסודיות רבה, באמצעות חיפוש אמיתי ועדכני (אל תסתמך על ידע כללי ישן, ואל תמציא) -- מה היו הטרנדים החמים ביותר ב-${TREND_LOOKBACK_DAYS} הימים האחרונים (${lookbackStart.toISOString().slice(0, 10)} עד ${now.toISOString().slice(0, 10)}) בכל אחת מהפלטפורמות החברתיות הרשמיות הבאות: ${TREND_PLATFORMS.join(", ")}.
+
+התמקד בטרנדים שרלוונטיים או ניתנים להתאמה לתוכן בנושאי לימודים, סטודנטים, פרודוקטיביות ולמידה עם AI -- אבל דווח על הטרנדים המדויקים כפי שהם, אל תעוות אותם כדי "להתאים" בכוח.
+
+עבור כל טרנד, כתוב בעברית:
+1. **שם/תיאור הטרנד** ובאיזו פלטפורמה/פלטפורמות הוא רץ עכשיו.
+2. **מבנה בפועל**: איך נראה ה-hook (2-3 השניות הראשונות), מבנה ההמשך בפועל (beat by beat), אורך טיפוסי, סאונד/מוזיקה/טקסט-על-מסך אופייני, וסגנון עריכה/צילום.
+3. **למה זה עובד** -- למה הפורמט הזה יוצר engagement.
+
+תן לפחות 6 טרנדים שונים, כל אחד עם הפירוט המלא הזה. פלט: טקסט/מארקדאון רגיל, לא JSON.`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      tools: [
+        {
+          googleSearch: {
+            timeRangeFilter: { startTime: lookbackStart.toISOString(), endTime: now.toISOString() },
+          },
+        },
+      ],
+      temperature: 0.3,
+      maxOutputTokens: 4000,
+    },
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("Gemini returned an empty trend-research response.");
+
+  mkdirSync(TRENDS_DIR, { recursive: true });
+  writeFileSync(
+    cachePath,
+    `# Social trend research -- ${today}\nWindow: ${lookbackStart.toISOString()} to ${now.toISOString()}\nPlatforms: ${TREND_PLATFORMS.join(", ")}\n\n${text}\n`,
+    "utf-8",
+  );
+  console.log(`Saved trend research to ${cachePath}`);
+  return text;
+}
+
 async function generateIdeasForCandidates(
+  ai: GoogleGenAI,
+  trendBrief: string,
   candidates: { file: string; snippet: string }[],
 ): Promise<GeneratedIdea[]> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is required but was not provided.");
-  }
-  const ai = new GoogleGenAI({ apiKey });
-
   const systemInstruction = `אתה אסטרטג תוכן שיווקי עבור FocusStudy, אפליקציית לימוד ישראלית מבוססת AI (סיכומים, כרטיסיות, מבחני תרגול, צ'אט על החומר, פודקאסטים, חזרות מרווחות).
-תפקידך: לקבל קטעי קוד מדפי פיצ'ר באפליקציה, ולהחליט האם כל אחד מהם מייצג פיצ'ר אמיתי שמשתמש קצה חווה וששווה לשווק אותו ברשתות חברתיות.
-עבור כל פיצ'ר שכן שווה לשווק, כתוב רעיון תוכן קונקרטי אחד בעברית.
+תפקידך: לקבל קטעי קוד מדפי פיצ'ר באפליקציה ותקציר מחקר טרנדים עדכני מהרשתות החברתיות, ולהחליט אילו פיצ'רים שווה לשווק.
+עבור כל פיצ'ר שכן שווה לשווק, בחר את הטרנד המתאים ביותר מהתקציר (או שילוב שלהם) והשתמש בו בפועל -- לא רק כנושא, אלא כמבנה של התסריט עצמו (hook, beats, אורך, סגנון עריכה/סאונד).
 דלג לגמרי (אל תכלול בפלט) על קבצים שהם טכניים גרידא, מסך שגיאה, מסך ריק, או לא מייצגים פיצ'ר שמשתמש רגיל היה מספר עליו לחבר.
 
 הפלט חייב להיות מערך JSON תקני בלבד (ללא טקסט נוסף, ללא גדר קוד), כאשר כל איבר הוא אובייקט עם השדות:
@@ -115,9 +175,10 @@ async function generateIdeasForCandidates(
 - channel_hint: אחד מ- "instagram" | "facebook" | "heygen" | "any"
 - title: כותרת קצרה לרעיון
 - angle: משפט או שניים שמסבירים את זווית השיווק
-- script_or_caption_draft: טיוטת קאפשן/תסריט קצר בעברית, בסגנון חם וממוקד תלמידים`;
+- trend_reference: שם הטרנד (מהתקציר) שעליו מבוסס התסריט, ומשפט קצר למה הוא מתאים לפיצ'ר הזה
+- script_or_caption_draft: תסריט מקיף ומפורט (לא רק כותרת/קאפשן) -- כתוב beat-by-beat: השורה/תמונה הפותחת (hook), מה קורה בכל שנייה/קטע לאורך הסרטון, טקסט-על-מסך אם רלוונטי, וסיום/CTA. חייב לשקף בפועל את מבנה הטרנד שנבחר, לא רק להזכיר את שמו`;
 
-  const prompt = `הנה קטעי קוד מדפי פיצ'ר שעדיין לא כוסו ב-backlog השיווקי. עבור כל אחד, החלט אם שווה רעיון תוכן, ואם כן - כתוב אותו לפי ההנחיות:\n\n${candidates
+  const prompt = `## תקציר מחקר טרנדים חברתיים (${TREND_LOOKBACK_DAYS} הימים האחרונים)\n${trendBrief}\n\n---\n\nהנה קטעי קוד מדפי פיצ'ר שעדיין לא כוסו ב-backlog השיווקי. עבור כל אחד, החלט אם שווה רעיון תוכן, ואם כן -- כתוב אותו לפי ההנחיות, מבוסס בפועל על אחד הטרנדים שלמעלה:\n\n${candidates
     .map((c) => `## קובץ: ${c.file}\n\`\`\`tsx\n${c.snippet}\n\`\`\``)
     .join("\n\n")}`;
 
@@ -141,6 +202,12 @@ async function generateIdeasForCandidates(
 }
 
 async function main() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is required but was not provided.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
   const backlog = loadBacklog();
   const covered = alreadyCoveredFiles(backlog);
   const existingTitles = new Set(backlog.ideas.map((i) => normalizeTitle(i.title)));
@@ -159,8 +226,11 @@ async function main() {
     snippet: readFileSync(join(PAGES_DIR, file), "utf-8").slice(0, SNIPPET_MAX_CHARS),
   }));
 
+  console.log(`Researching the last ${TREND_LOOKBACK_DAYS} days of social trends across ${TREND_PLATFORMS.join(", ")}...`);
+  const trendBrief = await researchSocialTrends(ai);
+
   console.log(`Asking Gemini to evaluate ${candidates.length} uncovered page(s): ${candidateFiles.join(", ")}`);
-  const generated = await generateIdeasForCandidates(candidates);
+  const generated = await generateIdeasForCandidates(ai, trendBrief, candidates);
 
   let added = 0;
   for (const idea of generated) {
@@ -176,6 +246,7 @@ async function main() {
       title: idea.title,
       angle: idea.angle,
       source: `feature:${PAGES_SOURCE_PREFIX}/${idea.file}`,
+      trend_reference: idea.trend_reference,
       script_or_caption_draft: idea.script_or_caption_draft,
       status: "new",
     };

@@ -6,6 +6,14 @@ import { GoogleGenAI } from "@google/genai";
 // Repo layout: clean_website/scripts/src/marketing/idea-agent.ts -> repo root
 // is four levels up.
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+// Loads secrets (GEMINI_API_KEY, etc.) from clean_website/.env when present,
+// same file the API server's own .env.example documents -- so running this
+// script locally doesn't require exporting every var by hand each time.
+// Never overrides a var already set in the shell/CI environment.
+const ENV_PATH = join(REPO_ROOT, "clean_website/.env");
+if (existsSync(ENV_PATH)) process.loadEnvFile(ENV_PATH);
+
 const BACKLOG_PATH = join(REPO_ROOT, "marketing/ideas/backlog.json");
 const TRENDS_DIR = join(REPO_ROOT, "marketing/trends");
 const PAGES_DIR = join(REPO_ROOT, "clean_website/artifacts/study-platform/src/pages");

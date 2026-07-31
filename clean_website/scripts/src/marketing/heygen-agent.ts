@@ -1,10 +1,17 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Repo layout: clean_website/scripts/src/marketing/heygen-agent.ts -> repo
 // root is four levels up.
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+// Loads secrets (HEYGEN_API_KEY, etc.) from clean_website/.env when present,
+// so running this script locally doesn't require exporting every var by hand
+// each time. Never overrides a var already set in the shell/CI environment.
+const ENV_PATH = join(REPO_ROOT, "clean_website/.env");
+if (existsSync(ENV_PATH)) process.loadEnvFile(ENV_PATH);
+
 const BACKLOG_PATH = join(REPO_ROOT, "marketing/ideas/backlog.json");
 const QUEUE_PATH = join(REPO_ROOT, "marketing/heygen/queue.json");
 

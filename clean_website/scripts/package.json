@@ -7,6 +7,7 @@
     "hello": "tsx ./src/hello.ts",
     "ideas:generate": "tsx ./src/marketing/idea-agent.ts",
     "heygen:sync": "tsx ./src/marketing/heygen-agent.ts",
+    "publish:sync": "tsx ./src/marketing/publish-agent.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

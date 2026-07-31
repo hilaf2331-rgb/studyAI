@@ -6,7 +6,9 @@
     "submitted_at": "ISO timestamp of the /v2/video/generate call",
     "updated_at": "ISO timestamp of the last status change",
     "video_url": "set once status is ready_for_review",
-    "error": "set once status is failed, HeyGen's error message"
+    "error": "set once status is failed, HeyGen's error message",
+    "instagram_publish": "{ status: container_processing|published|failed, container_id?, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent",
+    "facebook_publish": "{ status: published|failed, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent"
   },
   "videos": []
 }

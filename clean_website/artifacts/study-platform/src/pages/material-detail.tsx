@@ -533,8 +533,11 @@ export const MaterialDetailPage: React.FC = () => {
   // browsers without navigator.share (mainly desktop).
   const openShare = (shareId: string) => {
     const url = `${window.location.origin}/shared/${shareId}`;
+    const text = isRTL
+      ? `היי! שיתפתי איתך חומר לימוד${material?.title ? ` ב"${material.title}"` : ""} דרך FocusStudy 📚`
+      : `Hey! I shared study material${material?.title ? ` on "${material.title}"` : ""} with you via FocusStudy 📚`;
     if (navigator.share) {
-      navigator.share({ title: material?.title, url }).catch((err) => {
+      navigator.share({ title: material?.title, text, url }).catch((err) => {
         if (err?.name !== "AbortError") setShareDialogOpen(true);
       });
     } else {

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BetaUpsellDialog } from "@/components/beta-upsell-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Send, BrainCircuit, Loader2 } from "lucide-react";
 
 export const ChatPage: React.FC = () => {
@@ -17,7 +19,9 @@ export const ChatPage: React.FC = () => {
   const id = Number(idStr);
   const { isRTL, language } = useLanguage();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [input, setInput] = useState("");
+  const [tokensUpsellOpen, setTokensUpsellOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: material } = useGetMaterial(id, { query: { enabled: !!id, queryKey: getGetMaterialQueryKey(id) } });
@@ -37,6 +41,21 @@ export const ChatPage: React.FC = () => {
       data: { content, language: language as "he" | "en" }
     }, {
       onSuccess: () => qc.invalidateQueries({ queryKey: getGetChatHistoryQueryKey(id) }),
+      onError: (err: any) => {
+        // The user's own message was already saved server-side (routes/chat.ts
+        // inserts it before the token check), so only the reply is missing --
+        // refetch history so it doesn't look like the send silently vanished.
+        qc.invalidateQueries({ queryKey: getGetChatHistoryQueryKey(id) });
+        setInput(content);
+        if (err?.status === 402 || err?.status === 403) {
+          setTokensUpsellOpen(true);
+        } else {
+          toast({
+            variant: "destructive",
+            description: isRTL ? "השליחה נכשלה. נסו שוב." : "Failed to send. Please try again.",
+          });
+        }
+      },
     });
   };
 
@@ -116,6 +135,8 @@ export const ChatPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      <BetaUpsellDialog open={tokensUpsellOpen} onOpenChange={setTokensUpsellOpen} />
     </div>
   );
 };

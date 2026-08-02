@@ -85,7 +85,7 @@ async function isAdminUser(userId: number): Promise<boolean> {
 // same way checkCircuitBreaker() in ai.ts fails fast before chunking work.
 export class InsufficientTokensError extends Error {
   constructor() {
-    super("You've used up your token balance for this period. Please wait for it to reset or upgrade your plan.");
+    super("נגמרו לך הטוקנים לתקופה הזו. אפשר לחכות לחידוש החודשי, או לרכוש עוד טוקנים בינתיים.");
     this.name = "InsufficientTokensError";
   }
 }

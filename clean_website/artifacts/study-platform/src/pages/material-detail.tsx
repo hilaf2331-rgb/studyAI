@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
@@ -313,7 +313,7 @@ function GenerateDialog({
         {!isGenerating && !!costEstimate && (
           <p className="text-xs text-muted-foreground text-center">
             {isRTL
-              ? `הפעולה תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוערך, בהתאם לאורך החומר)`
+              ? `הפעולה תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוער, בהתאם לאורך החומר)`
               : `This will cost about ${costEstimate.toLocaleString()} tokens (estimated, based on material length)`}
           </p>
         )}
@@ -374,7 +374,7 @@ function ContentSection({
         {!disabled && !!costEstimate && (
           <p className={`text-xs text-muted-foreground ${isRTL ? "text-right" : ""}`}>
             {isRTL
-              ? `יצירה נוספת תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוערך)`
+              ? `יצירה נוספת תעלה כ-${costEstimate.toLocaleString()} טוקנים (משוער)`
               : `Another generation costs about ${costEstimate.toLocaleString()} tokens (estimated)`}
           </p>
         )}
@@ -572,7 +572,24 @@ export const MaterialDetailPage: React.FC = () => {
   // the sequential summary -> flashcards -> questions pipeline runs for
   // however many minutes it actually takes.
   const realKitPercent = generationProgress && generationProgress.totalChunks > 0 ? generationProgress.percentage : null;
-  const progressValue = useSmartProgress(kitLoading, { expectedDurationMs: 45_000, realPercent: realKitPercent });
+
+  // generate-all runs summary's own chunk loop, then (after a flat interim
+  // checkpoint) flashcards+questions' own chunk loop -- each phase's
+  // currentChunk restarts from 1. Detecting that restart (currentChunk drops
+  // below the highest seen so far) is what tells useSmartProgress a new
+  // phase began, so it can stop pinning the display to the previous phase's
+  // 100% while this phase's own "chunk 1 of N" is still just starting.
+  const highestChunkSeenRef = useRef(0);
+  const [chunkPhase, setChunkPhase] = useState(0);
+  useEffect(() => {
+    if (!generationProgress || generationProgress.totalChunks <= 0) return;
+    if (generationProgress.currentChunk < highestChunkSeenRef.current) {
+      setChunkPhase(p => p + 1);
+    }
+    highestChunkSeenRef.current = generationProgress.currentChunk;
+  }, [generationProgress]);
+
+  const progressValue = useSmartProgress(kitLoading, { expectedDurationMs: 45_000, realPercent: realKitPercent, resetToken: chunkPhase });
 
   // generate-all itself returns as soon as the background job is kicked off
   // (see handleGenerateAll) -- the actual outcome lands here, via the same

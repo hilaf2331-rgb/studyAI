@@ -76,17 +76,17 @@ export const Dashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Free monthly token renewal notice -- literal black-on-white
-          (not theme tokens like bg-foreground, which read as a muted gray
-          in this app's dark palette) so it visually breaks from every other
-          card on the page on purpose, in both themes, instead of blending
-          in as just another teal-accented panel. Copy is careful to say
-          "while your account stays active", not just "renews every month"
-          -- the real mechanic (lib/tokens.ts's maybeApplyMonthlyRefill)
-          tops up to a flat 1 Token on the next login after 30+ days, it
-          doesn't accrue for an account nobody opens, so the wording
-          shouldn't imply it does. */}
-      <div className="relative z-10 flex items-center gap-3 rounded-xl bg-white text-neutral-900 px-5 py-3.5 shadow-lg">
+      {/* Free monthly token renewal notice -- translucent glass panel
+          (matches the app's existing card vibe, e.g. the Accuracy section
+          below) with an amber accent tying it to the Coins/"Buy Tokens"
+          color used everywhere else tokens are mentioned, rather than a
+          flat opaque block that looked out of place against the rest of
+          the dark UI. Copy is careful to say "while your account stays
+          active", not just "renews every month" -- the real mechanic
+          (lib/tokens.ts's maybeApplyMonthlyRefill) tops up to a flat 1
+          Token on the next login after 30+ days, it doesn't accrue for an
+          account nobody opens, so the wording shouldn't imply it does. */}
+      <div className="relative z-10 flex items-center gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 backdrop-blur-md text-amber-700 dark:text-amber-300 px-5 py-3.5">
         <Coins className="w-5 h-5 shrink-0" />
         <p className="text-sm font-semibold leading-relaxed">
           {isRTL

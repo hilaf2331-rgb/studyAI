@@ -527,6 +527,21 @@ export const MaterialDetailPage: React.FC = () => {
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) }) },
   });
 
+  // On a phone/browser that supports it, hand off straight to the native
+  // share sheet (WhatsApp/Messages/etc. as one-tap targets) instead of our
+  // own copy-link dialog -- that dialog is kept only as the fallback for
+  // browsers without navigator.share (mainly desktop).
+  const openShare = (shareId: string) => {
+    const url = `${window.location.origin}/shared/${shareId}`;
+    if (navigator.share) {
+      navigator.share({ title: material?.title, url }).catch((err) => {
+        if (err?.name !== "AbortError") setShareDialogOpen(true);
+      });
+    } else {
+      setShareDialogOpen(true);
+    }
+  };
+
   // While any of the four individual generation requests is in flight, poll
   // the backend's "chunk X of Y" tracker so the dialog can show real
   // progress instead of a bare spinner during the (now strictly sequential,
@@ -870,9 +885,9 @@ export const MaterialDetailPage: React.FC = () => {
             disabled={shareMaterial.isPending}
             onClick={() => {
               if (material.shareId) {
-                setShareDialogOpen(true);
+                openShare(material.shareId);
               } else {
-                shareMaterial.mutate({ id }, { onSuccess: () => setShareDialogOpen(true) });
+                shareMaterial.mutate({ id }, { onSuccess: (data) => data.shareId && openShare(data.shareId) });
               }
             }}
           >

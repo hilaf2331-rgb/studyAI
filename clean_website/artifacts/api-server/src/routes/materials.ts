@@ -12,7 +12,7 @@ import { getGenerationProgress, setGenerationProgress, clearGenerationProgress }
 import { runExclusive } from "../lib/processing-queue";
 import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
-import { requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getAudioAffordability, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
+import { getAudioAffordability, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -340,17 +340,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
     return res.status(400).json({ error: err.message, code: err.code || "INVALID_FILE" });
   }
 
-  // Beta-only hard cap on total processing actions -- checked before any
-  // extraction work starts, same fail-fast spot as the file-size check above.
-  try {
-    await requireActionsRemaining(userId);
-  } catch (err: any) {
-    if (uploadId) clearGenerationProgress(uploadId);
-    if (err instanceof BetaActionLimitError) {
-      return res.status(403).json({ error: err.message, code: err.code });
-    }
-    throw err;
-  }
 
   // Audio/video file uploads get their own backgrounded path: Whisper
   // transcription (now possibly chunked across many ffmpeg-segmented pieces,
@@ -435,7 +424,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
         description: `Uploaded "${material.title}"`,
         materialTitle: material.title,
       });
-      await incrementActionsUsed(userId);
 
       res.status(202).json({ material, status: "processing", uploadId });
 
@@ -480,7 +468,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
       userId, activityType: "upload",
       description: `Uploaded "${material.title}"`, materialTitle: material.title,
     });
-    await incrementActionsUsed(userId);
 
     res.status(202).json({ material, status: "processing", uploadId });
 
@@ -576,7 +563,6 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
     description: `Uploaded "${material.title}"`,
     materialTitle: material.title,
   });
-  await incrementActionsUsed(userId);
 
   if (processingError) {
     return res.status(201).json({

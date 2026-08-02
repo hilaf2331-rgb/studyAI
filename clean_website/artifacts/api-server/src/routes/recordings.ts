@@ -5,7 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { transcribeAudio } from "../lib/extractor";
 import { verifyUploadedFile } from "../lib/upload-security";
 import { generateSummary, generateFlashcardsAI, generateQuestionsAI } from "../lib/ai";
-import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, requireActionsRemaining, incrementActionsUsed, BetaActionLimitError, getAudioAffordability, isPayingCustomer } from "../lib/tokens";
+import { requireTokenBalance, deductTokensForGeneration, deductTokensForSummary, deductTokensForTranscription, getAudioAffordability, isPayingCustomer } from "../lib/tokens";
 import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioContentMessage, insufficientTokensForAudioMessage, MAX_RECORDING_SECONDS } from "../lib/validation";
 import { runExclusive } from "../lib/processing-queue";
 import { getGenerationProgress, setGenerationProgress } from "../lib/progress";
@@ -295,18 +295,6 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     }
   }
 
-  // Beta-only hard cap on total processing actions -- a live recording is a
-  // processing action just like a material upload, checked before
-  // transcription starts.
-  try {
-    await requireActionsRemaining(userId);
-  } catch (err: any) {
-    if (err instanceof BetaActionLimitError) {
-      return res.status(403).json({ error: err.message, code: err.code });
-    }
-    throw err;
-  }
-
   const audioData = req.file.buffer.toString("base64");
 
   // Optional: a client-generated id (see material-new.tsx's identical
@@ -349,7 +337,6 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     extractedText: "",
     duration: durationSeconds,
   }).returning();
-  await incrementActionsUsed(userId);
 
   const [recording] = await db.insert(recordingsTable).values({
     userId,

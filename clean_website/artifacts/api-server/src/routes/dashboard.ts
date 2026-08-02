@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { db, coursesTable, materialsTable, flashcardsTable, flashcardDecksTable, examResultsTable, activityTable, usersTable } from "@workspace/db";
 import { count, avg, desc, eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
-import { getTokenBalance, isPayingCustomer, requireAndDeductFeatureTokens, FEATURE_TOKEN_COSTS, RAW_UNITS_PER_TOKEN, TRANSCRIPTION_SECONDS_PER_TOKEN, SUMMARY_PAGES_PER_TOKEN } from "../lib/tokens";
+import { getTokenBalance, isPayingCustomer, RAW_UNITS_PER_TOKEN, TRANSCRIPTION_SECONDS_PER_TOKEN, SUMMARY_PAGES_PER_TOKEN } from "../lib/tokens";
 
 // Today's Review queue is capped at this many cards across ALL of the
 // user's materials -- a daily review session should feel doable in one
-// sitting, not turn into "every overdue card you've ever skipped." Access
-// itself is gated by tokens (FEATURE_TOKEN_COSTS.dailyReviewQueue), not tier.
+// sitting, not turn into "every overdue card you've ever skipped." Reviewing
+// existing cards costs nothing (they're already generated); only creating
+// new content spends tokens.
 const DAILY_REVIEW_CAP = 15;
 
 // Rough estimated token cost of one generation of each kind, used only to
@@ -107,7 +108,6 @@ router.get("/dashboard/daily-review-count", async (req, res) => {
 
 router.get("/dashboard/daily-review-cards", async (req, res) => {
   const userId = req.user!.userId;
-  await requireAndDeductFeatureTokens(userId, FEATURE_TOKEN_COSTS.dailyReviewQueue);
   const now = new Date();
   const cap = DAILY_REVIEW_CAP;
 

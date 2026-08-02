@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { AudioTokenLimitDialog } from "@/components/audio-token-limit-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
@@ -110,7 +109,6 @@ export const RecorderPage: React.FC = () => {
   const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [autoStopped, setAutoStopped] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [betaLimitOpen, setBetaLimitOpen] = useState(false);
   // Set when the backend's 402 INSUFFICIENT_TOKENS_FOR_AUDIO response tells
   // us the user's token balance can't cover the whole recording -- holds
   // everything AudioTokenLimitDialog needs to negotiate a way forward (buy
@@ -528,11 +526,6 @@ export const RecorderPage: React.FC = () => {
         clearInterval(pollInterval);
         setQueuePosition(null);
 
-        if (data.code === "BETA_LIMIT_REACHED") {
-          setBetaLimitOpen(true);
-          setRecState("stopped");
-          return;
-        }
         if (data.code === "INSUFFICIENT_TOKENS_FOR_AUDIO") {
           setPendingUpload({
             blob,
@@ -1089,8 +1082,6 @@ export const RecorderPage: React.FC = () => {
 
       {/* hidden audio element for history playback */}
       <audio ref={audioRef} className="hidden" />
-
-      <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
 
       {pendingUpload && (
         <AudioTokenLimitDialog

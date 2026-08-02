@@ -12,11 +12,24 @@ const CEILING = 96;
  * the instant `active` turns false after having run, since that's the only
  * signal that the operation actually finished.
  */
-export function useSmartProgress(active: boolean, opts: { expectedDurationMs: number; realPercent?: number | null }): number {
-  const { expectedDurationMs, realPercent } = opts;
+export function useSmartProgress(
+  active: boolean,
+  opts: { expectedDurationMs: number; realPercent?: number | null; resetToken?: unknown },
+): number {
+  const { expectedDurationMs, realPercent, resetToken } = opts;
   const [value, setValue] = useState(0);
   const startRef = useRef<number | null>(null);
 
+  // A pipeline like generate-all (summary, then flashcards+questions) is
+  // really several independently-chunked phases sharing one `active`
+  // session -- each phase's own real percentage legitimately restarts from
+  // a low number. Without `resetToken`, the ratchet below (Math.max) would
+  // keep whatever high value the previous phase reached forever, showing
+  // e.g. "100%" frozen next to a "chunk 1 of 4" label from the new phase.
+  // The caller passes something that changes exactly when a new phase
+  // starts (see material-detail.tsx's chunk-restart detection) so this
+  // effect reruns and gives the new phase a fresh baseline, same as a
+  // genuine active:false->true transition would.
   useEffect(() => {
     if (!active) {
       setValue(prev => (prev > 0 ? 100 : 0));
@@ -35,7 +48,7 @@ export function useSmartProgress(active: boolean, opts: { expectedDurationMs: nu
     const interval = setInterval(tick, 250);
     tick();
     return () => clearInterval(interval);
-  }, [active, expectedDurationMs]);
+  }, [active, expectedDurationMs, resetToken]);
 
   useEffect(() => {
     if (active && realPercent != null) {

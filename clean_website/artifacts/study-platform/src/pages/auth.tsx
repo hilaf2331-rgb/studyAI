@@ -31,7 +31,13 @@ declare global {
 // guaranteed by mount time.
 const GoogleSignInButton: React.FC<{ onCredential: (credential: string) => void }> = ({ onCredential }) => {
   const [clientId, setClientId] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Ref instead of a plain prop dependency below -- onCredential is a new
+  // function identity on every keystroke in the surrounding form, which
+  // would otherwise tear down and restart the render/poll loop constantly.
+  const onCredentialRef = useRef(onCredential);
+  onCredentialRef.current = onCredential;
 
   useEffect(() => {
     fetch(apiUrl("/api/auth/google-client-id"))
@@ -40,41 +46,69 @@ const GoogleSignInButton: React.FC<{ onCredential: (credential: string) => void 
       .catch(() => setClientId(null));
   }, []);
 
+  // No devtools console on a phone -- surface a CSP block (or any other
+  // failure to get a button on screen) as visible text instead, since
+  // that's the only way to debug this without a desktop browser.
+  useEffect(() => {
+    const handleViolation = (e: SecurityPolicyViolationEvent) => {
+      if (e.blockedURI?.includes("google") || e.sourceFile?.includes("google")) {
+        setDiagnostic(`חסימת אבטחה (CSP): ${e.violatedDirective} — ${e.blockedURI}`);
+      }
+    };
+    document.addEventListener("securitypolicyviolation", handleViolation);
+    return () => document.removeEventListener("securitypolicyviolation", handleViolation);
+  }, []);
+
   useEffect(() => {
     if (!clientId || !containerRef.current) return;
 
     let cancelled = false;
+    const startedAt = Date.now();
     const tryRender = () => {
       if (cancelled || !containerRef.current) return;
       if (!window.google?.accounts?.id) {
+        if (Date.now() - startedAt > 5000) {
+          setDiagnostic((prev) => prev ?? "סקריפט הכניסה של Google לא נטען תוך 5 שניות (חסימה, אתחסמת אינטרנט, או ad-blocker).");
+          return;
+        }
         // gsi/client is async/defer -- poll briefly instead of assuming
         // it's ready the instant this effect runs.
-        setTimeout(tryRender, 100);
+        setTimeout(tryRender, 200);
         return;
       }
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (response) => onCredential(response.credential),
-      });
-      window.google.accounts.id.renderButton(containerRef.current, {
-        type: "standard",
-        theme: "outline",
-        size: "large",
-        width: 336,
-        text: "continue_with",
-        locale: "he",
-      });
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (response) => onCredentialRef.current(response.credential),
+        });
+        window.google.accounts.id.renderButton(containerRef.current, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          width: 336,
+          text: "continue_with",
+          locale: "he",
+        });
+        setDiagnostic(null);
+      } catch (err: any) {
+        setDiagnostic(`שגיאה בהצגת הכפתור: ${err?.message ?? String(err)}`);
+      }
     };
     tryRender();
 
     return () => { cancelled = true; };
-  }, [clientId, onCredential]);
+  }, [clientId]);
 
   if (!clientId) return null;
 
   return (
     <div className="space-y-4">
       <div ref={containerRef} className="flex justify-center" />
+      {diagnostic && (
+        <p className="text-xs text-destructive text-center leading-relaxed" dir="ltr">
+          {diagnostic}
+        </p>
+      )}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="h-px flex-1 bg-border" />
         <span>או</span>

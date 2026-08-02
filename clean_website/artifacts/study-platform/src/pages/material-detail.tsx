@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { StudyTipsCarousel } from "@/components/study-tips-carousel";
+import { BetaUpsellDialog } from "@/components/beta-upsell-dialog";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
 import { useToast } from "@/hooks/use-toast";
 import { shortContentMessage, isInsufficientContentError } from "@/lib/content-check";
@@ -478,6 +479,11 @@ export const MaterialDetailPage: React.FC = () => {
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
   const [kitError, setKitError] = useState("");
   const [progressStep, setProgressStep] = useState(0);
+  // Shared by both generate-all and standalone exam creation below -- a 402
+  // from either gets the same friendly "out of tokens, buy more or wait"
+  // dialog (already used elsewhere, e.g. questions-practice.tsx) instead of
+  // the raw backend error string.
+  const [tokensUpsellOpen, setTokensUpsellOpen] = useState(false);
 
   // The exam route used to be a generated synchronous mutation hook
   // (useGenerateExam, expecting an immediate 201), but a chunked exam
@@ -673,6 +679,11 @@ export const MaterialDetailPage: React.FC = () => {
           setKitLoading(false);
           return;
         }
+        if (response.status === 402) {
+          setTokensUpsellOpen(true);
+          setKitLoading(false);
+          return;
+        }
         throw new Error(payload.message || payload.error || `Generation failed (${response.status})`);
       }
 
@@ -792,6 +803,11 @@ export const MaterialDetailPage: React.FC = () => {
       if (!response.ok) {
         if (isInsufficientContentError(payload)) {
           toast({ description: shortContentMessage(isRTL), variant: "destructive" });
+          setExamLoading(false);
+          return;
+        }
+        if (response.status === 402) {
+          setTokensUpsellOpen(true);
           setExamLoading(false);
           return;
         }
@@ -1268,6 +1284,8 @@ export const MaterialDetailPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <BetaUpsellDialog open={tokensUpsellOpen} onOpenChange={setTokensUpsellOpen} />
     </div>
   );
 };

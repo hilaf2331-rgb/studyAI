@@ -76,6 +76,25 @@ export const Dashboard: React.FC = () => {
         )}
       </div>
 
+      {/* Free monthly token renewal notice -- literal black-on-white
+          (not theme tokens like bg-foreground, which read as a muted gray
+          in this app's dark palette) so it visually breaks from every other
+          card on the page on purpose, in both themes, instead of blending
+          in as just another teal-accented panel. Copy is careful to say
+          "while your account stays active", not just "renews every month"
+          -- the real mechanic (lib/tokens.ts's maybeApplyMonthlyRefill)
+          tops up to a flat 1 Token on the next login after 30+ days, it
+          doesn't accrue for an account nobody opens, so the wording
+          shouldn't imply it does. */}
+      <div className="relative z-10 flex items-center gap-3 rounded-xl bg-white text-neutral-900 px-5 py-3.5 shadow-lg">
+        <Coins className="w-5 h-5 shrink-0" />
+        <p className="text-sm font-semibold leading-relaxed">
+          {isRTL
+            ? "טוקן חינמי נוסף מתחדש אצלך אוטומטית כל חודש, כל עוד החשבון פעיל — לא נערם אם נעדרים הרבה זמן."
+            : "A free token renews automatically every month, as long as your account stays active — it doesn't stack up while you're away."}
+        </p>
+      </div>
+
       {/* Today's Review Queue */}
       {!!dailyReview?.count && (
         <Link href="/review">

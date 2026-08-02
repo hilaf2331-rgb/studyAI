@@ -72,7 +72,6 @@ async function maybeApplyMonthlyRefill(userId: number): Promise<void> {
 // owns one of these addresses gets the bypass.
 // EDIT THIS: replace with your real account email(s).
 const ADMIN_EMAILS = new Set<string>([
-  "hila@gmail.com",
   "hilaf2331@gmail.com",
 ]);
 

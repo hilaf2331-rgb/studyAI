@@ -21,6 +21,12 @@ declare global {
         };
       };
     };
+    // Set by index.html's onload/onerror attributes on the gsi/client
+    // script tag -- a definite signal (not a guess) for whether the
+    // browser actually got the response, vs. an ad-blocker/extension
+    // silently dropping the request before it ever resolves either way.
+    __gsiLoaded?: boolean;
+    __gsiLoadFailed?: boolean;
   }
 }
 
@@ -67,8 +73,16 @@ const GoogleSignInButton: React.FC<{ onCredential: (credential: string) => void 
     const tryRender = () => {
       if (cancelled || !containerRef.current) return;
       if (!window.google?.accounts?.id) {
+        if (window.__gsiLoadFailed) {
+          setDiagnostic("הדפדפן חסם לגמרי את הבקשה לסקריפט של Google (onerror) — כמעט תמיד ad-blocker/הרחבת פרטיות, לא ה-CSP של האתר.");
+          return;
+        }
         if (Date.now() - startedAt > 5000) {
-          setDiagnostic((prev) => prev ?? "סקריפט הכניסה של Google לא נטען תוך 5 שניות (חסימה, אתחסמת אינטרנט, או ad-blocker).");
+          setDiagnostic(
+            window.__gsiLoaded
+              ? "הסקריפט של Google נטען בהצלחה אבל לא הגדיר את מה שציפינו לו — כנראה שינוי בממשק של גוגל."
+              : "הבקשה לסקריפט של Google לא הסתיימה בכלל תוך 5 שניות (לא הצליחה ולא נכשלה) — ad-blocker או רשת חוסמים, לא CSP.",
+          );
           return;
         }
         // gsi/client is async/defer -- poll briefly instead of assuming

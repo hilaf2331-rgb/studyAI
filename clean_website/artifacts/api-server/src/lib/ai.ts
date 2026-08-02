@@ -779,11 +779,22 @@ const INTER_CHUNK_COOLDOWN_MS = 2000;
  * batch so the frontend can poll GET /materials/:id/progress and show the
  * user real status during processing instead of a bare spinner.
  */
+// Scales a 0-100 local percentage into a slice of the overall pipeline, so a
+// caller running several chunked sub-phases back to back (e.g. generateSummary's
+// aggregation pass followed by its richify pass) can report one continuous
+// climb instead of each sub-phase separately hitting 100% and resetting.
+function scaleProgressPercentage(localPercentage: number, range?: [number, number]): number {
+  if (!range) return localPercentage;
+  const [start, end] = range;
+  return Math.round(start + (localPercentage / 100) * (end - start));
+}
+
 async function buildAggregatedContent(
   materialContent: string,
   materialTitle: string,
   isHe: boolean,
-  materialId?: number
+  materialId?: number,
+  progressRange?: [number, number]
 ): Promise<{ content: string; parts: string[]; chunked: boolean }> {
   // First step, before any chunking or Gemini calls: if we already know
   // we're in a rate-limit cool-down, fail instantly instead of doing wasted
@@ -839,7 +850,7 @@ async function buildAggregatedContent(
     const percentage = Math.round((completed / chunks.length) * 100);
     console.log(`Processed ${completed} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
-      setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage, stage: "chunking" });
+      setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
     }
 
     if (completed < chunks.length) {
@@ -1085,6 +1096,9 @@ export function generateSummary(
     bookmarkTimestamps?: number[];
     audioDurationSeconds?: number;
     glossaryTerms?: { term: string; definition: string }[];
+    // Lets a multi-stage caller (generate-all.ts) reserve this call's own
+    // slice of the overall progress bar instead of climbing 0-100 on its own.
+    progressRange?: [number, number];
   }
 ): Promise<{
   content: string;
@@ -1102,6 +1116,7 @@ async function generateSummaryImpl(
     bookmarkTimestamps?: number[];
     audioDurationSeconds?: number;
     glossaryTerms?: { term: string; definition: string }[];
+    progressRange?: [number, number];
   }
 ): Promise<{
   content: string;
@@ -1113,10 +1128,19 @@ async function generateSummaryImpl(
   parts: string[];
   chunked: boolean;
 }> {
-  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds, glossaryTerms, subjectType } = opts;
+  const { language, materialContent, materialTitle, summaryType, topic, materialId, bookmarkTimestamps, audioDurationSeconds, glossaryTerms, subjectType, progressRange } = opts;
   const isHe = language === "he";
   const bookmarkContext = buildBookmarkContext(bookmarkTimestamps, audioDurationSeconds, materialContent, isHe);
   const glossaryContext = buildGlossaryContext(glossaryTerms, isHe);
+
+  // This call runs two sequential chunked sub-phases (aggregate, then
+  // richify) for a large document -- split its reserved slice of the overall
+  // bar in half between them instead of letting each one climb to 100% on
+  // its own, which is what made the bar visibly restart mid-summary.
+  const [rangeStart, rangeEnd] = progressRange ?? [0, 100];
+  const rangeMid = rangeStart + (rangeEnd - rangeStart) / 2;
+  const aggregateRange: [number, number] = [rangeStart, rangeMid];
+  const richifyRange: [number, number] = [rangeMid, rangeEnd];
 
   const typeMap: Record<string, { he: string; en: string }> = {
     quick:         { he: "סיכום קצר ותמציתי (עד 400 מילה) עם הנקודות המרכזיות בלבד", en: "a short summary (up to 400 words) with only the key points" },
@@ -1143,7 +1167,7 @@ async function generateSummaryImpl(
 `;
 
   try {
-  const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+  const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId, aggregateRange);
 
   // Large/chunked documents: rather than risk a single Gemini call silently
   // truncating its output once asked to comprehensively cover every chunk,
@@ -1171,7 +1195,7 @@ async function generateSummaryImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, richifyRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);
@@ -1414,15 +1438,15 @@ Return ONLY JSON matching this structure:
 }
 
 export function generateFlashcardsAI(
-  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
+  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[]; progressRange?: [number, number] }
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
   return pipelineLimit(() => generateFlashcardsAIImpl(opts));
 }
 
 async function generateFlashcardsAIImpl(
-  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[] }
+  opts: AIGenerationOptions & { cardCount: number; cardTypes: string[]; precomputedParts?: string[]; progressRange?: [number, number] }
 ): Promise<Array<{ front: string; back: string; difficulty: string; cardType: string; concept?: string }>> {
-  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts, subjectType } = opts;
+  const { language, materialContent, materialTitle, cardCount, cardTypes, materialId, precomputedParts, subjectType, progressRange } = opts;
   const isHe = language === "he";
   try {
   // generate-all.ts passes Stage 1's already-computed chunk parts here so
@@ -1431,7 +1455,7 @@ async function generateFlashcardsAIImpl(
   // so they chunk the raw material themselves via buildAggregatedContent.
   const { parts, chunked } = precomputedParts !== undefined
     ? { parts: precomputedParts, chunked: precomputedParts.length > 1 }
-    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId, progressRange);
 
   if (subjectType === "vocabulary") {
     const aggregatedContent = parts[0];
@@ -1481,7 +1505,7 @@ async function generateFlashcardsAIImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);
@@ -1698,15 +1722,15 @@ Return ONLY JSON matching this structure:
 }
 
 export function generateQuestionsAI(
-  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[]; progressRange?: [number, number] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   return pipelineLimit(() => generateQuestionsAIImpl(opts));
 }
 
 async function generateQuestionsAIImpl(
-  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; questionTypes: string[]; difficulty: string; excludeQuestions?: string[]; precomputedParts?: string[]; progressRange?: [number, number] }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
-  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts, subjectType } = opts;
+  const { language, materialContent, materialTitle, questionCount, questionTypes, difficulty, materialId, excludeQuestions, precomputedParts, subjectType, progressRange } = opts;
   const isHe = language === "he";
   try {
   // generate-all.ts passes Stage 1's already-computed chunk parts here so
@@ -1715,7 +1739,7 @@ async function generateQuestionsAIImpl(
   // pass this, so they chunk the raw material themselves.
   const { parts, chunked } = precomputedParts !== undefined
     ? { parts: precomputedParts, chunked: precomputedParts.length > 1 }
-    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
+    : await buildAggregatedContent(materialContent, materialTitle, isHe, materialId, progressRange);
 
   // Large/chunked documents: one small, bounded-output call per chunk
   // instead of one call over the whole aggregated text -- this is what
@@ -1743,7 +1767,7 @@ async function generateQuestionsAIImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);

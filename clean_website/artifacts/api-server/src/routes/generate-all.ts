@@ -410,10 +410,18 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       // flashcards and questions iterate over instead of re-chunking raw text.
       console.log(`generate-all[${materialId}]: long doc, stage 1/3 -- summary (subjectType=${subjectType})...`);
 
+      // Summary, flashcards, and questions are given disjoint slices of one
+      // overall 0-100 bar (rather than each reporting its own local 0-100)
+      // so the frontend shows one continuous climb across the whole pipeline
+      // instead of restarting at every stage boundary.
+      const SUMMARY_PROGRESS_RANGE: [number, number] = [0, 50];
+      const FLASHCARDS_PROGRESS_RANGE: [number, number] = [50, 75];
+      const QUESTIONS_PROGRESS_RANGE: [number, number] = [75, 100];
+
       let summaryResult: { content: string; keyPoints: string[]; parts: string[]; chunked: boolean };
       try {
         summaryResult = await withTimeout(
-          generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId, glossaryTerms, subjectType }),
+          generateSummary({ language, materialContent: content, materialTitle: material.title, summaryType: "detailed", materialId, glossaryTerms, subjectType, progressRange: SUMMARY_PROGRESS_RANGE }),
           AI_TASK_TIMEOUT_MS, "generateSummary",
         );
         console.log(`generate-all[${materialId}]: summary done -- ${summaryResult.content.length} chars, ${summaryResult.keyPoints.length} key points.`);
@@ -440,7 +448,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
       summaryKeyPointCount = summaryResult.keyPoints.length;
 
       setGenerationProgress(materialId, {
-        currentChunk: 0, totalChunks: 0, percentage: 33, stage: "running",
+        currentChunk: 0, totalChunks: 0, percentage: SUMMARY_PROGRESS_RANGE[1], stage: "running",
         result: { summary: { id: summaryRow.id, keyPointCount: summaryResult.keyPoints.length } },
       });
 
@@ -460,6 +468,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
                 language, materialContent: content, materialTitle: material.title, materialId,
                 cardCount: maxFlashcards, cardTypes, subjectType,
                 precomputedParts: summaryFailed ? undefined : summaryResult.parts,
+                progressRange: FLASHCARDS_PROGRESS_RANGE,
               }),
               AI_TASK_TIMEOUT_MS, "generateFlashcardsAI",
             );
@@ -477,6 +486,7 @@ async function runGenerateAll(material: MaterialRow, userId: number, content: st
                 questionCount: practiceQuestionCount, questionTypes, difficulty: "mixed",
                 excludeQuestions, subjectType,
                 precomputedParts: summaryFailed ? undefined : summaryResult.parts,
+                progressRange: QUESTIONS_PROGRESS_RANGE,
               }),
               AI_TASK_TIMEOUT_MS, "generateQuestionsAI",
             );

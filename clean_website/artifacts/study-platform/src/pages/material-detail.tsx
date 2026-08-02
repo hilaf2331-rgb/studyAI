@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
@@ -576,26 +576,14 @@ export const MaterialDetailPage: React.FC = () => {
   // simulation below -- but the simulation keeps the bar visibly creeping
   // forward the rest of the time, instead of freezing at a fixed number while
   // the sequential summary -> flashcards -> questions pipeline runs for
-  // however many minutes it actually takes.
+  // however many minutes it actually takes. The backend now scales each
+  // stage's own chunk-loop percentage into its own slice of one continuous
+  // 0-100 range (see generate-all.ts's *_PROGRESS_RANGE constants), so this
+  // is safe to read as a single monotonic value across the whole pipeline
+  // instead of needing a per-stage reset.
   const realKitPercent = generationProgress && generationProgress.totalChunks > 0 ? generationProgress.percentage : null;
 
-  // generate-all runs summary's own chunk loop, then (after a flat interim
-  // checkpoint) flashcards+questions' own chunk loop -- each phase's
-  // currentChunk restarts from 1. Detecting that restart (currentChunk drops
-  // below the highest seen so far) is what tells useSmartProgress a new
-  // phase began, so it can stop pinning the display to the previous phase's
-  // 100% while this phase's own "chunk 1 of N" is still just starting.
-  const highestChunkSeenRef = useRef(0);
-  const [chunkPhase, setChunkPhase] = useState(0);
-  useEffect(() => {
-    if (!generationProgress || generationProgress.totalChunks <= 0) return;
-    if (generationProgress.currentChunk < highestChunkSeenRef.current) {
-      setChunkPhase(p => p + 1);
-    }
-    highestChunkSeenRef.current = generationProgress.currentChunk;
-  }, [generationProgress]);
-
-  const progressValue = useSmartProgress(kitLoading, { expectedDurationMs: 45_000, realPercent: realKitPercent, resetToken: chunkPhase });
+  const progressValue = useSmartProgress(kitLoading, { expectedDurationMs: 45_000, realPercent: realKitPercent });
 
   // generate-all itself returns as soon as the background job is kicked off
   // (see handleGenerateAll) -- the actual outcome lands here, via the same

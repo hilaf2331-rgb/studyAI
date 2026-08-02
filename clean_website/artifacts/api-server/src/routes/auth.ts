@@ -39,10 +39,10 @@ router.post("/auth/register", async (req, res) => {
   const [user] = await db
     .insert(usersTable)
     .values({ email: body.email, passwordHash, name: body.name ?? null })
-    .returning({ id: usersTable.id, email: usersTable.email, name: usersTable.name, role: usersTable.role, subscriptionTier: usersTable.subscriptionTier, dailyReminderEmailEnabled: usersTable.dailyReminderEmailEnabled });
+    .returning({ id: usersTable.id, email: usersTable.email, name: usersTable.name, role: usersTable.role, subscriptionTier: usersTable.subscriptionTier, dailyReminderEmailEnabled: usersTable.dailyReminderEmailEnabled, gender: usersTable.gender });
 
   const token = signToken({ userId: user.id, email: user.email });
-  res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, subscriptionTier: user.subscriptionTier, isPremium: isPremium(user), dailyReminderEmailEnabled: user.dailyReminderEmailEnabled } });
+  res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, subscriptionTier: user.subscriptionTier, isPremium: isPremium(user), dailyReminderEmailEnabled: user.dailyReminderEmailEnabled, gender: user.gender } });
 });
 
 router.post("/auth/login", async (req, res) => {
@@ -63,7 +63,7 @@ router.post("/auth/login", async (req, res) => {
   }
 
   const token = signToken({ userId: user.id, email: user.email });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, subscriptionTier: user.subscriptionTier, isPremium: isPremium(user), dailyReminderEmailEnabled: user.dailyReminderEmailEnabled } });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, subscriptionTier: user.subscriptionTier, isPremium: isPremium(user), dailyReminderEmailEnabled: user.dailyReminderEmailEnabled, gender: user.gender } });
 });
 
 router.get("/auth/me", async (req, res) => {
@@ -76,7 +76,7 @@ router.get("/auth/me", async (req, res) => {
     const { verifyToken } = await import("../lib/auth");
     const payload = verifyToken(authHeader.slice(7));
     const [user] = await db
-      .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, createdAt: usersTable.createdAt, role: usersTable.role, subscriptionTier: usersTable.subscriptionTier, dailyReminderEmailEnabled: usersTable.dailyReminderEmailEnabled })
+      .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, createdAt: usersTable.createdAt, role: usersTable.role, subscriptionTier: usersTable.subscriptionTier, dailyReminderEmailEnabled: usersTable.dailyReminderEmailEnabled, gender: usersTable.gender })
       .from(usersTable)
       .where(eq(usersTable.id, payload.userId));
 
@@ -150,7 +150,7 @@ router.post("/auth/google", async (req, res) => {
     user: {
       id: user.id, email: user.email, name: user.name, role: user.role,
       subscriptionTier: user.subscriptionTier, isPremium: isPremium(user),
-      dailyReminderEmailEnabled: user.dailyReminderEmailEnabled,
+      dailyReminderEmailEnabled: user.dailyReminderEmailEnabled, gender: user.gender,
     },
   });
 });
@@ -174,6 +174,28 @@ router.patch("/auth/me/reminder-settings", requireAuth, async (req, res) => {
 
   if (!user) return res.status(404).json({ error: "User not found" });
   return res.json({ dailyReminderEmailEnabled: user.dailyReminderEmailEnabled });
+});
+
+const GenderBody = z.object({
+  gender: z.enum(["male", "female", "other"]),
+});
+
+// Persists the "form of address" preference so it survives a fresh login --
+// previously frontend/localStorage-only (see lib/auth.tsx's updateUser),
+// which meant the very next login overwrote it with the server's response
+// that never had a gender field to begin with.
+router.patch("/auth/me/gender", requireAuth, async (req, res) => {
+  const body = GenderBody.parse(req.body);
+  const userId = req.user!.userId;
+
+  const [user] = await db
+    .update(usersTable)
+    .set({ gender: body.gender })
+    .where(eq(usersTable.id, userId))
+    .returning({ gender: usersTable.gender });
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+  return res.json({ gender: user.gender });
 });
 
 export default router;

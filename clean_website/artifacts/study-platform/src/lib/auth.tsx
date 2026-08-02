@@ -32,6 +32,7 @@ interface AuthContextValue {
   loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<Pick<AuthUser, "name" | "gender" | "dailyReminderEmailEnabled">>) => void;
+  setGender: (gender: Gender) => Promise<void>;
   setDailyReminderEmailEnabled: (enabled: boolean) => Promise<void>;
 }
 
@@ -135,9 +136,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Unlike gender (a local-only display preference), this has to round-trip
-  // to the server: the daily reminder cron (routes/cron.ts) reads it from
-  // the DB directly, with no user session of its own to consult.
   const setDailyReminderEmailEnabled = useCallback(async (enabled: boolean) => {
     const res = await fetch(apiUrl("/api/auth/me/reminder-settings"), {
       method: "PATCH",
@@ -149,8 +147,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateUser({ dailyReminderEmailEnabled: data.dailyReminderEmailEnabled });
   }, [token, updateUser]);
 
+  // Round-trips to the server (unlike the old local-only updateUser call)
+  // so it survives a fresh login instead of being silently overwritten by
+  // the login/register response the next time this account signs in.
+  const setGender = useCallback(async (gender: Gender) => {
+    const res = await fetch(apiUrl("/api/auth/me/gender"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ gender }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to update gender");
+    updateUser({ gender: data.gender });
+  }, [token, updateUser]);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, loginWithGoogle, logout, updateUser, setDailyReminderEmailEnabled }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, loginWithGoogle, logout, updateUser, setGender, setDailyReminderEmailEnabled }}>
       {children}
     </AuthContext.Provider>
   );

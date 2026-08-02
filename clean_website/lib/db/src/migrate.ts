@@ -27,7 +27,8 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS last_token_refill_at timestamptz NOT NULL DEFAULT now(),
       ADD COLUMN IF NOT EXISTS daily_reminder_email_enabled boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS last_reminder_email_sent_at timestamptz,
-      ADD COLUMN IF NOT EXISTS google_id text;
+      ADD COLUMN IF NOT EXISTS google_id text,
+      ADD COLUMN IF NOT EXISTS gender text;
   `);
 
   // Plain (non-partial) unique index: Postgres never treats two NULLs as

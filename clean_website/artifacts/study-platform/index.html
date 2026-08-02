@@ -38,7 +38,13 @@
          owner hasn't set GOOGLE_CLIENT_ID on the server yet) since it's a
          static tag, not something the app can conditionally inject before
          first paint. -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script
+      src="https://accounts.google.com/gsi/client"
+      async
+      defer
+      onload="window.__gsiLoaded = true"
+      onerror="window.__gsiLoadFailed = true"
+    ></script>
   </head>
   <body>
     <div id="root"></div>

@@ -118,7 +118,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   return (
-    <div className={`relative flex min-h-[100dvh] w-full bg-background ${isRTL ? "flex-row-reverse" : "flex-row"}`}>
+    <div className="relative flex min-h-[100dvh] w-full bg-background flex-row">
       {/* Ambient app-wide glow, pinned to the viewport so it stays vivid and
           visible behind every authenticated page regardless of scroll
           position or the main panel's overflow clipping. */}

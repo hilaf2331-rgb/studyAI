@@ -26,11 +26,12 @@ const GENDER_OPTIONS: { value: Gender; label: string }[] = [
 
 export const ProfilePage: React.FC = () => {
   const { isRTL } = useLanguage();
-  const { user, updateUser, setDailyReminderEmailEnabled } = useAuth();
+  const { user, setGender, setDailyReminderEmailEnabled } = useAuth();
   const { data: balance, isLoading } = useGetTokenBalance();
   const { open: openPurchaseModal } = usePurchaseModal();
   const { toast } = useToast();
   const [reminderTogglePending, setReminderTogglePending] = useState(false);
+  const [genderPending, setGenderPending] = useState(false);
 
   const handleReminderToggle = async (checked: boolean) => {
     setReminderTogglePending(true);
@@ -44,6 +45,21 @@ export const ProfilePage: React.FC = () => {
       });
     } finally {
       setReminderTogglePending(false);
+    }
+  };
+
+  const handleGenderChange = async (value: string) => {
+    setGenderPending(true);
+    try {
+      await setGender(value as Gender);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "משהו השתבש",
+        description: "לא הצלחנו לשמור את ההעדפה. נסו שוב בעוד רגע.",
+      });
+    } finally {
+      setGenderPending(false);
     }
   };
 
@@ -82,7 +98,8 @@ export const ProfilePage: React.FC = () => {
         <CardContent>
           <RadioGroup
             value={user?.gender ?? "male"}
-            onValueChange={(value) => updateUser({ gender: value as Gender })}
+            onValueChange={handleGenderChange}
+            disabled={genderPending}
             className="flex flex-wrap gap-4"
           >
             {GENDER_OPTIONS.map((option) => (

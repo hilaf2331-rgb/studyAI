@@ -84,6 +84,11 @@ export const usersTable = pgTable("users", {
   // compared against a rolling 20h window rather than calendar-day, since
   // the cron has no reliable notion of the user's local "today".
   lastReminderEmailSentAt: timestamp("last_reminder_email_sent_at", { withTimezone: true }),
+  // 'male' | 'female' | 'other'. Which grammatical form of address (Hebrew
+  // is gendered) the app's copy uses when addressing this user. Was
+  // frontend-only (lost on next login, never sent to the server) until this
+  // column existed -- see routes/auth.ts's PATCH /auth/me/gender.
+  gender: text("gender"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

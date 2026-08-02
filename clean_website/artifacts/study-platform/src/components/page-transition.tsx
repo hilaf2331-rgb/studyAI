@@ -12,6 +12,10 @@ import React, { useEffect } from "react";
 // rather than going through a real page load.
 export const PageTransition: React.FC<{ locationKey: string; children: React.ReactNode }> = ({ locationKey, children }) => {
   useEffect(() => {
+    // A URL fragment (e.g. "/landing#faq" from the sidebar's FAQ link) means
+    // the page itself wants to scroll to that section -- resetting to the
+    // top here would run after that child effect and silently undo it.
+    if (window.location.hash) return;
     window.scrollTo(0, 0);
   }, [locationKey]);
 

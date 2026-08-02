@@ -1,14 +1,53 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2,
   Mic, MessageSquare, Trophy, FolderOpen, Headphones,
-  GaugeCircle, Flame, ClipboardList, Brain,
+  GaugeCircle, Flame, ClipboardList, Brain, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BackgroundGlow } from "@/components/background-glow";
 import { WaveField } from "@/components/wave-field";
 import { TokenGlyph, InfinityGlyph, FlashcardGlyph, RescueGlyph } from "@/components/icons";
+
+// The questions students actually hesitate on before signing up -- pricing
+// mechanics first (that's what stalls a free-vs-paid decision), then the
+// practical/trust questions that come right after.
+const FAQ_ITEMS: { question: string; answer: string }[] = [
+  {
+    question: "מה זה טוקנים ואיך הם עובדים?",
+    answer: "טוקנים הם המטבע הפנימי של FocusStudy. כל פעולה — תמלול הקלטה, סיכום, יצירת כרטיסיות, שאלות תרגול או מבחן — עולה טוקנים לפי האורך והכמות בפועל של החומר, לא לפי מנוי קבוע.",
+  },
+  {
+    question: "כל כמה זמן הטוקנים מתחדשים?",
+    answer: "בהרשמה מקבלים 2 טוקנים במתנה. אחרי שהם נגמרים, החשבון מקבל טוקן חינמי נוסף אוטומטית כל חודש, כל עוד אתם פעילים — זה לא נערם אם נעדרים הרבה זמן. אפשר גם לקנות כרטיסייה נוספת שלא פוקעת בכלל.",
+  },
+  {
+    question: "על מה בדיוק משלמים?",
+    answer: "1 טוקן = 10 דקות תמלול הקלטה, או 5 עמודי סיכום מהחומר שהעליתם. כרטיסיות, שאלות תרגול ומבחנים מחושבים לפי האורך בפועל של החומר והפלט — בדרך כלל הרבה פחות מטוקן שלם לפעולה.",
+  },
+  {
+    question: "מה קורה כשנגמרים לי הטוקנים?",
+    answer: "אפשר לחכות לחידוש החינמי החודשי, או לרכוש כרטיסייה נוספת בכל רגע — הטוקנים שקונים לא פוקעים אף פעם, בלי לחץ של \"תשתמשו עד סוף החודש\".",
+  },
+  {
+    question: "יש מנוי חודשי?",
+    answer: "לא. משלמים פעם אחת על כרטיסיית טוקנים, והיא נשארת אתכם לאורך כל הסמסטר, בלי חיוב חוזר ובלי הפתעות בכרטיס האשראי.",
+  },
+  {
+    question: "אילו סוגי קבצים אפשר להעלות?",
+    answer: "PDF, Word, PowerPoint, Excel, תמונות, סרטוני יוטיוב, וגם הקלטה ישירה מהדפדפן — הכל הופך לחומר לימוד מסודר: סיכום, כרטיסיות ושאלות תרגול.",
+  },
+  {
+    question: "מי רואה את החומר שהעליתי?",
+    answer: "רק אתם. חומר נשאר פרטי לגמרי אלא אם תבחרו במפורש לשתף קישור אליו עם חברים לכיתה — זו תמיד בחירה שלכם, לא ברירת מחדל.",
+  },
+  {
+    question: "התשובות מבוססות על מה בדיוק?",
+    answer: "רק על החומר שהעליתם. בניגוד לצ׳אטבוטים כלליים שממלאים פערים מהידע הכללי שלהם, FocusStudy לא מנחש — הוא קורא את החומר שלכם וממנו בלבד בונה את הסיכום, הכרטיסיות והתשובות.",
+  },
+];
 
 const FeatureCard = ({
   icon,
@@ -41,6 +80,17 @@ const FeatureCard = ({
 };
 
 export const LandingPage: React.FC = () => {
+  // Client-side route changes (e.g. the sidebar's "שאלות נפוצות" link,
+  // wouter's history.pushState) don't trigger the browser's native
+  // scroll-to-#fragment behavior the way a full page navigation would --
+  // only a same-page <a href="#..."> click does that. This covers the
+  // "arrived here from somewhere else in the app" case.
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const el = document.getElementById(window.location.hash.slice(1));
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   return (
     <div className="relative min-h-screen flex flex-col bg-background overflow-hidden" dir="rtl">
       {/* Nav */}
@@ -351,6 +401,27 @@ export const LandingPage: React.FC = () => {
             <p className="text-sm sm:text-base font-semibold pt-1">
               אז יאללה, בואו נתחיל ללמוד!
             </p>
+          </section>
+
+          {/* ─── FAQ ─── */}
+          <section id="faq" className="space-y-6 scroll-mt-24 max-w-2xl mx-auto w-full">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center tracking-tight">
+              שאלות נפוצות
+            </h2>
+            <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md px-6 sm:px-8">
+              <Accordion type="single" collapsible className="w-full">
+                {FAQ_ITEMS.map((item, i) => (
+                  <AccordionItem key={i} value={`faq-${i}`}>
+                    <AccordionTrigger className="text-right text-base font-semibold">
+                      {item.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground leading-relaxed text-right">
+                      {item.answer}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
           </section>
 
           {/* ─── Final CTA ─── */}

@@ -533,14 +533,17 @@ export const MaterialDetailPage: React.FC = () => {
   // browsers without navigator.share (mainly desktop).
   const openShare = (shareId: string) => {
     const url = `${window.location.origin}/shared/${shareId}`;
-    // Trailing blank line -- some share targets (e.g. WhatsApp on iOS) just
-    // concatenate `text` and `url` with no separator of their own, which ran
-    // the message straight into the link with no visual break.
+    // A trailing "\n\n" on `text` (passed alongside a separate `url` field)
+    // still ran straight into the link -- some share targets (WhatsApp on
+    // iOS) trim `text` before concatenating it with `url`, discarding the
+    // newline. The link is embedded directly in `text` instead, with no
+    // separate `url` field, so the exact spacing is never at the mercy of
+    // however a given target chooses to join the two fields.
     const text = isRTL
-      ? `היי! שיתפתי איתך חומר לימוד${material?.title ? ` ב"${material.title}"` : ""} דרך FocusStudy 📚\n\n`
-      : `Hey! I shared study material${material?.title ? ` on "${material.title}"` : ""} with you via FocusStudy 📚\n\n`;
+      ? `היי! שיתפתי איתך חומר לימוד${material?.title ? ` ב"${material.title}"` : ""} דרך FocusStudy 📚\n\n${url}`
+      : `Hey! I shared study material${material?.title ? ` on "${material.title}"` : ""} with you via FocusStudy 📚\n\n${url}`;
     if (navigator.share) {
-      navigator.share({ title: material?.title, text, url }).catch((err) => {
+      navigator.share({ title: material?.title, text }).catch((err) => {
         if (err?.name !== "AbortError") setShareDialogOpen(true);
       });
     } else {

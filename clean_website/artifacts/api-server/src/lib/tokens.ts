@@ -172,53 +172,6 @@ export async function deductTokensForSummary(userId: number, sourceText: string)
   await deductCombinedTokens(userId, raw);
 }
 
-// Beta-only hard cap on total processing actions (material uploads +
-// recordings) per user, independent of the token budget above -- the token
-// budget limits AI generation cost, this caps upload volume itself so a
-// single beta tester can't create unlimited materials. One flat number for
-// the whole beta period, not a daily/monthly rate.
-export const MAX_BETA_ACTIONS = 10;
-
-// Thrown before a material/recording is processed once a user has used up
-// all MAX_BETA_ACTIONS. Callers should check this before any
-// extraction/transcription work starts, same fail-fast pattern as
-// requireTokenBalance().
-export class BetaActionLimitError extends Error {
-  readonly code = "BETA_LIMIT_REACHED";
-  constructor() {
-    super("הגעת למגבלת הבטא החינמית! תודה שעזרת לנו לבדוק את האתר 🙏");
-  }
-}
-
-export async function getActionsStatus(userId: number): Promise<{ actionsUsed: number; maxBetaActions: number } | null> {
-  const [user] = await db.select({ actionsUsed: usersTable.actionsUsed }).from(usersTable).where(eq(usersTable.id, userId));
-  return user ? { actionsUsed: user.actionsUsed, maxBetaActions: MAX_BETA_ACTIONS } : null;
-}
-
-// Call right before a material/recording is processed. Throws
-// BetaActionLimitError if the user is already at (or past) the cap, so a
-// request never starts extraction/transcription work it isn't allowed to
-// finish. Admin accounts (see ADMIN_EMAILS above) always pass.
-export async function requireActionsRemaining(userId: number): Promise<void> {
-  if (await isAdminUser(userId)) return;
-  const status = await getActionsStatus(userId);
-  if (!status || status.actionsUsed >= status.maxBetaActions) {
-    throw new BetaActionLimitError();
-  }
-}
-
-// Call once a material/recording row has actually been created, regardless
-// of whether extraction/transcription itself succeeded -- the processing
-// slot was spent either way. Uses an atomic SQL increment (not read-modify-
-// write) so concurrent requests from the same user can't both read a stale
-// count and slip past the cap.
-export async function incrementActionsUsed(userId: number): Promise<void> {
-  if (await isAdminUser(userId)) return;
-  await db.update(usersTable)
-    .set({ actionsUsed: sql`${usersTable.actionsUsed} + 1` })
-    .where(eq(usersTable.id, userId));
-}
-
 // Duration is no longer gated by paying-customer status -- every user (free
 // or paying) can record up to MAX_RECORDING_SECONDS (lib/validation.ts, 3
 // hours); the real gate is whether their token balance can cover the
@@ -280,7 +233,6 @@ export async function isPayingCustomer(userId: number): Promise<boolean> {
 // (RAW_UNITS_PER_TOKEN) so the UI never needs to show a fraction of a Token.
 export const FEATURE_TOKEN_COSTS = {
   targetedQuestion: RAW_UNITS_PER_TOKEN,
-  dailyReviewQueue: RAW_UNITS_PER_TOKEN,
   audioGeneration: RAW_UNITS_PER_TOKEN,
 } as const;
 

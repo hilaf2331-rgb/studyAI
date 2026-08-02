@@ -15,11 +15,6 @@ import { CourseGlyph, MaterialsGlyph, FlashcardGlyph, GradeGlyph } from "@/compo
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { WELCOME_PENDING_KEY } from "@/lib/auth";
 
-// Mirrors FEATURE_TOKEN_COSTS.dailyReviewQueue in api-server/src/lib/tokens.ts
-// (exactly 1 whole Token, RAW_UNITS_PER_TOKEN) -- a real flat fee (not an
-// estimate), so it's safe to show as an exact number.
-const DAILY_REVIEW_TOKEN_COST = 1;
-
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   upload: <Upload className="w-4 h-4" />,
   summary: <BookText className="w-4 h-4" />,
@@ -93,9 +88,6 @@ export const Dashboard: React.FC = () => {
                 <p className="font-semibold">{isRTL ? "סקירה יומית מוכנה" : "Today's Review is ready"}</p>
                 <p className="text-sm text-muted-foreground">
                   {isRTL ? `${dailyReview.count} כרטיסיות ממתינות בכל החומרים שלך` : `${dailyReview.count} cards due across all your materials`}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {isRTL ? `יעלה ${DAILY_REVIEW_TOKEN_COST} טוקנים` : `Costs ${DAILY_REVIEW_TOKEN_COST} tokens`}
                 </p>
               </div>
             </div>

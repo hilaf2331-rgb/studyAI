@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Upload, FileText, Youtube, Link, Mic, FileVideo, Loader2, CheckCircle2, AlertCircle, Camera, Image as ImageIcon } from "lucide-react";
 import { getStoredToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-base";
-import { BetaLimitDialog } from "@/components/beta-limit-dialog";
 import { AudioTokenLimitDialog } from "@/components/audio-token-limit-dialog";
 import { Progress } from "@/components/ui/progress";
 import { useSmartProgress } from "@/hooks/use-smart-progress";
@@ -170,7 +169,6 @@ export const MaterialNewPage: React.FC = () => {
   const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [success, setSuccess] = useState(false);
   const [uploadId, setUploadId] = useState<string | null>(null);
-  const [betaLimitOpen, setBetaLimitOpen] = useState(false);
   // Set once the audio/video background path (routes/materials.ts's
   // runMaterialAudioExtraction) has accepted the upload with a 202 -- the
   // material row already exists at this point, so once uploadProgress's
@@ -368,10 +366,6 @@ export const MaterialNewPage: React.FC = () => {
 
       if (!response.ok) {
         const data = await response.json();
-        if (data.code === "BETA_LIMIT_REACHED") {
-          setBetaLimitOpen(true);
-          return;
-        }
         if (data.code === "INSUFFICIENT_TOKENS_FOR_AUDIO") {
           setPendingAudioLimit({
             requestedSeconds: data.requestedSeconds,
@@ -826,8 +820,6 @@ export const MaterialNewPage: React.FC = () => {
           </form>
         </CardContent>
       </Card>
-
-      <BetaLimitDialog open={betaLimitOpen} onOpenChange={setBetaLimitOpen} isRTL={isRTL} />
 
       {pendingAudioLimit && (
         <AudioTokenLimitDialog

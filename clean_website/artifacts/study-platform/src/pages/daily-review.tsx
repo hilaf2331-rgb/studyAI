@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePurchaseModal } from "@/lib/purchase-modal";
-import { ArrowLeft, RotateCcw, Coins } from "lucide-react";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 
 // Cross-material review session fed by the Today's Review queue on the
 // dashboard. Unlike flashcard-study.tsx (which studies one deck), the card
@@ -18,13 +17,12 @@ import { ArrowLeft, RotateCcw, Coins } from "lucide-react";
 // its own materialTitle for context.
 export const DailyReviewPage: React.FC = () => {
   const { isRTL } = useLanguage();
-  const { open: openPurchaseModal } = usePurchaseModal();
   const qc = useQueryClient();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [done, setDone] = useState(false);
 
-  const { data, isLoading, error } = useGetDailyReviewCards({ query: { queryKey: getGetDailyReviewCardsQueryKey() } });
+  const { data, isLoading } = useGetDailyReviewCards({ query: { queryKey: getGetDailyReviewCardsQueryKey() } });
   const reviewCard = useReviewFlashcard();
 
   // Snapshot the queue once on load, same rationale as flashcard-study.tsx:
@@ -35,21 +33,6 @@ export const DailyReviewPage: React.FC = () => {
     if (data?.cards && cards === null) setCards(data.cards);
   }, [data, cards]);
 
-  if ((error as any)?.status === 402) {
-    return (
-      <div className="space-y-3">
-        <p className="text-muted-foreground">
-          {isRTL
-            ? "נגמרו לך הטוקנים לסקירה היומית."
-            : "You're out of tokens for Today's Review."}
-        </p>
-        <Button onClick={openPurchaseModal} className="gap-2">
-          <Coins className="w-4 h-4" />
-          {isRTL ? "טעינת טוקנים" : "Buy Tokens"}
-        </Button>
-      </div>
-    );
-  }
   if (isLoading || cards === null) return <div className="space-y-4">{[1, 2].map(i => <Skeleton key={i} className="h-48" />)}</div>;
   if (!cards.length) return <p className="text-muted-foreground">{isRTL ? "אין כרטיסיות לסקירה היום" : "No cards due for review today"}</p>;
 

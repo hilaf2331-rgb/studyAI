@@ -75,6 +75,20 @@ export function setGenerationProgress(key: ProgressKey, progress: GenerationProg
   progressByKey.set(key, progress);
 }
 
+// generate-all.ts's stages report bare chunk/percentage progress many times
+// per stage, none of which carry a `result` -- a plain setGenerationProgress
+// call at that point would wipe out an earlier stage's already-populated
+// result (e.g. the summary stage's `result.summary`) the moment the next
+// stage's own chunk loop reports its first update, since setGenerationProgress
+// is a full overwrite. This keeps whatever `result` was already stored
+// whenever the update itself doesn't supply one, so a page that re-polls
+// mid-pipeline (e.g. after the user navigates away and back) still sees
+// every result that's actually landed so far.
+export function updateGenerationProgress(key: ProgressKey, progress: GenerationProgress): void {
+  const existing = progressByKey.get(key);
+  progressByKey.set(key, { ...progress, result: progress.result ?? existing?.result });
+}
+
 export function getGenerationProgress(key: ProgressKey): GenerationProgress | null {
   return progressByKey.get(key) ?? null;
 }

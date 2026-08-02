@@ -1,7 +1,7 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import pLimit from "p-limit";
 import { splitTextIntoChunks } from "./chunker";
-import { setGenerationProgress, clearGenerationProgress } from "./progress";
+import { updateGenerationProgress, clearGenerationProgress } from "./progress";
 import { getSystemPrompt, getSystemPromptBySubjectType, inferStudyMode } from "./prompts";
 
 // Caps how many heavy, chunked document-generation pipelines (summary,
@@ -850,7 +850,7 @@ async function buildAggregatedContent(
     const percentage = Math.round((completed / chunks.length) * 100);
     console.log(`Processed ${completed} out of ${chunks.length} chunks (${percentage}%)`);
     if (materialId !== undefined) {
-      setGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
+      updateGenerationProgress(materialId, { currentChunk: completed, totalChunks: chunks.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
     }
 
     if (completed < chunks.length) {
@@ -1195,7 +1195,7 @@ async function generateSummaryImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, richifyRange), stage: "chunking" });
+        updateGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, richifyRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);
@@ -1505,7 +1505,7 @@ async function generateFlashcardsAIImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
+        updateGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);
@@ -1767,7 +1767,7 @@ async function generateQuestionsAIImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
+        updateGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage: scaleProgressPercentage(percentage, progressRange), stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);
@@ -2080,7 +2080,7 @@ async function generateExamAIImpl(
       const completed = i + 1;
       const percentage = Math.round((completed / parts.length) * 100);
       if (materialId !== undefined) {
-        setGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
+        updateGenerationProgress(materialId, { currentChunk: completed, totalChunks: parts.length, percentage, stage: "chunking" });
       }
       if (completed < parts.length) {
         await sleep(INTER_CHUNK_COOLDOWN_MS);

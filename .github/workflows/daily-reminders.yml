@@ -1,0 +1,35 @@
+name: Daily reminder emails
+
+# Render's free/Starter tier has no built-in cron, so this workflow is the
+# scheduler: it just pings api-server's own secret-protected endpoint
+# (artifacts/api-server/src/routes/cron.ts), which does the actual work
+# (querying due users, sending via Brevo). All the logic lives server-side;
+# this file only supplies the "once a day" trigger.
+on:
+  schedule:
+    # 06:00 UTC = 08:00/09:00 Israel time depending on DST -- a bit ahead of
+    # a normal study morning without landing overnight.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /cron/daily-reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          API_BASE_URL: ${{ vars.API_BASE_URL || 'https://studyai-zhyy.onrender.com' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET repo secret is not set -- skipping (server rejects with 404 anyway)."
+            exit 1
+          fi
+          status=$(curl -sS -o /tmp/response.json -w "%{http_code}" -X POST \
+            "$API_BASE_URL/api/cron/daily-reminders" \
+            -H "X-Cron-Secret: $CRON_SECRET")
+          echo "HTTP $status"
+          cat /tmp/response.json
+          if [ "$status" -ge 300 ]; then
+            exit 1
+          fi

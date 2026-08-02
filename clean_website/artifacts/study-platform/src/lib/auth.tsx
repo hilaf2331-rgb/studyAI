@@ -20,6 +20,7 @@ export interface AuthUser {
   subscriptionTier?: string;
   isPremium?: boolean;
   gender?: Gender;
+  dailyReminderEmailEnabled?: boolean;
 }
 
 interface AuthContextValue {
@@ -29,7 +30,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
-  updateUser: (updates: Partial<Pick<AuthUser, "name" | "gender">>) => void;
+  updateUser: (updates: Partial<Pick<AuthUser, "name" | "gender" | "dailyReminderEmailEnabled">>) => void;
+  setDailyReminderEmailEnabled: (enabled: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -104,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = clearAuth;
 
-  const updateUser = useCallback((updates: Partial<Pick<AuthUser, "name" | "gender">>) => {
+  const updateUser = useCallback((updates: Partial<Pick<AuthUser, "name" | "gender" | "dailyReminderEmailEnabled">>) => {
     setUser((prev) => {
       if (!prev) return prev;
       const next = { ...prev, ...updates };
@@ -113,8 +115,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Unlike gender (a local-only display preference), this has to round-trip
+  // to the server: the daily reminder cron (routes/cron.ts) reads it from
+  // the DB directly, with no user session of its own to consult.
+  const setDailyReminderEmailEnabled = useCallback(async (enabled: boolean) => {
+    const res = await fetch(apiUrl("/api/auth/me/reminder-settings"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ dailyReminderEmailEnabled: enabled }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to update reminder settings");
+    updateUser({ dailyReminderEmailEnabled: data.dailyReminderEmailEnabled });
+  }, [token, updateUser]);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser, setDailyReminderEmailEnabled }}>
       {children}
     </AuthContext.Provider>
   );

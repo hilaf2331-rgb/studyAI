@@ -7,6 +7,7 @@ import authRouter from "./routes/auth";
 import { billingPublicRouter } from "./routes/billing";
 import { sharedPublicRouter } from "./routes/shared";
 import contactRouter from "./routes/contact";
+import { cronRouter } from "./routes/cron";
 import { requireAuth } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { RateLimitExhaustedError, SystemBlockedError, AIServiceError, AIServiceOverloadedError } from "./lib/ai";
@@ -85,6 +86,9 @@ app.use("/api", sharedPublicRouter);
 // on /contact can send a message without an account -- covered by
 // globalRateLimiter above the same as every other /api route.
 app.use("/api", contactRouter);
+// Public, secret-protected (own X-Cron-Secret check) rather than
+// requireAuth -- the scheduler triggering this has no user JWT to send.
+app.use("/api", cronRouter);
 app.use("/api", requireAuth, router);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -65,6 +65,16 @@ export const usersTable = pgTable("users", {
   // lib/tokens.ts's combined-balance deduction helpers -- so a free monthly
   // refill never "absorbs" tokens the student actually paid for.
   tokenBalance: integer("token_balance").notNull().default(0),
+  // Opt-out toggle for the daily reminder email (routes/cron.ts's
+  // /cron/daily-reminders) -- exam-countdown / cards-due-today nudges.
+  // Defaults on since it's a low-frequency, directly useful nudge, not
+  // marketing; surfaced as a toggle on the profile page.
+  dailyReminderEmailEnabled: boolean("daily_reminder_email_enabled").notNull().default(true),
+  // Dedup marker so a cron run that fires twice in the same day (retry,
+  // manual re-trigger) never double-sends -- set to the send time itself,
+  // compared against a rolling 20h window rather than calendar-day, since
+  // the cron has no reliable notion of the user's local "today".
+  lastReminderEmailSentAt: timestamp("last_reminder_email_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import { useGetTokenBalance } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth, type Gender } from "@/lib/auth";
 import { usePurchaseModal } from "@/lib/purchase-modal";
-import { Coins, FileText, Mic, Sparkles, User } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Coins, FileText, Mic, Sparkles, User, BellRing } from "lucide-react";
 
 // Mirrors api-server's lib/tokens.ts FREE_TIER_MONTHLY_REFILL (already
 // converted to whole Tokens by the API) -- used only to tell which free-tier
@@ -24,9 +26,26 @@ const GENDER_OPTIONS: { value: Gender; label: string }[] = [
 
 export const ProfilePage: React.FC = () => {
   const { isRTL } = useLanguage();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, setDailyReminderEmailEnabled } = useAuth();
   const { data: balance, isLoading } = useGetTokenBalance();
   const { open: openPurchaseModal } = usePurchaseModal();
+  const { toast } = useToast();
+  const [reminderTogglePending, setReminderTogglePending] = useState(false);
+
+  const handleReminderToggle = async (checked: boolean) => {
+    setReminderTogglePending(true);
+    try {
+      await setDailyReminderEmailEnabled(checked);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "משהו השתבש",
+        description: "לא הצלחנו לעדכן את הגדרת התזכורות. נסו שוב בעוד רגע.",
+      });
+    } finally {
+      setReminderTogglePending(false);
+    }
+  };
 
   // The free-tier quota bar only ever describes balance.tokensRemaining --
   // it's meaningless once the user has purchased tokens (that pool is
@@ -73,6 +92,29 @@ export const ProfilePage: React.FC = () => {
               </div>
             ))}
           </RadioGroup>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BellRing className="w-5 h-5 text-teal-500" />
+            {isRTL ? "תזכורות במייל" : "Email Reminders"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {isRTL
+                ? "מייל יומי כשיש לך כרטיסיות שמחכות לחזרה, או כשמבחן שסימנת במצב מרתון מתקרב."
+                : "A daily email when you have cards due for review, or when an exam you marked with Cram Mode is coming up."}
+            </p>
+            <Switch
+              checked={user?.dailyReminderEmailEnabled ?? true}
+              onCheckedChange={handleReminderToggle}
+              disabled={reminderTogglePending}
+            />
+          </div>
         </CardContent>
       </Card>
 

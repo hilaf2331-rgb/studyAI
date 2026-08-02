@@ -24,7 +24,9 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS is_paying_customer boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS bit_name text,
       ADD COLUMN IF NOT EXISTS token_balance integer NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS last_token_refill_at timestamptz NOT NULL DEFAULT now();
+      ADD COLUMN IF NOT EXISTS last_token_refill_at timestamptz NOT NULL DEFAULT now(),
+      ADD COLUMN IF NOT EXISTS daily_reminder_email_enabled boolean NOT NULL DEFAULT true,
+      ADD COLUMN IF NOT EXISTS last_reminder_email_sent_at timestamptz;
   `);
 
   await pool.query(`

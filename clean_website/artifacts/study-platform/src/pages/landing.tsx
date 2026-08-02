@@ -112,6 +112,26 @@ export const LandingPage: React.FC = () => {
                 </Button>
               </a>
             </div>
+
+            {/* Trust strip: surfaces in the hero, not just buried in the
+                pricing/accuracy sections further down the page. */}
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+                עונה רק מהחומר שהעליתם — אפס ניחושים
+              </span>
+              <Link
+                href="/pricing"
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+              >
+                <TokenGlyph className="w-3.5 h-3.5 shrink-0" />
+                כרטיסייה כבר מ-₪39 — בלי מנוי חודשי
+              </Link>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-700 dark:text-cyan-300">
+                <InfinityGlyph className="w-3.5 h-3.5 shrink-0" />
+                הטוקנים לא פוקעים לעולם
+              </span>
+            </div>
           </section>
 
           {/* ─── 3 core pillars ─── */}

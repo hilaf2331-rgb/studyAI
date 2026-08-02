@@ -26,12 +26,16 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        // accounts.google.com serves the Google Identity Services script
+        // (pages/auth.tsx's Sign in with Google button) and its own sign-in
+        // iframe/popup.
+        scriptSrc: ["'self'", "https://accounts.google.com/gsi/client"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         fontSrc: ["'self'", "data:"],
         imgSrc: ["'self'", "data:", "https:"],
         mediaSrc: ["'self'", "https://storage.googleapis.com"],
-        connectSrc: ["'self'", "https://storage.googleapis.com", "https://focusstudy.net"],
+        connectSrc: ["'self'", "https://storage.googleapis.com", "https://focusstudy.net", "https://accounts.google.com"],
+        frameSrc: ["https://accounts.google.com"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         frameAncestors: ["'self'"],

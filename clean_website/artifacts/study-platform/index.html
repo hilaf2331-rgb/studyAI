@@ -33,6 +33,12 @@
     <link rel="apple-touch-icon" href="/logo-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Defines window.google.accounts.id, used by pages/auth.tsx's Sign in
+         with Google button. Always loaded (harmless no-op if the account
+         owner hasn't set GOOGLE_CLIENT_ID on the server yet) since it's a
+         static tag, not something the app can conditionally inject before
+         first paint. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>

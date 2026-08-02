@@ -14,8 +14,17 @@ export const DEFAULT_MONTHLY_TOKEN_QUOTA = 150_000;
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
+  // Kept NOT NULL even for Google-only accounts (see routes/auth.ts's
+  // POST /auth/google) -- rather than making this column nullable, a
+  // Google-only signup gets an unguessable random hash here, which simply
+  // means the plain email/password login can never match it. Avoids an
+  // ALTER COLUMN in the additive-only startup migration (migrate.ts).
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
+  // Set once a Google sign-in (routes/auth.ts's POST /auth/google) either
+  // creates this account or links it to an existing email/password one.
+  // Null for accounts that have only ever used email/password.
+  googleId: text("google_id").unique(),
   tokensRemaining: integer("tokens_remaining").notNull().default(DEFAULT_MONTHLY_TOKEN_QUOTA),
   // Label for whichever free-tier regime currently applies, purely for
   // display -- DEFAULT_MONTHLY_TOKEN_QUOTA until the first monthly refill

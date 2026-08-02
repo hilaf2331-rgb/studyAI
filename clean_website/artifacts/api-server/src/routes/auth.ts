@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { randomBytes } from "crypto";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { signToken, hashPassword, verifyPassword, requireAuth } from "../lib/auth";
 import { isPremium } from "../lib/subscription";
+import { verifyGoogleIdToken, isGoogleSignInConfigured, getGoogleClientId } from "../lib/google-auth";
 
 const router = Router();
 
@@ -83,6 +85,74 @@ router.get("/auth/me", async (req, res) => {
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });
   }
+});
+
+// Public: the frontend fetches the client ID at runtime instead of needing
+// its own build-time env var, since the account owner only sets
+// GOOGLE_CLIENT_ID on the server. Not a secret -- it's meant to end up in
+// the browser either way, this just controls where it's configured.
+router.get("/auth/google-client-id", (_req, res) => {
+  res.json({ clientId: getGoogleClientId() });
+});
+
+const GoogleSignInBody = z.object({
+  credential: z.string().min(1),
+});
+
+router.post("/auth/google", async (req, res) => {
+  if (!isGoogleSignInConfigured()) {
+    return res.status(503).json({ error: "Google sign-in is not configured" });
+  }
+
+  const body = GoogleSignInBody.parse(req.body);
+
+  let identity;
+  try {
+    identity = await verifyGoogleIdToken(body.credential);
+  } catch {
+    return res.status(401).json({ error: "Invalid Google credential" });
+  }
+
+  // Google is the one vouching for this address here, not the user typing
+  // it in -- an unverified email on the token isn't proof of ownership, so
+  // it can't be trusted to create or link an account.
+  if (!identity.emailVerified) {
+    return res.status(401).json({ error: "Google account email is not verified" });
+  }
+
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.googleId, identity.googleId));
+
+  if (!user) {
+    const [byEmail] = await db.select().from(usersTable).where(eq(usersTable.email, identity.email));
+    if (byEmail) {
+      // Same verified email as an existing password account -- link rather
+      // than create a duplicate, same reasoning as the emailVerified check
+      // above (Google has already proven ownership).
+      [user] = await db.update(usersTable).set({ googleId: identity.googleId }).where(eq(usersTable.id, byEmail.id)).returning();
+    } else {
+      // No password will ever be checked against this account through the
+      // normal login route, but the column is NOT NULL (see schema/users.ts)
+      // -- an unguessable random value keeps that constraint satisfied
+      // without ever being a usable password.
+      const placeholderPassword = await hashPassword(randomBytes(32).toString("hex"));
+      [user] = await db.insert(usersTable).values({
+        email: identity.email,
+        passwordHash: placeholderPassword,
+        name: identity.name,
+        googleId: identity.googleId,
+      }).returning();
+    }
+  }
+
+  const token = signToken({ userId: user.id, email: user.email });
+  return res.json({
+    token,
+    user: {
+      id: user.id, email: user.email, name: user.name, role: user.role,
+      subscriptionTier: user.subscriptionTier, isPremium: isPremium(user),
+      dailyReminderEmailEnabled: user.dailyReminderEmailEnabled,
+    },
+  });
 });
 
 const ReminderSettingsBody = z.object({

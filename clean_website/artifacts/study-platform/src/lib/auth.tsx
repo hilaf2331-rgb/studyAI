@@ -29,6 +29,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<Pick<AuthUser, "name" | "gender" | "dailyReminderEmailEnabled">>) => void;
   setDailyReminderEmailEnabled: (enabled: boolean) => Promise<void>;
@@ -104,6 +105,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // credential is the ID token Google Identity Services hands back to the
+  // button's callback (see pages/auth.tsx) -- verified server-side, never
+  // trusted as-is here.
+  const loginWithGoogle = async (credential: string) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(apiUrl("/api/auth/google"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Google sign-in failed");
+      saveAuth(data.token, data.user);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = clearAuth;
 
   const updateUser = useCallback((updates: Partial<Pick<AuthUser, "name" | "gender" | "dailyReminderEmailEnabled">>) => {
@@ -130,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, updateUser]);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser, setDailyReminderEmailEnabled }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, loginWithGoogle, logout, updateUser, setDailyReminderEmailEnabled }}>
       {children}
     </AuthContext.Provider>
   );

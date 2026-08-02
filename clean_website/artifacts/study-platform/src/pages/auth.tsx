@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
+import { apiUrl } from "@/lib/api-base";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,79 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BackgroundGlow } from "@/components/background-glow";
 import { Loader2, AlertCircle, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+        };
+      };
+    };
+  }
+}
+
+// Google Sign-In button, only shown once both are true: the account owner
+// has set GOOGLE_CLIENT_ID on the server (fetched below -- see
+// routes/auth.ts's GET /auth/google-client-id) and the GSI script
+// (index.html) has finished loading, which async/defer means isn't
+// guaranteed by mount time.
+const GoogleSignInButton: React.FC<{ onCredential: (credential: string) => void }> = ({ onCredential }) => {
+  const [clientId, setClientId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(apiUrl("/api/auth/google-client-id"))
+      .then((res) => res.json())
+      .then((data) => setClientId(data.clientId ?? null))
+      .catch(() => setClientId(null));
+  }, []);
+
+  useEffect(() => {
+    if (!clientId || !containerRef.current) return;
+
+    let cancelled = false;
+    const tryRender = () => {
+      if (cancelled || !containerRef.current) return;
+      if (!window.google?.accounts?.id) {
+        // gsi/client is async/defer -- poll briefly instead of assuming
+        // it's ready the instant this effect runs.
+        setTimeout(tryRender, 100);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response) => onCredential(response.credential),
+      });
+      window.google.accounts.id.renderButton(containerRef.current, {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        width: 336,
+        text: "continue_with",
+        locale: "he",
+      });
+    };
+    tryRender();
+
+    return () => { cancelled = true; };
+  }, [clientId, onCredential]);
+
+  if (!clientId) return null;
+
+  return (
+    <div className="space-y-4">
+      <div ref={containerRef} className="flex justify-center" />
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        <span>או</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    </div>
+  );
+};
 
 interface PasswordRule {
   labelHe: string;
@@ -30,7 +104,7 @@ function validatePassword(pw: string): string | null {
 }
 
 export const AuthPage: React.FC = () => {
-  const { login, register, isLoading } = useAuth();
+  const { login, register, loginWithGoogle, isLoading } = useAuth();
   const { isRTL } = useLanguage();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail]       = useState("");
@@ -50,6 +124,15 @@ export const AuthPage: React.FC = () => {
   const switchMode = (next: "login" | "register") => {
     setMode(next); setError(""); setPwTouched(false);
     setPassword(""); setEmail(""); setName(""); setAgreedToTerms(false);
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setError("");
+    try {
+      await loginWithGoogle(credential);
+    } catch (err: any) {
+      setError(err.message || "ההתחברות עם גוגל נכשלה, נסה שנית");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,7 +197,9 @@ export const AuthPage: React.FC = () => {
             </CardDescription>
           </CardHeader>
 
-          <CardContent>
+          <CardContent className="space-y-4">
+            <GoogleSignInButton onCredential={handleGoogleCredential} />
+
             <form onSubmit={handleSubmit} className="space-y-4">
 
               {mode === "register" && (

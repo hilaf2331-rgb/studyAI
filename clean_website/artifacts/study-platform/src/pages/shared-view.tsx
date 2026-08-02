@@ -73,7 +73,10 @@ function FlashcardPreview({ cards, isHebrew }: { cards: SharedMaterialFlashcards
         <span className="text-sm text-muted-foreground">{index + 1} / {cards.length}</span>
       </div>
 
-      <div className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 260 }}>
+      {/* key={index} recreates this element when advancing to the next
+          card, so no flip animation runs with the next card's answer
+          momentarily peeking through mid-transition. */}
+      <div key={index} className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 260 }}>
         <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
           <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">
             <Badge variant="secondary" className="mb-4 capitalize shrink-0">{current.cardType}</Badge>

@@ -137,15 +137,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setDailyReminderEmailEnabled = useCallback(async (enabled: boolean) => {
-    const res = await fetch(apiUrl("/api/auth/me/reminder-settings"), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ dailyReminderEmailEnabled: enabled }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to update reminder settings");
-    updateUser({ dailyReminderEmailEnabled: data.dailyReminderEmailEnabled });
-  }, [token, updateUser]);
+    // Flips the switch immediately instead of waiting on the round-trip --
+    // the previous await-then-update flow left the toggle visually frozen
+    // (just grayed out via `disabled`) for the request's full duration, then
+    // snapped to its new position all at once, which read as a glitch/flash
+    // rather than a direct response to the tap.
+    const previous = user?.dailyReminderEmailEnabled;
+    updateUser({ dailyReminderEmailEnabled: enabled });
+    try {
+      const res = await fetch(apiUrl("/api/auth/me/reminder-settings"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ dailyReminderEmailEnabled: enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update reminder settings");
+      updateUser({ dailyReminderEmailEnabled: data.dailyReminderEmailEnabled });
+    } catch (err) {
+      updateUser({ dailyReminderEmailEnabled: previous });
+      throw err;
+    }
+  }, [token, updateUser, user]);
 
   // Round-trips to the server (unlike the old local-only updateUser call)
   // so it survives a fresh login instead of being silently overwritten by

@@ -80,7 +80,10 @@ export const DailyReviewPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
+      {/* key={currentIndex} recreates this element when advancing to the next
+          card, so no flip animation runs with the next card's answer
+          momentarily peeking through mid-transition. */}
+      <div key={currentIndex} className="perspective-1000 cursor-pointer" onClick={() => setFlipped(f => !f)} style={{ height: 300 }}>
         <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${flipped ? "rotate-y-180" : ""}`}>
           <div className="absolute inset-0 backface-hidden rounded-2xl border-2 bg-card flex flex-col items-center p-6 shadow-lg overflow-hidden">
             <Badge variant="secondary" className="mb-2 capitalize shrink-0">{current.materialTitle}</Badge>

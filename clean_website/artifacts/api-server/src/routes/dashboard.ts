@@ -38,13 +38,26 @@ router.get("/dashboard/stats", async (req, res) => {
   const averageScore = Number(avgResult[0]?.avg || 0);
   const examReadinessScore = totalExamsTaken > 0 ? Math.min(100, Math.round(averageScore)) : 0;
 
+  // Real, rolling-7-day figure -- audio/recording duration is the only
+  // per-material time we actually record, so it's summed straight from the
+  // materials created in the last week rather than derived from an all-time
+  // count (the old `totalExamsTaken * 15` never reset and had nothing to do
+  // with actual time spent).
+  const [{ totalSeconds }] = await db.select({
+    totalSeconds: sql<string>`COALESCE(SUM(${materialsTable.duration}), 0)`,
+  }).from(materialsTable).where(and(
+    eq(materialsTable.userId, userId),
+    sql`${materialsTable.createdAt} >= NOW() - INTERVAL '7 days'`,
+  ));
+  const studyMinutesThisWeek = Math.round(Number(totalSeconds) / 60);
+
   res.json({
     totalMaterials: Number(totalMaterials),
     totalCourses: Number(totalCourses),
     totalFlashcards: Number(totalFlashcards),
     totalExamsTaken: Number(totalExamsTaken),
     averageScore: Math.round(averageScore),
-    studyMinutesThisWeek: Number(totalExamsTaken) * 15,
+    studyMinutesThisWeek,
     examReadinessScore,
     masteredFlashcards: 0,
   });

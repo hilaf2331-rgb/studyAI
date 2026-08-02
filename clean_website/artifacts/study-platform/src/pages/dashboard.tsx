@@ -143,7 +143,9 @@ export const Dashboard: React.FC = () => {
               </div>
               <Progress value={stats.examReadinessScore} className="h-2" />
               <p className="text-xs text-muted-foreground mt-2">
-                {isRTL ? `${stats.totalExamsTaken} מבחנים הושלמו` : `${stats.totalExamsTaken} exams completed`}
+                {stats.totalExamsTaken > 0
+                  ? (isRTL ? `ציון ממוצע ב-${stats.totalExamsTaken} מבחנים שעשית` : `Average score across ${stats.totalExamsTaken} exams taken`)
+                  : (isRTL ? "עדיין לא עשית מבחן" : "No exams taken yet")}
               </p>
             </CardContent>
           </Card>

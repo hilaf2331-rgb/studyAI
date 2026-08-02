@@ -30,7 +30,7 @@ app.use(
         // (pages/auth.tsx's Sign in with Google button) and its own sign-in
         // iframe/popup.
         scriptSrc: ["'self'", "https://accounts.google.com/gsi/client"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://accounts.google.com/gsi/style"],
         fontSrc: ["'self'", "data:"],
         imgSrc: ["'self'", "data:", "https:"],
         mediaSrc: ["'self'", "https://storage.googleapis.com"],

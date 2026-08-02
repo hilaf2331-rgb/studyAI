@@ -114,24 +114,29 @@ export const ProfilePage: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <BellRing className="w-5 h-5 text-teal-500" />
-            {isRTL ? "תזכורות במייל" : "Email Reminders"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          {/* Switch lives in the header, right next to its own label --
+              previously paired with the description paragraph instead (in a
+              justify-between row), so on a narrow phone the paragraph wrapped
+              to 3 lines and pushed the switch away into a large empty gap,
+              looking stranded/disconnected from what it controls. */}
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {isRTL
-                ? "מייל יומי כשיש לך כרטיסיות שמחכות לחזרה, או כשמבחן שסימנת במצב מרתון מתקרב."
-                : "A daily email when you have cards due for review, or when an exam you marked with Cram Mode is coming up."}
-            </p>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BellRing className="w-5 h-5 text-teal-500 shrink-0" />
+              {isRTL ? "תזכורות במייל" : "Email Reminders"}
+            </CardTitle>
             <Switch
               checked={user?.dailyReminderEmailEnabled ?? true}
               onCheckedChange={handleReminderToggle}
               disabled={reminderTogglePending}
             />
           </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {isRTL
+              ? "מייל יומי כשיש לך כרטיסיות שמחכות לחזרה, או כשמבחן שסימנת במצב מרתון מתקרב."
+              : "A daily email when you have cards due for review, or when an exam you marked with Cram Mode is coming up."}
+          </p>
         </CardContent>
       </Card>
 

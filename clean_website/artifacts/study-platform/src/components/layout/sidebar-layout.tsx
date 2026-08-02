@@ -160,8 +160,13 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden w-full">
-        {/* Mobile top bar with burger menu — only shown below lg */}
-        <div className="lg:hidden flex items-center justify-between h-14 px-4 border-b border-border shrink-0 bg-background">
+        {/* Mobile top bar with burger menu — only shown below lg. Logo is
+            absolutely centered rather than relying on justify-between to
+            land it in the middle -- TokenWidget renders nothing at all
+            until its balance loads (see token-widget.tsx), which collapsed
+            this row to two children and shoved the logo off toward
+            whichever edge the burger button wasn't on. */}
+        <div className="lg:hidden relative flex items-center justify-between h-14 px-4 border-b border-border shrink-0 bg-background">
           <button
             onClick={() => setMobileOpen(true)}
             aria-label={isRTL ? "פתח תפריט" : "Open menu"}
@@ -169,7 +174,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
           >
             <Menu className="w-5 h-5" />
           </button>
-          <Link href="/landing" className="flex items-center gap-2 font-bold text-lg tracking-tight text-sidebar-primary">
+          <Link href="/landing" className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 font-bold text-lg tracking-tight text-sidebar-primary">
             <img src="/logo.png" alt="FocusStudy" className="w-5 h-5 object-contain" />
             <span>FocusStudy</span>
           </Link>

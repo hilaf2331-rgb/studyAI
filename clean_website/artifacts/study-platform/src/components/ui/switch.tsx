@@ -13,6 +13,15 @@ const Switch = React.forwardRef<
       className
     )}
     {...props}
+    // The thumb's checked/unchecked position below is a fixed left-to-right
+    // translate. On this site's dir="rtl" document, an RTL flex container's
+    // untransformed rest position already sits at its right edge, so the
+    // checked-state offset pushed the thumb past the track's right boundary
+    // entirely instead of sliding within it. Pinning this control to ltr
+    // keeps its internal geometry self-contained regardless of page
+    // direction -- same fix as any icon-like control that isn't meant to
+    // mirror in RTL.
+    dir="ltr"
     ref={ref}
   >
     <SwitchPrimitives.Thumb

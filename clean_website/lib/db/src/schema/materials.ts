@@ -28,6 +28,14 @@ export const materialsTable = pgTable("materials", {
   // reused on every later share, never regenerated, so a link a student
   // already sent out keeps working.
   shareId: text("share_id").unique(),
+  // Set only when this material was cloned from someone else's "Share with
+  // Class" link (see routes/materials.ts's /shared/:shareId/save) -- the
+  // sharer's name at the moment of saving, shown next to the title so a
+  // student can tell at a glance which of their materials came from a
+  // classmate. Denormalized rather than a userId FK since the source
+  // material is single-owner and the copy has no live relationship back to
+  // it once saved.
+  sharedByName: text("shared_by_name"),
   subjectType: text("subject_type").notNull().default("other"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

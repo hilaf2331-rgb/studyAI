@@ -291,6 +291,7 @@ export const ListMaterialsResponseItem = zod.object({
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
   "shareId": zod.string().nullish(),
+  "sharedByName": zod.string().nullish().describe('Set only when this material was cloned from someone else\'s shared link -- the sharer\'s name (or email) at the moment it was saved.'),
   "createdAt": zod.coerce.date()
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
@@ -341,6 +342,7 @@ export const GetMaterialResponse = zod.object({
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
   "shareId": zod.string().nullish(),
+  "sharedByName": zod.string().nullish().describe('Set only when this material was cloned from someone else\'s shared link -- the sharer\'s name (or email) at the moment it was saved.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -378,6 +380,7 @@ export const UpdateMaterialResponse = zod.object({
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
   "shareId": zod.string().nullish(),
+  "sharedByName": zod.string().nullish().describe('Set only when this material was cloned from someone else\'s shared link -- the sharer\'s name (or email) at the moment it was saved.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -418,6 +421,7 @@ export const ShareMaterialResponse = zod.object({
   "cramMode": zod.boolean().optional(),
   "examDate": zod.coerce.date().nullish(),
   "shareId": zod.string().nullish(),
+  "sharedByName": zod.string().nullish().describe('Set only when this material was cloned from someone else\'s shared link -- the sharer\'s name (or email) at the moment it was saved.'),
   "createdAt": zod.coerce.date()
 })
 

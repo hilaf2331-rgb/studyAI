@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { randomBytes } from "crypto";
-import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable, glossaryTermsTable } from "@workspace/db";
+import { db, materialsTable, summariesTable, flashcardDecksTable, flashcardsTable, questionSetsTable, questionsTable, examsTable, activityTable, glossaryTermsTable, usersTable } from "@workspace/db";
 import { eq, count, and, inArray, desc } from "drizzle-orm";
 import { CreateMaterialBody, ListMaterialsQueryParams, GetMaterialParams, DeleteMaterialParams, BulkDeleteMaterialsBody, UpdateMaterialParams, UpdateMaterialBody, ShareMaterialParams, SaveSharedMaterialParams } from "@workspace/api-zod";
 import { extractYouTube, extractPDF, transcribeAudio, extractFromUrl, extractOffice, extractImage, extensionFromMimeType } from "../lib/extractor";
@@ -632,6 +632,10 @@ router.post("/shared/:shareId/save", async (req, res) => {
   const [source] = await db.select().from(materialsTable).where(eq(materialsTable.shareId, shareId));
   if (!source) return res.status(404).json({ error: "Not found" });
 
+  const [sourceOwner] = source.userId
+    ? await db.select({ name: usersTable.name, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, source.userId))
+    : [];
+
   const [material] = await db.insert(materialsTable).values({
     userId,
     title: source.title,
@@ -640,6 +644,7 @@ router.post("/shared/:shareId/save", async (req, res) => {
     status: "ready",
     extractedText: source.extractedText,
     subjectType: source.subjectType,
+    sharedByName: sourceOwner?.name || sourceOwner?.email || null,
   }).returning();
 
   const [summary] = await db.select().from(summariesTable)

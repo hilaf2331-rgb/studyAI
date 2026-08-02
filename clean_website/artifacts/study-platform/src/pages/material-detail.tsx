@@ -533,9 +533,12 @@ export const MaterialDetailPage: React.FC = () => {
   // browsers without navigator.share (mainly desktop).
   const openShare = (shareId: string) => {
     const url = `${window.location.origin}/shared/${shareId}`;
+    // Trailing blank line -- some share targets (e.g. WhatsApp on iOS) just
+    // concatenate `text` and `url` with no separator of their own, which ran
+    // the message straight into the link with no visual break.
     const text = isRTL
-      ? `היי! שיתפתי איתך חומר לימוד${material?.title ? ` ב"${material.title}"` : ""} דרך FocusStudy 📚`
-      : `Hey! I shared study material${material?.title ? ` on "${material.title}"` : ""} with you via FocusStudy 📚`;
+      ? `היי! שיתפתי איתך חומר לימוד${material?.title ? ` ב"${material.title}"` : ""} דרך FocusStudy 📚\n\n`
+      : `Hey! I shared study material${material?.title ? ` on "${material.title}"` : ""} with you via FocusStudy 📚\n\n`;
     if (navigator.share) {
       navigator.share({ title: material?.title, text, url }).catch((err) => {
         if (err?.name !== "AbortError") setShareDialogOpen(true);
@@ -876,7 +879,14 @@ export const MaterialDetailPage: React.FC = () => {
       </button>
 
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">{material.title}</h1>
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">{material.title}</h1>
+          {material.sharedByName && (
+            <span className="text-sm text-muted-foreground">
+              {isRTL ? `שותף ע"י ${material.sharedByName}` : `Shared by ${material.sharedByName}`}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2 mt-3">
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setLocation(`/materials/${id}/chat`)}>
             <MessageSquare className="w-4 h-4" />{isRTL ? "שוחח עם המורה AI" : "Chat with AI Tutor"}

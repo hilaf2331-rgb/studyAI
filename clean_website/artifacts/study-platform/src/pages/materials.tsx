@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileText, Plus, Trash2, Search, Loader2, AlertCircle, CheckCircle2, Clock, MessageSquare, BookOpen, BrainCircuit, HelpCircle, FileQuestion, X, CheckSquare } from "lucide-react";
+import { FileText, Plus, Trash2, Search, Loader2, AlertCircle, CheckCircle2, Clock, MessageSquare, BookOpen, BrainCircuit, HelpCircle, FileQuestion, X, CheckSquare, Share2 } from "lucide-react";
 
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
   text: <FileText className="w-4 h-4" />,
@@ -183,6 +183,12 @@ export const MaterialsPage: React.FC = () => {
                         <StatusBadge status={m.status} isRTL={isRTL} />
                         <Badge variant="outline" className="text-xs">{m.language === "he" ? "עברית" : m.language === "mixed" ? "מעורב" : "אנגלית"}</Badge>
                         <Badge variant="secondary" className="text-xs capitalize">{m.contentType}</Badge>
+                        {m.sharedByName && (
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Share2 className="w-3 h-3" />
+                            {isRTL ? `שותף ע"י ${m.sharedByName}` : `Shared by ${m.sharedByName}`}
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex gap-3 sm:gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{m.summaryCount} {isRTL ? "סיכומים" : "summaries"}</span>

@@ -187,6 +187,11 @@ export interface Material {
   examDate?: string | null;
   /** @nullable */
   shareId?: string | null;
+  /**
+     * Set only when this material was cloned from someone else's shared link -- the sharer's name (or email) at the moment it was saved.
+     * @nullable
+     */
+  sharedByName?: string | null;
   createdAt: string;
 }
 

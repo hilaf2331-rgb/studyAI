@@ -53,7 +53,8 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE materials
       ADD COLUMN IF NOT EXISTS cram_mode boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS exam_date timestamptz,
-      ADD COLUMN IF NOT EXISTS share_id text;
+      ADD COLUMN IF NOT EXISTS share_id text,
+      ADD COLUMN IF NOT EXISTS shared_by_name text;
   `);
 
   // share_id's uniqueness (materials.ts's .unique()) is enforced via index

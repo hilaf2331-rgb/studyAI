@@ -1536,6 +1536,9 @@ components:
           format: date-time
         shareId:
           type: ["string", "null"]
+        sharedByName:
+          description: Set only when this material was cloned from someone else's shared link -- the sharer's name (or email) at the moment it was saved.
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

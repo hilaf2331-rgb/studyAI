@@ -1040,7 +1040,8 @@ export const GenerateExamBody = zod.object({
   "questionCount": zod.number().optional(),
   "timeLimitMinutes": zod.number().optional(),
   "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).optional(),
-  "topics": zod.array(zod.string()).optional()
+  "topics": zod.array(zod.string()).optional(),
+  "styleReference": zod.string().optional().describe('An optional excerpt pasted from a real old exam -- the generated exam\'s phrasing, structure, and question style are steered to mimic it, not its content.')
 })
 
 

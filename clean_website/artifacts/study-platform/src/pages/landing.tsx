@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import {
   ArrowLeft, RotateCw, Users, ShieldCheck, BookMarked, FileCheck2,
   Mic, MessageSquare, Trophy, FolderOpen, Headphones,
-  GaugeCircle, Flame, ClipboardList, Brain, HelpCircle,
+  GaugeCircle, Flame, ClipboardList, Brain, HelpCircle, CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -344,6 +344,59 @@ export const LandingPage: React.FC = () => {
                     מעלים את המילון של הקורס, ו-FocusStudy ישתמש בדיוק במונחים
                     ובהגדרות שלכם — הסיכום ידבר באותה שפה שתידרשו לה במבחן.
                   </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ─── Live example question ─── */}
+          <section className="space-y-6 scroll-mt-24">
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                ככה זה נראה בפועל
+              </h2>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                לא רק מבטיחים — דוגמה מלאה, בלי שום דבר מוסתר מאחורי תשלום.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-md p-6 sm:p-8 max-w-xl mx-auto space-y-4">
+              <p className="text-xs font-semibold text-primary uppercase tracking-wide">
+                שאלה לדוגמה — מחומר שהועלה
+              </p>
+              <p className="text-base font-semibold leading-relaxed">
+                לפי מודל הביקוש וההיצע, מה יקרה למחיר שיווי המשקל של מוצר אם ההיצע יורד בעוד שהביקוש נשאר קבוע?
+              </p>
+              <div className="space-y-2">
+                {[
+                  "המחיר יעלה והכמות תרד",
+                  "המחיר יעלה והכמות תעלה",
+                  "המחיר ירד והכמות תרד",
+                  "המחיר ירד והכמות תעלה",
+                ].map((opt, i) => (
+                  <div
+                    key={i}
+                    className={`w-full text-start px-3 py-2 rounded-lg text-sm border ${
+                      i === 0
+                        ? "bg-green-100 border-green-300 dark:bg-green-950 dark:border-green-700 font-semibold"
+                        : "bg-background/60 border-white/20 dark:border-white/10"
+                    }`}
+                  >
+                    {opt}
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-800">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-sm text-green-800 dark:text-green-300">נכון!</p>
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-1 leading-relaxed">
+                      כשההיצע יורד (העקומה זזה שמאלה) בעוד שהביקוש נשאר קבוע, נקודת שיווי המשקל החדשה
+                      נמצאת במחיר גבוה יותר וכמות נמוכה יותר — כי יש פחות מוצרים זמינים, והצרכנים
+                      מוכנים לשלם יותר עבור מה שנשאר. זו הסיבה שמחירי דיור, למשל, עולים כשקצב הבנייה
+                      לא מדביק את הביקוש.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

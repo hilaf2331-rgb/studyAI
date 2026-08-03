@@ -2073,6 +2073,9 @@ components:
           type: array
           items:
             type: string
+        styleReference:
+          description: An optional excerpt pasted from a real old exam -- the generated exam's phrasing, structure, and question style are steered to mimic it, not its content.
+          type: string
 
     ExamSubmission:
       type: object

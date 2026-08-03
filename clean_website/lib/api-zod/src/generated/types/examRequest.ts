@@ -16,4 +16,6 @@ export interface ExamRequest {
   timeLimitMinutes?: number;
   difficulty?: ExamRequestDifficulty;
   topics?: string[];
+  /** An optional excerpt pasted from a real old exam -- the generated exam's phrasing, structure, and question style are steered to mimic it, not its content. */
+  styleReference?: string;
 }

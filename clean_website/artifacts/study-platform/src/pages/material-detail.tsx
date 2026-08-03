@@ -23,6 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -474,6 +475,7 @@ export const MaterialDetailPage: React.FC = () => {
   const [qaLang, setQALang] = useState<"he" | "en">("he");
   const [examLang, setExamLang] = useState<"he" | "en">("he");
   const [examType, setExamType] = useState("practice");
+  const [examStyleReference, setExamStyleReference] = useState("");
 
   const [kitLoading, setKitLoading] = useState(false);
   const [kitResult, setKitResult] = useState<KitResult | null>(null);
@@ -801,7 +803,10 @@ export const MaterialDetailPage: React.FC = () => {
           "Content-Type": "application/json",
           "Authorization": "Bearer " + token,
         },
-        body: JSON.stringify({ language: examLang, examType, questionCount: 15, difficulty: "mixed" }),
+        body: JSON.stringify({
+          language: examLang, examType, questionCount: 15, difficulty: "mixed",
+          styleReference: examStyleReference.trim() || undefined,
+        }),
       });
 
       const rawBody = await response.text();
@@ -1259,6 +1264,19 @@ export const MaterialDetailPage: React.FC = () => {
               <SelectItem value="en">אנגלית</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>{isRTL ? "מבחן ישן לחיקוי סגנון (אופציונלי)" : "Old exam for style reference (optional)"}</Label>
+          <Textarea
+            value={examStyleReference}
+            onChange={e => setExamStyleReference(e.target.value)}
+            placeholder={isRTL
+              ? "הדביקו כאן קטע ממבחן אמיתי שהמרצה כתב בעבר -- ננסה להתאים את הניסוח והמבנה, לא להעתיק את התוכן."
+              : "Paste an excerpt from a real exam your instructor previously wrote -- we'll match the phrasing and structure, not copy the content."}
+            className="text-sm resize-none"
+            rows={3}
+            dir={isRTL ? "rtl" : "ltr"}
+          />
         </div>
         {examError && <p className="text-destructive text-sm">{examError}</p>}
       </GenerateDialog>

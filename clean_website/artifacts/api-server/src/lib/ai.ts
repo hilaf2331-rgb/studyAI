@@ -1930,6 +1930,7 @@ async function generateExamQuestionsForChunk(
   topicsLine: string,
   excludeBlock: string,
   subjectType?: string,
+  styleReferenceBlock = "",
 ): Promise<GeneratedQuestion[]> {
   const sectionCoverageNote = isHe
     ? "\nחשוב: ודא שהשאלות מכסות חלקים שונים של החלק הנוכחי. אל תרכז את כל השאלות בפסקה הראשונה בלבד.\n"
@@ -1968,7 +1969,7 @@ Return ONLY JSON:
     ? `## חלק ${index}/${total} מחומר הלימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
-${sectionCoverageNote}
+${styleReferenceBlock}${sectionCoverageNote}
 ${chunk}
 ${excludeBlock}
 ---
@@ -1992,7 +1993,7 @@ ${universalOutputRules(true)}
     : `## Part ${index}/${total} of study material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
-${sectionCoverageNote}
+${styleReferenceBlock}${sectionCoverageNote}
 ${chunk}
 ${excludeBlock}
 ---
@@ -2036,15 +2037,20 @@ Return ONLY JSON matching this structure:
 }
 
 export function generateExamAI(
-  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[]; styleReference?: string }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
   return pipelineLimit(() => generateExamAIImpl(opts));
 }
 
+// Character cap on the pasted reference excerpt -- this is a style cue for
+// the prompt, not additional source content, so it's kept far smaller than
+// the actual material (which can run to CHUNK_TOKEN_LIMIT-sized chunks).
+const STYLE_REFERENCE_MAX_CHARS = 3000;
+
 async function generateExamAIImpl(
-  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[] }
+  opts: AIGenerationOptions & { questionCount: number; examType: string; difficulty: string; topics?: string[]; excludeQuestions?: string[]; styleReference?: string }
 ): Promise<Array<{ question: string; answer: string; explanation: string; options: string[]; correctIndex: number; questionType: string; difficulty: string; modelAnswer?: string; concept?: string; optionExplanations?: (string | null)[] }>> {
-  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions, subjectType } = opts;
+  const { language, materialContent, materialTitle, questionCount, examType, difficulty, topics, materialId, excludeQuestions, subjectType, styleReference } = opts;
   const isHe = language === "he";
   try {
   const { parts, chunked } = await buildAggregatedContent(materialContent, materialTitle, isHe, materialId);
@@ -2052,6 +2058,17 @@ async function generateExamAIImpl(
 
   const topicsLine = topics?.length
     ? (isHe ? `נושאים ממוקדים: ${topics.join(", ")}` : `Focused topics: ${topics.join(", ")}`)
+    : "";
+
+  // Lets a student paste an excerpt from a real old exam so the generated
+  // one mimics its phrasing, structure, and type of demand (proof/calc/open
+  // question/etc.) instead of reading like a generic AI quiz -- explicitly
+  // scoped to STYLE, not content, so the model doesn't just lift questions
+  // from the reference itself.
+  const styleReferenceBlock = styleReference?.trim()
+    ? (isHe
+        ? `\nהתייחסות לסגנון (חשוב): הקטע הבא הוא ממבחן אמיתי שהמרצה כתב בעבר. חקו ככל האפשר את הסגנון, מבנה הניסוח, אורך השאלות וסוג הדרישה (למשל: הוכחה, חישוב, שאלה פתוחה) -- לא את התוכן שלו:\n"""\n${styleReference.trim().slice(0, STYLE_REFERENCE_MAX_CHARS)}\n"""\n`
+        : `\nStyle reference (important): the excerpt below is from a real exam the instructor previously wrote. Mimic its style, phrasing structure, question length, and type of demand (e.g. proof, calculation, open question) as closely as possible -- not its content:\n"""\n${styleReference.trim().slice(0, STYLE_REFERENCE_MAX_CHARS)}\n"""\n`)
     : "";
 
   const examDesc = examTypeDesc(examType, isHe);
@@ -2068,7 +2085,7 @@ async function generateExamAIImpl(
     for (let i = 0; i < parts.length; i++) {
       const chunkExcludeBlock = buildExcludeQuestionsBlock(cumulativeExclude, isHe);
       try {
-        const chunkQuestions = await withChunkRetry(`generateExamQuestionsForChunk(${i + 1}/${parts.length})`, () => generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock, subjectType));
+        const chunkQuestions = await withChunkRetry(`generateExamQuestionsForChunk(${i + 1}/${parts.length})`, () => generateExamQuestionsForChunk(parts[i], materialTitle, isHe, i + 1, parts.length, perChunkCount, examDesc, difficulty, topicsLine, chunkExcludeBlock, subjectType, styleReferenceBlock));
         const deduped = dedupeQuestionsAgainstExisting(chunkQuestions, cumulativeExclude);
         allQuestions.push(...deduped);
         cumulativeExclude.push(...deduped.map((q) => q.question));
@@ -2148,7 +2165,7 @@ Return ONLY JSON matching this structure:
     ? `## חומר לימוד: "${materialTitle}"
 ${topicsLine}
 סוג מבחן: ${examDesc} | רמת קושי: ${difficulty}
-${sectionCoverageNote}
+${styleReferenceBlock}${sectionCoverageNote}
 ${contentSlice(aggregatedContent)}
 ${excludeBlock}
 ---
@@ -2187,7 +2204,7 @@ ${universalOutputRules(true)}
     : `## Study Material: "${materialTitle}"
 ${topicsLine}
 Exam type: ${examDesc} | Difficulty: ${difficulty}
-${sectionCoverageNote}
+${styleReferenceBlock}${sectionCoverageNote}
 ${contentSlice(aggregatedContent)}
 ${excludeBlock}
 ---

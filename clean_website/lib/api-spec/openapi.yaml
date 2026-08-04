@@ -27,6 +27,8 @@ tags:
     description: Dashboard & analytics
   - name: course-media
     description: Course media (audio/podcast) library
+  - name: marathon
+    description: Marathon Mode -- a cram session distilling several materials into one continuous run
 
 paths:
   /healthz:
@@ -560,6 +562,94 @@ paths:
                 $ref: "#/components/schemas/GenerationProgress"
 
   # ── Summaries ─────────────────────────────────────────────────────────────
+  # ── Marathon Mode ────────────────────────────────────────────────────────
+  /marathon:
+    get:
+      operationId: listMarathons
+      tags: [marathon]
+      summary: List the caller's marathons, most recent first
+      responses:
+        "200":
+          description: Marathons
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Marathon"
+    post:
+      operationId: createMarathon
+      tags: [marathon]
+      summary: Start a new marathon from a set of already-generated materials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarathonInput"
+      responses:
+        "201":
+          description: Created marathon with its ordered materials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarathonDetail"
+        "400":
+          description: One or more selected materials aren't ready (missing summary/flashcards/quiz)
+
+  /marathon/{id}:
+    get:
+      operationId: getMarathon
+      tags: [marathon]
+      summary: Get a marathon with its ordered materials and per-material progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Marathon detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarathonDetail"
+        "404":
+          description: Not found
+
+  /marathon/{id}/materials/{materialId}:
+    patch:
+      operationId: updateMarathonMaterial
+      tags: [marathon]
+      summary: Advance a material's progress within the marathon (summary/flashcards/quiz step completed)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: materialId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMarathonMaterialInput"
+      responses:
+        "200":
+          description: Updated marathon detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarathonDetail"
+        "404":
+          description: Not found
+
   /materials/{id}/summaries:
     get:
       operationId: listSummaries
@@ -1740,6 +1830,69 @@ components:
       properties:
         deletedCount:
           type: integer
+
+    # ── Marathon Mode ────────────────────────────────────────────────────────
+    Marathon:
+      type: object
+      required: [id, examDate, status, createdAt]
+      properties:
+        id:
+          type: integer
+        examDate:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, completed]
+        createdAt:
+          type: string
+          format: date-time
+
+    MarathonMaterial:
+      type: object
+      required: [materialId, title, position, status]
+      properties:
+        materialId:
+          type: integer
+        title:
+          type: string
+        position:
+          type: integer
+        status:
+          type: string
+          enum: [pending, summary_done, flashcards_done, completed]
+
+    MarathonDetail:
+      allOf:
+        - $ref: "#/components/schemas/Marathon"
+        - type: object
+          required: [materials]
+          properties:
+            materials:
+              type: array
+              items:
+                $ref: "#/components/schemas/MarathonMaterial"
+
+    MarathonInput:
+      type: object
+      required: [examDate, materialIds]
+      properties:
+        examDate:
+          type: string
+          format: date-time
+        materialIds:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+
+    UpdateMarathonMaterialInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, summary_done, flashcards_done, completed]
 
     # ── Summary ──────────────────────────────────────────────────────────────
     Summary:

@@ -547,6 +547,79 @@ export const GetUploadProgressResponse = zod.object({
 
 
 /**
+ * @summary List the caller's marathons, most recent first
+ */
+export const ListMarathonsResponseItem = zod.object({
+  "id": zod.number(),
+  "examDate": zod.coerce.date(),
+  "status": zod.enum(['active', 'completed']),
+  "createdAt": zod.coerce.date()
+})
+export const ListMarathonsResponse = zod.array(ListMarathonsResponseItem)
+
+
+/**
+ * @summary Start a new marathon from a set of already-generated materials
+ */
+
+
+
+export const CreateMarathonBody = zod.object({
+  "examDate": zod.coerce.date(),
+  "materialIds": zod.array(zod.number()).min(1)
+})
+
+
+/**
+ * @summary Get a marathon with its ordered materials and per-material progress
+ */
+export const GetMarathonParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetMarathonResponse = zod.object({
+  "id": zod.number(),
+  "examDate": zod.coerce.date(),
+  "status": zod.enum(['active', 'completed']),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "materials": zod.array(zod.object({
+  "materialId": zod.number(),
+  "title": zod.string(),
+  "position": zod.number(),
+  "status": zod.enum(['pending', 'summary_done', 'flashcards_done', 'completed'])
+}))
+}))
+
+
+/**
+ * @summary Advance a material's progress within the marathon (summary/flashcards/quiz step completed)
+ */
+export const UpdateMarathonMaterialParams = zod.object({
+  "id": zod.coerce.number(),
+  "materialId": zod.coerce.number()
+})
+
+export const UpdateMarathonMaterialBody = zod.object({
+  "status": zod.enum(['pending', 'summary_done', 'flashcards_done', 'completed'])
+})
+
+export const UpdateMarathonMaterialResponse = zod.object({
+  "id": zod.number(),
+  "examDate": zod.coerce.date(),
+  "status": zod.enum(['active', 'completed']),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "materials": zod.array(zod.object({
+  "materialId": zod.number(),
+  "title": zod.string(),
+  "position": zod.number(),
+  "status": zod.enum(['pending', 'summary_done', 'flashcards_done', 'completed'])
+}))
+}))
+
+
+/**
  * @summary List summaries for a material
  */
 export const ListSummariesParams = zod.object({

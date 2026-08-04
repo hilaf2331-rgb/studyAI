@@ -12,6 +12,7 @@ import generateAllRouter from "./generate-all";
 import recordingsRouter from "./recordings";
 import courseMediaRouter from "./course-media";
 import { billingAuthRouter } from "./billing";
+import marathonRouter from "./marathon";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(generateAllRouter);
 router.use(recordingsRouter);
 router.use(courseMediaRouter);
 router.use(billingAuthRouter);
+router.use(marathonRouter);
 
 export default router;

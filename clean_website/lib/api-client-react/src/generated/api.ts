@@ -51,6 +51,9 @@ import type {
   GlossaryTermInput,
   HealthStatus,
   ListMaterialsParams,
+  Marathon,
+  MarathonDetail,
+  MarathonInput,
   Material,
   MaterialInput,
   MaterialReadiness,
@@ -69,6 +72,7 @@ import type {
   TargetedQuestionRequest,
   TokenBalance,
   UpdateFlashcardInput,
+  UpdateMarathonMaterialInput,
   UpdateMaterialInput,
   UpdateQuestionInput,
   WeakConcept
@@ -2022,6 +2026,305 @@ export function useGetUploadProgress<TData = Awaited<ReturnType<typeof getUpload
 
 
 
+
+export const getListMarathonsUrl = () => {
+
+
+
+
+  return `/api/marathon`
+}
+
+/**
+ * @summary List the caller's marathons, most recent first
+ */
+export const listMarathons = async ( options?: RequestInit): Promise<Marathon[]> => {
+
+  return customFetch<Marathon[]>(getListMarathonsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMarathonsQueryKey = () => {
+    return [
+    `/api/marathon`
+    ] as const;
+    }
+
+
+export const getListMarathonsQueryOptions = <TData = Awaited<ReturnType<typeof listMarathons>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMarathons>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMarathonsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMarathons>>> = ({ signal }) => listMarathons({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMarathons>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMarathonsQueryResult = NonNullable<Awaited<ReturnType<typeof listMarathons>>>
+export type ListMarathonsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the caller's marathons, most recent first
+ */
+
+export function useListMarathons<TData = Awaited<ReturnType<typeof listMarathons>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMarathons>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMarathonsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateMarathonUrl = () => {
+
+
+
+
+  return `/api/marathon`
+}
+
+/**
+ * @summary Start a new marathon from a set of already-generated materials
+ */
+export const createMarathon = async (marathonInput: MarathonInput, options?: RequestInit): Promise<MarathonDetail> => {
+
+  return customFetch<MarathonDetail>(getCreateMarathonUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      marathonInput,)
+  }
+);}
+
+
+
+
+export const getCreateMarathonMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMarathon>>, TError,{data: BodyType<MarathonInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMarathon>>, TError,{data: BodyType<MarathonInput>}, TContext> => {
+
+const mutationKey = ['createMarathon'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMarathon>>, {data: BodyType<MarathonInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMarathon(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMarathonMutationResult = NonNullable<Awaited<ReturnType<typeof createMarathon>>>
+    export type CreateMarathonMutationBody = BodyType<MarathonInput>
+    export type CreateMarathonMutationError = ErrorType<void>
+
+    /**
+ * @summary Start a new marathon from a set of already-generated materials
+ */
+export const useCreateMarathon = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMarathon>>, TError,{data: BodyType<MarathonInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMarathon>>,
+        TError,
+        {data: BodyType<MarathonInput>},
+        TContext
+      > => {
+      return useMutation(getCreateMarathonMutationOptions(options));
+    }
+
+export const getGetMarathonUrl = (id: number,) => {
+
+
+
+
+  return `/api/marathon/${id}`
+}
+
+/**
+ * @summary Get a marathon with its ordered materials and per-material progress
+ */
+export const getMarathon = async (id: number, options?: RequestInit): Promise<MarathonDetail> => {
+
+  return customFetch<MarathonDetail>(getGetMarathonUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMarathonQueryKey = (id: number,) => {
+    return [
+    `/api/marathon/${id}`
+    ] as const;
+    }
+
+
+export const getGetMarathonQueryOptions = <TData = Awaited<ReturnType<typeof getMarathon>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarathon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMarathonQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarathon>>> = ({ signal }) => getMarathon(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMarathon>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMarathonQueryResult = NonNullable<Awaited<ReturnType<typeof getMarathon>>>
+export type GetMarathonQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a marathon with its ordered materials and per-material progress
+ */
+
+export function useGetMarathon<TData = Awaited<ReturnType<typeof getMarathon>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarathon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMarathonQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateMarathonMaterialUrl = (id: number,
+    materialId: number,) => {
+
+
+
+
+  return `/api/marathon/${id}/materials/${materialId}`
+}
+
+/**
+ * @summary Advance a material's progress within the marathon (summary/flashcards/quiz step completed)
+ */
+export const updateMarathonMaterial = async (id: number,
+    materialId: number,
+    updateMarathonMaterialInput: UpdateMarathonMaterialInput, options?: RequestInit): Promise<MarathonDetail> => {
+
+  return customFetch<MarathonDetail>(getUpdateMarathonMaterialUrl(id,materialId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateMarathonMaterialInput,)
+  }
+);}
+
+
+
+
+export const getUpdateMarathonMaterialMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMarathonMaterial>>, TError,{id: number;materialId: number;data: BodyType<UpdateMarathonMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMarathonMaterial>>, TError,{id: number;materialId: number;data: BodyType<UpdateMarathonMaterialInput>}, TContext> => {
+
+const mutationKey = ['updateMarathonMaterial'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMarathonMaterial>>, {id: number;materialId: number;data: BodyType<UpdateMarathonMaterialInput>}> = (props) => {
+          const {id,materialId,data} = props ?? {};
+
+          return  updateMarathonMaterial(id,materialId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMarathonMaterialMutationResult = NonNullable<Awaited<ReturnType<typeof updateMarathonMaterial>>>
+    export type UpdateMarathonMaterialMutationBody = BodyType<UpdateMarathonMaterialInput>
+    export type UpdateMarathonMaterialMutationError = ErrorType<void>
+
+    /**
+ * @summary Advance a material's progress within the marathon (summary/flashcards/quiz step completed)
+ */
+export const useUpdateMarathonMaterial = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMarathonMaterial>>, TError,{id: number;materialId: number;data: BodyType<UpdateMarathonMaterialInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMarathonMaterial>>,
+        TError,
+        {id: number;materialId: number;data: BodyType<UpdateMarathonMaterialInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateMarathonMaterialMutationOptions(options));
+    }
 
 export const getListSummariesUrl = (id: number,) => {
 

@@ -382,6 +382,62 @@ export interface BulkDeleteMaterialsResult {
   deletedCount: number;
 }
 
+export type MarathonStatus = typeof MarathonStatus[keyof typeof MarathonStatus];
+
+
+export const MarathonStatus = {
+  active: 'active',
+  completed: 'completed',
+} as const;
+
+export interface Marathon {
+  id: number;
+  examDate: string;
+  status: MarathonStatus;
+  createdAt: string;
+}
+
+export type MarathonMaterialStatus = typeof MarathonMaterialStatus[keyof typeof MarathonMaterialStatus];
+
+
+export const MarathonMaterialStatus = {
+  pending: 'pending',
+  summary_done: 'summary_done',
+  flashcards_done: 'flashcards_done',
+  completed: 'completed',
+} as const;
+
+export interface MarathonMaterial {
+  materialId: number;
+  title: string;
+  position: number;
+  status: MarathonMaterialStatus;
+}
+
+export type MarathonDetail = Marathon & {
+  materials: MarathonMaterial[];
+};
+
+export interface MarathonInput {
+  examDate: string;
+  /** @minItems 1 */
+  materialIds: number[];
+}
+
+export type UpdateMarathonMaterialInputStatus = typeof UpdateMarathonMaterialInputStatus[keyof typeof UpdateMarathonMaterialInputStatus];
+
+
+export const UpdateMarathonMaterialInputStatus = {
+  pending: 'pending',
+  summary_done: 'summary_done',
+  flashcards_done: 'flashcards_done',
+  completed: 'completed',
+} as const;
+
+export interface UpdateMarathonMaterialInput {
+  status: UpdateMarathonMaterialInputStatus;
+}
+
 export type SummarySummaryType = typeof SummarySummaryType[keyof typeof SummarySummaryType];
 
 

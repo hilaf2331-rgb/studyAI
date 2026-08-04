@@ -10,7 +10,7 @@ import { TokenWidget } from "@/components/token-widget";
 import { usePurchaseModal } from "@/lib/purchase-modal";
 import { MiniPlayer } from "@/components/mini-player";
 import { useAudioPlayer } from "@/lib/audio-player-context";
-import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins, Mail, Headphones, HelpCircle } from "lucide-react";
+import { BookOpen, BookText, Home, Moon, Sun, ChevronLeft, ChevronRight, LogOut, Mic, Menu, User as UserIcon, Coins, Mail, Headphones, HelpCircle, Flame } from "lucide-react";
 
 export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [location] = useLocation();
@@ -32,6 +32,7 @@ export const SidebarLayout: React.FC<{ children: React.ReactNode }> = ({ childre
     { href: "/", label: "dashboard", icon: Home },
     { href: "/courses", label: "courses", icon: BookOpen },
     { href: "/materials", label: "materials", icon: BookText },
+    { href: "/marathon/new", label: "marathon", icon: Flame },
     { href: "/podcasts", label: "podcasts", icon: Headphones },
     { href: "/recorder", label: "הקלטות", icon: Mic },
     { href: "/profile", label: "profile", icon: UserIcon },

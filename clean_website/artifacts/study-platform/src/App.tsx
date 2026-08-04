@@ -28,6 +28,8 @@ import { MaterialsPage } from "@/pages/materials";
 import { PodcastsPage } from "@/pages/podcasts";
 import { MaterialNewPage } from "@/pages/material-new";
 import { MaterialDetailPage } from "@/pages/material-detail";
+import { MarathonNewPage } from "@/pages/marathon-new";
+import { MarathonSessionPage } from "@/pages/marathon-session";
 import { SummaryViewPage } from "@/pages/summary-view";
 import { FlashcardStudyPage } from "@/pages/flashcard-study";
 import { DailyReviewPage } from "@/pages/daily-review";
@@ -192,6 +194,8 @@ function AppRoutes() {
         <Route path="/materials/new" component={MaterialNewPage} />
         <Route path="/materials/:id" component={MaterialDetailPage} />
         <Route path="/materials/:id/chat" component={ChatPage} />
+        <Route path="/marathon/new" component={MarathonNewPage} />
+        <Route path="/marathon/:id" component={MarathonSessionPage} />
         <Route path="/summaries/:id" component={SummaryViewPage} />
         <Route path="/review" component={DailyReviewPage} />
         <Route path="/flashcards/:id" component={FlashcardStudyPage} />

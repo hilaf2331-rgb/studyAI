@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   useGetMaterial, useListSummaries, useListFlashcardDecks, useListQuestionSets, useListExams,
   useGenerateSummary, useGenerateFlashcards, useGenerateQuestions,
-  useGetMaterialProgress, useUpdateMaterial, useShareMaterial,
+  useGetMaterialProgress, useShareMaterial,
   useUpdateSummaryStudied, useUpdateFlashcardDeckStudied, useUpdateQuestionSetStudied, useUpdateExamStudied,
   getGetMaterialQueryKey, getListSummariesQueryKey, getListFlashcardDecksQueryKey,
   getListQuestionSetsQueryKey, getListExamsQueryKey, getGetMaterialProgressQueryKey,
@@ -25,13 +25,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ArrowLeft, BookOpen, BrainCircuit, HelpCircle, FileQuestion, MessageSquare, Loader2,
-  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, CalendarClock, Timer, Share2, Copy, Check,
+  Sparkles, CheckCircle2, AlertCircle, Eye, Plus, Flame, Share2, Copy, Check,
   Wand2, TrendingDown
 } from "lucide-react";
 import { Link } from "wouter";
@@ -518,11 +515,6 @@ export const MaterialDetailPage: React.FC = () => {
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListExamsQueryKey(id) }) },
   });
 
-  const [examDatePickerOpen, setExamDatePickerOpen] = useState(false);
-  const updateMaterial = useUpdateMaterial({
-    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMaterialQueryKey(id) }) },
-  });
-
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const shareMaterial = useShareMaterial({
@@ -918,67 +910,27 @@ export const MaterialDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <Card className={`border transition-all ${material.cramMode && material.examDate ? "border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20" : "border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40"}`}>
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                <Timer className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-semibold text-sm">{isRTL ? "מצב מרתון" : "Cram Mode"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isRTL
-                    ? "לקראת מבחן קרוב? סקירה אינטנסיבית של הכרטיסיות עד תאריך המבחן"
-                    : "Studying for an exam soon? Intensive flashcard review until your exam date"}
-                </p>
-              </div>
+      <Card className="border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-900/40">
+        <CardContent className="p-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Flame className="w-4 h-4" />
             </div>
-            <Switch
-              checked={!!material.cramMode}
-              onCheckedChange={(checked) => updateMaterial.mutate({ id, data: { cramMode: checked } })}
-            />
+            <div>
+              <p className="font-semibold text-sm">{isRTL ? "מרתון לימוד" : "Study Marathon"}</p>
+              <p className="text-xs text-muted-foreground">
+                {isRTL
+                  ? "פספסת כמה שיעורים? זקקו את החומר הזה יחד עם עוד קורסים למסע לימוד רציף אחד לפני המבחן"
+                  : "Fell behind on a few lessons? Distill this material together with others into one continuous run before your exam"}
+              </p>
+            </div>
           </div>
-
-          {material.cramMode && (
-            <div className={`flex flex-wrap items-center gap-3 pt-1 ${isRTL ? "flex-row-reverse" : ""}`}>
-              <Popover open={examDatePickerOpen} onOpenChange={setExamDatePickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <CalendarClock className="w-4 h-4" />
-                    {material.examDate
-                      ? new Date(material.examDate).toLocaleDateString(isRTL ? "he-IL" : "en-US")
-                      : (isRTL ? "בחר תאריך מבחן" : "Set exam date")}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align={isRTL ? "end" : "start"} className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={material.examDate ? new Date(material.examDate) : undefined}
-                    onSelect={(date) => {
-                      if (!date) return;
-                      updateMaterial.mutate({ id, data: { examDate: date.toISOString() } });
-                      setExamDatePickerOpen(false);
-                    }}
-                    disabled={{ before: new Date() }}
-                  />
-                </PopoverContent>
-              </Popover>
-
-              {material.examDate && (() => {
-                const examTime = new Date(material.examDate).getTime();
-                const isFuture = examTime > Date.now();
-                const daysLeft = Math.max(0, Math.ceil((examTime - Date.now()) / 86400000));
-                return (
-                  <Badge variant="outline" className="gap-1.5 text-amber-700 dark:text-amber-400 border-amber-400/50">
-                    {isFuture
-                      ? (isRTL ? `המבחן בעוד ${daysLeft} ימים — מצב מרתון פעיל` : `Exam in ${daysLeft} days — Cram Mode active`)
-                      : (isRTL ? "תאריך המבחן עבר" : "Exam date has passed")}
-                  </Badge>
-                );
-              })()}
-            </div>
-          )}
+          <Link href="/marathon/new">
+            <Button variant="outline" size="sm" className="gap-2 shrink-0">
+              <Flame className="w-4 h-4" />
+              {isRTL ? "הוסף למרתון" : "Add to Marathon"}
+            </Button>
+          </Link>
         </CardContent>
       </Card>
 

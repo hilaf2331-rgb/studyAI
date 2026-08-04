@@ -11,3 +11,4 @@ export * from "./recordings";
 export * from "./glossary";
 export * from "./transactions";
 export * from "./course-assets";
+export * from "./marathons";

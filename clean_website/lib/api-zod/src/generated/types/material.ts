@@ -30,6 +30,8 @@ export interface Material {
   flashcardCount?: number;
   questionCount?: number;
   examCount?: number;
+  deckCount?: number;
+  qSetCount?: number;
   wordCount?: number;
   subjectType?: MaterialSubjectType;
   tooShortForGeneration?: boolean;

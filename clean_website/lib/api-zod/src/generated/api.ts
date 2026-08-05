@@ -285,6 +285,8 @@ export const ListMaterialsResponseItem = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "deckCount": zod.number().optional(),
+  "qSetCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
@@ -336,6 +338,8 @@ export const GetMaterialResponse = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "deckCount": zod.number().optional(),
+  "qSetCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
@@ -374,6 +378,8 @@ export const UpdateMaterialResponse = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "deckCount": zod.number().optional(),
+  "qSetCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
@@ -415,6 +421,8 @@ export const ShareMaterialResponse = zod.object({
   "flashcardCount": zod.number().optional(),
   "questionCount": zod.number().optional(),
   "examCount": zod.number().optional(),
+  "deckCount": zod.number().optional(),
+  "qSetCount": zod.number().optional(),
   "wordCount": zod.number().optional(),
   "subjectType": zod.enum(['vocabulary', 'stem', 'history', 'literature', 'law', 'other']).optional(),
   "tooShortForGeneration": zod.boolean().optional(),
@@ -505,7 +513,8 @@ export const GetMaterialProgressResponse = zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
 }).optional().describe('Populated by the standalone exam generation job, which reuses this same result shape\/progress key rather than a separate tracking mechanism.'),
-  "partialFailure": zod.boolean().optional()
+  "partialFailure": zod.boolean().optional(),
+  "exhaustedWarning": zod.boolean().optional().describe('Set on the standalone exam job when the question pool is exhausted and new exams start repeating past questions -- the frontend shows this as a celebratory \"you\'ve covered all the material\" toast rather than an error.')
 }).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })
@@ -540,7 +549,8 @@ export const GetUploadProgressResponse = zod.object({
   "id": zod.number(),
   "questionCount": zod.number()
 }).optional().describe('Populated by the standalone exam generation job, which reuses this same result shape\/progress key rather than a separate tracking mechanism.'),
-  "partialFailure": zod.boolean().optional()
+  "partialFailure": zod.boolean().optional(),
+  "exhaustedWarning": zod.boolean().optional().describe('Set on the standalone exam job when the question pool is exhausted and new exams start repeating past questions -- the frontend shows this as a celebratory \"you\'ve covered all the material\" toast rather than an error.')
 }).optional().describe('Populated incrementally as each generate-all stage (summary, then flashcards, then questions) finishes and is persisted — a poll mid-job may see only some fields set. Fully populated once stage is \"done\".'),
   "error": zod.string().optional().describe('Present once stage is \"error\" — a user-facing failure message.')
 })

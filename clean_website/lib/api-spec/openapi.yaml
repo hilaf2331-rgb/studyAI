@@ -1612,6 +1612,10 @@ components:
           type: integer
         examCount:
           type: integer
+        deckCount:
+          type: integer
+        qSetCount:
+          type: integer
         wordCount:
           type: integer
         subjectType:
@@ -1772,6 +1776,9 @@ components:
             questionCount:
               type: integer
         partialFailure:
+          type: boolean
+        exhaustedWarning:
+          description: Set on the standalone exam job when the question pool is exhausted and new exams start repeating past questions -- the frontend shows this as a celebratory "you've covered all the material" toast rather than an error.
           type: boolean
 
     MaterialInput:

@@ -179,6 +179,8 @@ export interface Material {
   flashcardCount?: number;
   questionCount?: number;
   examCount?: number;
+  deckCount?: number;
+  qSetCount?: number;
   wordCount?: number;
   subjectType?: MaterialSubjectType;
   tooShortForGeneration?: boolean;
@@ -310,6 +312,8 @@ export interface GenerateAllResult {
   /** Populated by the standalone exam generation job, which reuses this same result shape/progress key rather than a separate tracking mechanism. */
   exam?: GenerateAllResultExam;
   partialFailure?: boolean;
+  /** Set on the standalone exam job when the question pool is exhausted and new exams start repeating past questions -- the frontend shows this as a celebratory "you've covered all the material" toast rather than an error. */
+  exhaustedWarning?: boolean;
 }
 
 export interface GenerationProgress {

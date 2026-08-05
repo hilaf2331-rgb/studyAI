@@ -99,4 +99,31 @@ export async function runStartupMigrations(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS transactions_user_id_idx ON transactions (user_id);
   `);
+
+  // Marathon Mode: a cram session distilling several materials into one
+  // continuous run (see routes/marathon.ts).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marathons (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      exam_date timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'active',
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS marathons_user_id_idx ON marathons (user_id);
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marathon_materials (
+      id serial PRIMARY KEY,
+      marathon_id integer NOT NULL REFERENCES marathons(id) ON DELETE CASCADE,
+      material_id integer NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+      position integer NOT NULL,
+      status text NOT NULL DEFAULT 'pending'
+    );
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS marathon_materials_marathon_id_idx ON marathon_materials (marathon_id);
+  `);
 }

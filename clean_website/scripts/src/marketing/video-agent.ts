@@ -178,7 +178,10 @@ async function renderReel(
 async function main() {
   const elevenLabsApiKey = requireEnv("ELEVENLABS_API_KEY");
   const voiceId = requireEnv("ELEVENLABS_VOICE_ID");
-  const modelId = process.env.ELEVENLABS_MODEL_ID ?? DEFAULT_ELEVENLABS_MODEL_ID;
+  // `||` (not `??`) so an empty string -- e.g. ELEVENLABS_MODEL_ID= left
+  // blank in .env, as .env.example itself invites -- also falls back to
+  // the default, instead of sending ElevenLabs an empty model_id.
+  const modelId = process.env.ELEVENLABS_MODEL_ID || DEFAULT_ELEVENLABS_MODEL_ID;
 
   const backlog = loadJson<Backlog>(BACKLOG_PATH);
   const queue = loadJson<Queue>(QUEUE_PATH);

@@ -257,7 +257,9 @@ async function main() {
   const accessToken = requireEnv("META_ACCESS_TOKEN");
   const igUserId = requireEnv("IG_USER_ID");
   const pageId = requireEnv("FB_PAGE_ID");
-  const version = process.env.GRAPH_API_VERSION ?? DEFAULT_GRAPH_API_VERSION;
+  // `||` (not `??`) so GRAPH_API_VERSION= left blank in .env, as
+  // .env.example itself invites, also falls back to the default.
+  const version = process.env.GRAPH_API_VERSION || DEFAULT_GRAPH_API_VERSION;
 
   const backlog = loadJson<Backlog>(BACKLOG_PATH);
   const queue = loadJson<Queue>(QUEUE_PATH);

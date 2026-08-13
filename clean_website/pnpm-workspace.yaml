@@ -4,6 +4,20 @@ packages:
   - lib/integrations/*
   - scripts
 
+# Packages whose install/build scripts pnpm's supply-chain gate would
+# otherwise prompt an interactive "approve-builds" choice for on every new
+# machine (see pnpm approve-builds) -- these are legitimate deps this repo
+# already relies on (Gemini SDK, esbuild's platform binary used by tsx,
+# sharp's native image lib, protobufjs, tesseract.js's worker files),
+# pre-approved here so a fresh clone/install doesn't get stuck waiting on a
+# prompt (or silently deny them, which is what an un-answered prompt does).
+allowBuilds:
+  '@google/genai': true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  tesseract.js: true
+
 autoInstallPeers: false
 
 catalog:

@@ -246,8 +246,8 @@ const MessageBubble: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accent
       <div
         style={{
           position: "absolute",
-          top: 210,
-          right: 90,
+          top: 230,
+          right: 110,
           transform: `scale(${scale}) translateY(${bob}px) rotate(${sway}deg)`,
         }}
       >
@@ -355,6 +355,39 @@ const BrandFooter: React.FC = () => (
   </AbsoluteFill>
 );
 
+// A slow, continuous "handheld camera" drift over the frame -- zoom, pan,
+// and a slight rotation, all riding on their own independent sine waves so
+// the motion never feels like a simple repeating loop. Deliberately subtle:
+// zooming in on a *fixed* canvas (not an oversized one) crops the edges as
+// it goes, so the ranges here are sized to stay clear of the near-edge
+// content that lives inside this wrapper (the message bubble sits in the
+// top-right corner, captions get horizontal padding) -- see the margin
+// math in the commit message for how these bounds were picked. The brand
+// footer is deliberately kept *outside* this wrapper (a fixed watermark
+// that doesn't ride along), both because it sits closest to an edge and
+// because a static logo reads more like a real video overlay.
+const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+
+  const zoom = interpolate(Math.sin(t * 0.25), [-1, 1], [1.04, 1.1]);
+  const panX = Math.sin(t * 0.18 + 1) * 16;
+  const panY = Math.cos(t * 0.15 + 0.5) * 14;
+  const rotate = Math.sin(t * 0.12) * 0.8;
+
+  return (
+    <AbsoluteFill
+      style={{
+        transform: `scale(${zoom}) translate(${panX}px, ${panY}px) rotate(${rotate}deg)`,
+        transformOrigin: "center",
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+};
+
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
@@ -367,19 +400,21 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visu
 
   return (
     <AbsoluteFill>
-      <VibrantBackground theme={colorTheme} />
-      <Sequence durationInFrames={introFrames}>
-        <IntroCard title={title} motif={visualMotif} accentColor={accentColor} />
-      </Sequence>
-      {/* Narration and its captions start only once the intro card has
-          fully faded out, so the two never share the screen. */}
-      <Sequence from={introFrames}>
-        <MessageBubble motif={visualMotif} accentColor={accentColor} />
-        {captions.map((caption, index) => (
-          <CaptionLineKinetic key={index} {...caption} />
-        ))}
-        <Audio src={audioSrc} />
-      </Sequence>
+      <CameraDrift>
+        <VibrantBackground theme={colorTheme} />
+        <Sequence durationInFrames={introFrames}>
+          <IntroCard title={title} motif={visualMotif} accentColor={accentColor} />
+        </Sequence>
+        {/* Narration and its captions start only once the intro card has
+            fully faded out, so the two never share the screen. */}
+        <Sequence from={introFrames}>
+          <MessageBubble motif={visualMotif} accentColor={accentColor} />
+          {captions.map((caption, index) => (
+            <CaptionLineKinetic key={index} {...caption} />
+          ))}
+          <Audio src={audioSrc} />
+        </Sequence>
+      </CameraDrift>
       <BrandFooter />
     </AbsoluteFill>
   );

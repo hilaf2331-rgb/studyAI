@@ -5,13 +5,11 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
-    "ideas:generate": "tsx ./src/marketing/idea-agent.ts",
     "video:sync": "tsx ./src/marketing/video-agent.ts",
     "publish:sync": "tsx ./src/marketing/publish-agent.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^2.9.0",
     "@google-cloud/storage": "^7.21.0",
     "@remotion/bundler": "^4.0.504",
     "@remotion/renderer": "^4.0.504"

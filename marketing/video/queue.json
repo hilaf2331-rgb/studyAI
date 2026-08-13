@@ -1,0 +1,15 @@
+{
+  "schema": {
+    "status": "ready_for_review | published | failed",
+    "idea_id": "matching id from marketing/ideas/backlog.json",
+    "narration_provider": "always \"elevenlabs\" -- which TTS service voiced this video",
+    "rendered_at": "ISO timestamp the Remotion render finished",
+    "updated_at": "ISO timestamp of the last status change",
+    "storage_path": "GCS object path of the rendered mp4, used to re-mint a fresh signed video_url if the previous one expired",
+    "video_url": "time-limited (7-day) signed GCS URL, set once status is ready_for_review",
+    "error": "set once status is failed, the render/upload error message",
+    "instagram_publish": "{ status: container_processing|published|failed, container_id?, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent",
+    "facebook_publish": "{ status: published|failed, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent"
+  },
+  "videos": []
+}

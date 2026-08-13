@@ -1,0 +1,253 @@
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { bundle } from "@remotion/bundler";
+import { renderMedia, selectComposition } from "@remotion/renderer";
+import { uploadMarketingVideo } from "./gcs";
+
+// Repo layout: clean_website/scripts/src/marketing/video-agent.ts -> repo
+// root is four levels up.
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+// Loads secrets (ELEVENLABS_API_KEY, etc.) from clean_website/.env when
+// present, so running this script locally doesn't require exporting every
+// var by hand each time. Never overrides a var already set in the shell/CI
+// environment.
+const ENV_PATH = join(REPO_ROOT, "clean_website/.env");
+if (existsSync(ENV_PATH)) process.loadEnvFile(ENV_PATH);
+
+const BACKLOG_PATH = join(REPO_ROOT, "marketing/ideas/backlog.json");
+const QUEUE_PATH = join(REPO_ROOT, "marketing/video/queue.json");
+const VIDEO_RENDERER_ENTRY = join(REPO_ROOT, "clean_website/artifacts/video-renderer/src/index.ts");
+
+const ELEVENLABS_API_BASE = "https://api.elevenlabs.io";
+// eleven_multilingual_v2 is ElevenLabs' broadest-coverage stable model.
+// Override via ELEVENLABS_MODEL_ID if a newer/better Hebrew model becomes
+// available without needing a code change.
+const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+// Caps how many videos one run renders (TTS + a full Remotion render each),
+// so a single invocation can't burn through ElevenLabs credits or take
+// forever locally.
+const MAX_RENDERS_PER_RUN = 3;
+// Roughly how many characters a caption line holds on screen before
+// wrapping to the next one -- kept short so a vertical-video line never
+// crowds the frame.
+const CAPTION_CHUNK_MAX_CHARS = 42;
+
+interface BacklogIdea {
+  id: string;
+  title: string;
+  channel_hint: string;
+  // The exact words to narrate -- see idea-agent.ts, which writes this
+  // separately from script_or_caption_draft (the full beat-by-beat
+  // production script, which also contains on-screen-text/editing
+  // directions that must NOT be read aloud).
+  voiceover_text?: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+interface Backlog {
+  schema: Record<string, string>;
+  ideas: BacklogIdea[];
+}
+
+type QueueStatus = "ready_for_review" | "published" | "failed";
+
+interface QueueVideo {
+  idea_id: string;
+  status: QueueStatus;
+  narration_provider?: string;
+  rendered_at?: string;
+  updated_at?: string;
+  storage_path?: string;
+  video_url?: string;
+  error?: string;
+}
+
+interface Queue {
+  schema: Record<string, string>;
+  videos: QueueVideo[];
+}
+
+interface ElevenLabsAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+interface ElevenLabsResponse {
+  audio_base64: string;
+  alignment: ElevenLabsAlignment;
+}
+
+interface Caption {
+  text: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
+function loadJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+function saveJson(path: string, data: unknown): void {
+  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} environment variable is required but was not provided.`);
+  return value;
+}
+
+// Calls ElevenLabs' with-timestamps endpoint (rather than the plain TTS
+// endpoint) specifically to get character-level timing back alongside the
+// audio -- that's what lets the on-screen captions in MarketingReel.tsx
+// track the narration instead of guessing at a flat reading speed.
+async function synthesizeNarration(
+  apiKey: string,
+  voiceId: string,
+  modelId: string,
+  text: string,
+): Promise<{ audioBuffer: Buffer; alignment: ElevenLabsAlignment }> {
+  const response = await fetch(`${ELEVENLABS_API_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`, {
+    method: "POST",
+    headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ text, model_id: modelId }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`ElevenLabs with-timestamps failed (${response.status}): ${body ? JSON.stringify(body) : response.statusText}`);
+  }
+  const parsed = body as ElevenLabsResponse | null;
+  if (!parsed?.audio_base64 || !parsed.alignment?.characters?.length) {
+    throw new Error("ElevenLabs response did not include audio + alignment data.");
+  }
+  return { audioBuffer: Buffer.from(parsed.audio_base64, "base64"), alignment: parsed.alignment };
+}
+
+// Groups ElevenLabs' per-character timing into short on-screen caption
+// lines, only breaking at whitespace/punctuation so words never split
+// mid-word, each timed to when those characters are actually spoken.
+function buildCaptions(alignment: ElevenLabsAlignment): Caption[] {
+  const captions: Caption[] = [];
+  let buffer = "";
+  let chunkStart = 0;
+  let lastEnd = 0;
+
+  for (let i = 0; i < alignment.characters.length; i++) {
+    const ch = alignment.characters[i];
+    if (buffer.length === 0) chunkStart = alignment.character_start_times_seconds[i];
+    buffer += ch;
+    lastEnd = alignment.character_end_times_seconds[i];
+
+    const atBreak = /[\s.!?,;:]/.test(ch);
+    if (atBreak && buffer.trim().length >= CAPTION_CHUNK_MAX_CHARS) {
+      captions.push({ text: buffer.trim(), startSeconds: chunkStart, endSeconds: lastEnd });
+      buffer = "";
+    }
+  }
+  if (buffer.trim()) captions.push({ text: buffer.trim(), startSeconds: chunkStart, endSeconds: lastEnd });
+  return captions;
+}
+
+async function renderReel(
+  serveUrl: string,
+  idea: BacklogIdea,
+  audioBuffer: Buffer,
+  alignment: ElevenLabsAlignment,
+  outputPath: string,
+): Promise<void> {
+  const durationInSeconds = alignment.character_end_times_seconds.at(-1) ?? 0;
+  const inputProps = {
+    title: idea.title,
+    captions: buildCaptions(alignment),
+    // Embedding the narration as a data URI skips needing a Remotion
+    // public/ dir per render -- the audio never touches disk except as part
+    // of the final rendered mp4.
+    audioSrc: `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`,
+    durationInSeconds,
+  };
+
+  const composition = await selectComposition({ serveUrl, id: "MarketingReel", inputProps });
+  await renderMedia({ composition, serveUrl, codec: "h264", outputLocation: outputPath, inputProps });
+}
+
+async function main() {
+  const elevenLabsApiKey = requireEnv("ELEVENLABS_API_KEY");
+  const voiceId = requireEnv("ELEVENLABS_VOICE_ID");
+  const modelId = process.env.ELEVENLABS_MODEL_ID ?? DEFAULT_ELEVENLABS_MODEL_ID;
+
+  const backlog = loadJson<Backlog>(BACKLOG_PATH);
+  const queue = loadJson<Queue>(QUEUE_PATH);
+  const queuedIdeaIds = new Set(queue.videos.map((v) => v.idea_id));
+
+  const candidates = backlog.ideas.filter(
+    (i) => i.channel_hint === "video" && i.status === "new" && !queuedIdeaIds.has(i.id),
+  );
+
+  if (candidates.length === 0) {
+    console.log("No new video-flagged ideas waiting to be rendered.");
+    return;
+  }
+
+  console.log("Bundling the Remotion composition...");
+  const serveUrl = await bundle({ entryPoint: VIDEO_RENDERER_ENTRY });
+
+  let rendered = 0;
+  for (const idea of candidates) {
+    if (rendered >= MAX_RENDERS_PER_RUN) break;
+
+    if (!idea.voiceover_text) {
+      console.warn(`Skipping "${idea.title}" (${idea.id}): no voiceover_text -- re-run the idea agent to backfill it, or add it manually.`);
+      continue;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "focusstudy-video-"));
+    const outputPath = join(tempDir, `${idea.id}.mp4`);
+
+    try {
+      console.log(`Synthesizing narration for "${idea.title}" (${idea.id})...`);
+      const { audioBuffer, alignment } = await synthesizeNarration(elevenLabsApiKey, voiceId, modelId, idea.voiceover_text);
+
+      console.log(`Rendering "${idea.title}" (${idea.id})...`);
+      await renderReel(serveUrl, idea, audioBuffer, alignment, outputPath);
+
+      console.log(`Uploading "${idea.title}" (${idea.id})...`);
+      const { storagePath, signedUrl } = await uploadMarketingVideo(idea.id, outputPath);
+
+      queue.videos.push({
+        idea_id: idea.id,
+        status: "ready_for_review",
+        narration_provider: "elevenlabs",
+        rendered_at: new Date().toISOString(),
+        storage_path: storagePath,
+        video_url: signedUrl,
+      });
+      idea.status = "claimed";
+      rendered++;
+      console.log(`"${idea.title}" (${idea.id}) is ready for review: ${signedUrl}`);
+    } catch (error) {
+      console.error(`Failed to render "${idea.title}" (${idea.id}):`, error instanceof Error ? error.message : error);
+      queue.videos.push({
+        idea_id: idea.id,
+        status: "failed",
+        updated_at: new Date().toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      idea.status = "claimed";
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  saveJson(QUEUE_PATH, queue);
+  saveJson(BACKLOG_PATH, backlog);
+}
+
+main().catch((error) => {
+  console.error("video-agent failed:", error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

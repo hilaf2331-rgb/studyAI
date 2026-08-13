@@ -33,6 +33,7 @@ export const RemotionRoot: React.FC = () => {
           captions: [],
           audioSrc: "",
           durationInSeconds: 15,
+          visualMotif: "generic",
         }}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(

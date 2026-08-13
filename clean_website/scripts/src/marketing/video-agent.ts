@@ -39,15 +39,23 @@ const MAX_RENDERS_PER_RUN = 3;
 // crowds the frame.
 const CAPTION_CHUNK_MAX_CHARS = 42;
 
+// Keep in sync with visualMotifSchema in
+// clean_website/artifacts/video-renderer/src/compositions/MarketingReel.tsx.
+const VISUAL_MOTIFS = ["chat", "recording", "flashcards", "summary", "exam", "podcast", "generic"] as const;
+type VisualMotif = (typeof VISUAL_MOTIFS)[number];
+
 interface BacklogIdea {
   id: string;
   title: string;
   channel_hint: string;
-  // The exact words to narrate -- see idea-agent.ts, which writes this
-  // separately from script_or_caption_draft (the full beat-by-beat
-  // production script, which also contains on-screen-text/editing
-  // directions that must NOT be read aloud).
+  // The exact words to narrate -- written separately from
+  // script_or_caption_draft (the full beat-by-beat production script, which
+  // also contains on-screen-text/editing directions that must NOT be read
+  // aloud).
   voiceover_text?: string;
+  // Which floating icon/bubble the reel shows -- see VISUAL_MOTIFS above.
+  // Falls back to "generic" if absent or unrecognized.
+  visual_motif?: string;
   status: string;
   [key: string]: unknown;
 }
@@ -207,6 +215,9 @@ async function renderReel(
   outputPath: string,
 ): Promise<void> {
   const durationInSeconds = alignment.character_end_times_seconds.at(-1) ?? 0;
+  const visualMotif: VisualMotif = VISUAL_MOTIFS.includes(idea.visual_motif as VisualMotif)
+    ? (idea.visual_motif as VisualMotif)
+    : "generic";
   const inputProps = {
     title: idea.title,
     captions: buildCaptions(alignment),
@@ -215,6 +226,7 @@ async function renderReel(
     // of the final rendered mp4.
     audioSrc: `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`,
     durationInSeconds,
+    visualMotif,
   };
 
   const composition = await selectComposition({ serveUrl, id: "MarketingReel", inputProps });

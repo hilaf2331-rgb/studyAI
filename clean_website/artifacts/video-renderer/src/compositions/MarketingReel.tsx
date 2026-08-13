@@ -35,6 +35,12 @@ const captionSchema = z.object({
   words: z.array(wordSchema),
 });
 
+// Which feature the reel is about, so the floating icon/bubble actually
+// reflects the content instead of always showing the same generic glyph.
+// video-agent.ts maps idea.visual_motif to this (falling back to "generic"
+// for anything unrecognized), see VISUAL_MOTIF_ICONS below for the mapping.
+const visualMotifSchema = z.enum(["chat", "recording", "flashcards", "summary", "exam", "podcast", "generic"]);
+
 export const marketingReelSchema = z.object({
   title: z.string(),
   captions: z.array(captionSchema),
@@ -46,9 +52,20 @@ export const marketingReelSchema = z.object({
   // together with INTRO_SECONDS/OUTRO_TAIL_SECONDS below, to size the
   // composition instead of a fixed guessed duration.
   durationInSeconds: z.number(),
+  visualMotif: visualMotifSchema,
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
+
+const VISUAL_MOTIF_ICONS: Record<z.infer<typeof visualMotifSchema>, string> = {
+  chat: "💬",
+  recording: "🎙️",
+  flashcards: "🃏",
+  summary: "📝",
+  exam: "✅",
+  podcast: "🎧",
+  generic: "💡",
+};
 
 // A brief silent title card before the narration starts -- long enough to
 // read the hook, short enough not to drag. Also doubles as how long the
@@ -139,7 +156,7 @@ const VibrantBackground: React.FC = () => {
 // (the signature motion of product-launch-style ads) and gently bobs, then
 // the title pops in a beat after it. Both fade out together at INTRO_SECONDS
 // so the narration/captions never overlap them.
-const IntroCard: React.FC<{ title: string }> = ({ title }) => {
+const IntroCard: React.FC<{ title: string; icon: string }> = ({ title, icon }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const iconPop = spring({ frame, fps, config: { damping: 11, stiffness: 140, mass: 0.6 } });
@@ -169,7 +186,7 @@ const IntroCard: React.FC<{ title: string }> = ({ title }) => {
             fontSize: 100,
           }}
         >
-          💡
+          {icon}
         </div>
         <div
           style={{
@@ -185,6 +202,66 @@ const IntroCard: React.FC<{ title: string }> = ({ title }) => {
           }}
         >
           {title}
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// A floating speech/chat-bubble companion that lives alongside the
+// captions for the whole narration (not just the intro) -- the layered
+// "app UI" element requested on top of plain text-over-background. Pops
+// in with a spring right as the narration starts, then gently bobs and
+// sways for the rest of the video.
+const MessageBubble: React.FC<{ icon: string }> = ({ icon }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const pop = spring({ frame, fps, config: { damping: 10, stiffness: 120, mass: 0.6 } });
+  const scale = interpolate(pop, [0, 1], [0.2, 1]);
+  const t = frame / fps;
+  const bob = Math.sin(t * 1.3) * 14;
+  const sway = Math.sin(t * 0.9 + 1) * 4;
+
+  return (
+    <AbsoluteFill style={{ alignItems: "flex-end" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 210,
+          right: 90,
+          transform: `scale(${scale}) translateY(${bob}px) rotate(${sway}deg)`,
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            width: 128,
+            height: 128,
+            borderRadius: 32,
+            background: "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))",
+            border: "1px solid rgba(255,255,255,0.3)",
+            boxShadow: "0 20px 45px rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 62,
+          }}
+        >
+          {icon}
+          {/* Speech-bubble tail. */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: -14,
+              left: 34,
+              width: 0,
+              height: 0,
+              borderStyle: "solid",
+              borderWidth: "0 18px 18px 0",
+              borderColor: "transparent rgba(255,255,255,0.14) transparent transparent",
+              transform: "rotate(20deg)",
+            }}
+          />
         </div>
       </div>
     </AbsoluteFill>
@@ -263,19 +340,21 @@ const BrandFooter: React.FC = () => (
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
-export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc }) => {
+export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif }) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
+  const icon = VISUAL_MOTIF_ICONS[visualMotif];
 
   return (
     <AbsoluteFill>
       <VibrantBackground />
       <Sequence durationInFrames={introFrames}>
-        <IntroCard title={title} />
+        <IntroCard title={title} icon={icon} />
       </Sequence>
       {/* Narration and its captions start only once the intro card has
           fully faded out, so the two never share the screen. */}
       <Sequence from={introFrames}>
+        <MessageBubble icon={icon} />
         {captions.map((caption, index) => (
           <CaptionLineKinetic key={index} {...caption} />
         ))}

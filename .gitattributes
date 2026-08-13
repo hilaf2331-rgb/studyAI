@@ -1,0 +1,6 @@
+# Normalize line endings to LF in the repo regardless of a contributor's
+# local git config -- without this, Windows checkouts (core.autocrlf=true,
+# a common Git for Windows default) convert tracked text files to CRLF on
+# checkout, so any script that rewrites one with plain LF (e.g. the
+# marketing agents' JSON writes) shows up as a spurious full-file diff.
+* text=auto eol=lf

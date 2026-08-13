@@ -10,6 +10,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/Heebo";
+import { MOTIF_ANIMATIONS } from "./MotifAnimation";
 
 // Loaded once at module scope per Remotion's own guidance (not per-frame) --
 // Heebo is a clean, widely-used Hebrew webfont, bundled so the render never
@@ -64,16 +65,6 @@ export const marketingReelSchema = z.object({
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
-
-const VISUAL_MOTIF_ICONS: Record<z.infer<typeof visualMotifSchema>, string> = {
-  chat: "💬",
-  recording: "🎙️",
-  flashcards: "🃏",
-  summary: "📝",
-  exam: "✅",
-  podcast: "🎧",
-  generic: "💡",
-};
 
 // Each theme is the three background-blob colors, in the same order as the
 // three <div>s in VibrantBackground -- alpha stays fixed per-blob (set
@@ -176,7 +167,11 @@ const VibrantBackground: React.FC<{ theme: z.infer<typeof colorThemeSchema> }> =
 // (the signature motion of product-launch-style ads) and gently bobs, then
 // the title pops in a beat after it. Both fade out together at INTRO_SECONDS
 // so the narration/captions never overlap them.
-const IntroCard: React.FC<{ title: string; icon: string }> = ({ title, icon }) => {
+const IntroCard: React.FC<{ title: string; motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
+  title,
+  motif,
+  accentColor,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const iconPop = spring({ frame, fps, config: { damping: 11, stiffness: 140, mass: 0.6 } });
@@ -187,6 +182,7 @@ const IntroCard: React.FC<{ title: string; icon: string }> = ({ title, icon }) =
   const iconScale = interpolate(iconPop, [0, 1], [0.3, 1]);
   const titleScale = interpolate(titlePop, [0, 1], [0.7, 1]);
   const titleOpacity = interpolate(titlePop, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
+  const MotifIcon = MOTIF_ANIMATIONS[motif];
 
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut }}>
@@ -203,10 +199,9 @@ const IntroCard: React.FC<{ title: string; icon: string }> = ({ title, icon }) =
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 100,
           }}
         >
-          {icon}
+          <MotifIcon color={accentColor} />
         </div>
         <div
           style={{
@@ -233,7 +228,10 @@ const IntroCard: React.FC<{ title: string; icon: string }> = ({ title, icon }) =
 // "app UI" element requested on top of plain text-over-background. Pops
 // in with a spring right as the narration starts, then gently bobs and
 // sways for the rest of the video.
-const MessageBubble: React.FC<{ icon: string }> = ({ icon }) => {
+const MessageBubble: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
+  motif,
+  accentColor,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const pop = spring({ frame, fps, config: { damping: 10, stiffness: 120, mass: 0.6 } });
@@ -241,6 +239,7 @@ const MessageBubble: React.FC<{ icon: string }> = ({ icon }) => {
   const t = frame / fps;
   const bob = Math.sin(t * 1.3) * 14;
   const sway = Math.sin(t * 0.9 + 1) * 4;
+  const MotifIcon = MOTIF_ANIMATIONS[motif];
 
   return (
     <AbsoluteFill style={{ alignItems: "flex-end" }}>
@@ -264,10 +263,9 @@ const MessageBubble: React.FC<{ icon: string }> = ({ icon }) => {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 62,
           }}
         >
-          {icon}
+          <MotifIcon color={accentColor} />
           {/* Speech-bubble tail. */}
           <div
             style={{
@@ -363,18 +361,20 @@ const BrandFooter: React.FC = () => (
 export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme }) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
-  const icon = VISUAL_MOTIF_ICONS[visualMotif];
+  // The motif icon/bubble pick up the theme's first (dominant) blob color,
+  // so they read as part of the same palette rather than a fixed white/gray.
+  const [accentColor] = COLOR_THEMES[colorTheme];
 
   return (
     <AbsoluteFill>
       <VibrantBackground theme={colorTheme} />
       <Sequence durationInFrames={introFrames}>
-        <IntroCard title={title} icon={icon} />
+        <IntroCard title={title} motif={visualMotif} accentColor={accentColor} />
       </Sequence>
       {/* Narration and its captions start only once the intro card has
           fully faded out, so the two never share the screen. */}
       <Sequence from={introFrames}>
-        <MessageBubble icon={icon} />
+        <MessageBubble motif={visualMotif} accentColor={accentColor} />
         {captions.map((caption, index) => (
           <CaptionLineKinetic key={index} {...caption} />
         ))}

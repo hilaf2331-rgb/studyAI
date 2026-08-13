@@ -86,10 +86,17 @@ interface ElevenLabsResponse {
   alignment: ElevenLabsAlignment;
 }
 
+interface Word {
+  text: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
 interface Caption {
   text: string;
   startSeconds: number;
   endSeconds: number;
+  words: Word[];
 }
 
 function loadJson<T>(path: string): T {
@@ -132,28 +139,63 @@ async function synthesizeNarration(
   return { audioBuffer: Buffer.from(parsed.audio_base64, "base64"), alignment: parsed.alignment };
 }
 
-// Groups ElevenLabs' per-character timing into short on-screen caption
-// lines, only breaking at whitespace/punctuation so words never split
-// mid-word, each timed to when those characters are actually spoken.
-function buildCaptions(alignment: ElevenLabsAlignment): Caption[] {
-  const captions: Caption[] = [];
+// First pass of buildCaptions: turns ElevenLabs' per-character timing into
+// per-word timing (splitting on whitespace) -- this is what lets
+// MarketingReel.tsx pop each word in individually, in sync with when it's
+// actually spoken, instead of fading a whole line in at once.
+function buildWords(alignment: ElevenLabsAlignment): Word[] {
+  const words: Word[] = [];
   let buffer = "";
-  let chunkStart = 0;
+  let wordStart = 0;
   let lastEnd = 0;
 
   for (let i = 0; i < alignment.characters.length; i++) {
     const ch = alignment.characters[i];
-    if (buffer.length === 0) chunkStart = alignment.character_start_times_seconds[i];
-    buffer += ch;
+    if (buffer.length === 0) wordStart = alignment.character_start_times_seconds[i];
     lastEnd = alignment.character_end_times_seconds[i];
 
-    const atBreak = /[\s.!?,;:]/.test(ch);
-    if (atBreak && buffer.trim().length >= CAPTION_CHUNK_MAX_CHARS) {
-      captions.push({ text: buffer.trim(), startSeconds: chunkStart, endSeconds: lastEnd });
+    if (/\s/.test(ch)) {
+      if (buffer) words.push({ text: buffer, startSeconds: wordStart, endSeconds: lastEnd });
       buffer = "";
+    } else {
+      buffer += ch;
     }
   }
-  if (buffer.trim()) captions.push({ text: buffer.trim(), startSeconds: chunkStart, endSeconds: lastEnd });
+  if (buffer) words.push({ text: buffer, startSeconds: wordStart, endSeconds: lastEnd });
+  return words;
+}
+
+// Groups words into short on-screen caption lines (~CAPTION_CHUNK_MAX_CHARS
+// each), keeping each word's own timing so a line's words can pop in one at
+// a time as they're spoken, rather than the whole line appearing at once.
+function buildCaptions(alignment: ElevenLabsAlignment): Caption[] {
+  const words = buildWords(alignment);
+  const captions: Caption[] = [];
+  let line: Word[] = [];
+  let lineChars = 0;
+
+  for (const word of words) {
+    line.push(word);
+    lineChars += word.text.length + 1;
+    if (lineChars >= CAPTION_CHUNK_MAX_CHARS) {
+      captions.push({
+        text: line.map((w) => w.text).join(" "),
+        startSeconds: line[0].startSeconds,
+        endSeconds: line[line.length - 1].endSeconds,
+        words: line,
+      });
+      line = [];
+      lineChars = 0;
+    }
+  }
+  if (line.length > 0) {
+    captions.push({
+      text: line.map((w) => w.text).join(" "),
+      startSeconds: line[0].startSeconds,
+      endSeconds: line[line.length - 1].endSeconds,
+      words: line,
+    });
+  }
   return captions;
 }
 

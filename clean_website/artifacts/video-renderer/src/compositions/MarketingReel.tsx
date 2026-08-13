@@ -5,28 +5,34 @@ import {
   Audio,
   Sequence,
   interpolate,
+  spring,
   useCurrentFrame,
   useVideoConfig,
-  Easing,
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/Heebo";
 
 // Loaded once at module scope per Remotion's own guidance (not per-frame) --
 // Heebo is a clean, widely-used Hebrew webfont, bundled so the render never
 // depends on whatever fonts (if any) happen to be installed on the machine
-// running headless Chrome. Restricted to the two weights actually used
-// (700/800) and the hebrew+latin subsets, instead of pulling every weight
-// and subset Heebo ships.
-const { fontFamily } = loadFont("normal", { weights: ["700", "800"], subsets: ["hebrew", "latin"] });
+// running headless Chrome. Restricted to the weights actually used and the
+// hebrew+latin subsets, instead of pulling every weight/subset Heebo ships.
+const { fontFamily } = loadFont("normal", { weights: ["700", "800", "900"], subsets: ["hebrew", "latin"] });
+
+const wordSchema = z.object({
+  text: z.string(),
+  startSeconds: z.number(),
+  endSeconds: z.number(),
+});
 
 // A caption line with the seconds window (from ElevenLabs' character-level
-// alignment, see video-agent.ts) during which it should be on screen,
-// relative to the start of the narration audio -- keeps on-screen text
-// roughly lip-synced instead of a fixed unrelated timer.
+// alignment, see video-agent.ts) during which it should be on screen, plus
+// its own words' individual windows -- lets each word pop in on its own
+// beat instead of the whole line fading in as one block.
 const captionSchema = z.object({
   text: z.string(),
   startSeconds: z.number(),
   endSeconds: z.number(),
+  words: z.array(wordSchema),
 });
 
 export const marketingReelSchema = z.object({
@@ -48,127 +54,191 @@ type Props = z.infer<typeof marketingReelSchema>;
 // read the hook, short enough not to drag. Also doubles as how long the
 // narration/captions are delayed by (see the <Sequence> below), so the
 // title card and the first caption never occupy the screen at once.
-const INTRO_SECONDS = 1.6;
-const FADE_SECONDS = 0.4;
+const INTRO_SECONDS = 1.8;
 const OUTRO_TAIL_SECONDS = 1.2;
 
-// Soft, slowly drifting gradient blobs behind the text -- the "Ken Burns"
-// motion stand-in for videos that have no real footage to pan across, using
-// FocusStudy's own brand navy (#0B1220, the same default HeyGen background
-// color the old pipeline used) so the reel still reads as on-brand.
-const KenBurnsBackground: React.FC = () => {
+// One-directional fade-out ending at endSeconds -- entrances in this
+// composition are all handled by spring() pops instead, so nothing needs a
+// matching fade-in here.
+const useFadeOut = (endSeconds: number, fadeSeconds = 0.35): number => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const progress = interpolate(frame, [0, durationInFrames], [0, 1], {
+  const { fps } = useVideoConfig();
+  const endFrame = endSeconds * fps;
+  const fadeFrames = fadeSeconds * fps;
+  return interpolate(frame, [endFrame - fadeFrames, endFrame], [1, 0], {
+    extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const drift = interpolate(progress, [0, 1], [0, 60], { easing: Easing.inOut(Easing.ease) });
-  const scale = interpolate(progress, [0, 1], [1, 1.18], { easing: Easing.inOut(Easing.ease) });
+};
+
+// Vibrant, continuously-orbiting color wash -- more saturated and alive
+// than a static gradient, closer to the energetic backgrounds of a
+// product-launch ad than FocusStudy's own dashboard navy. Three blobs
+// orbit their own centers at different speeds/radii/phases so the motion
+// never looks like simple one-directional drift or a repeating loop.
+const VibrantBackground: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+
+  const orbit = (speed: number, radius: number, phase: number) => ({
+    x: Math.cos(t * speed + phase) * radius,
+    y: Math.sin(t * speed + phase) * radius,
+  });
+  const a = orbit(0.35, 90, 0);
+  const b = orbit(0.28, 110, 2.1);
+  const c = orbit(0.4, 70, 4.2);
+  const breathe = interpolate(Math.sin(t * 0.6), [-1, 1], [1, 1.12]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#0B1220", overflow: "hidden" }}>
-      <div
-        style={{
-          position: "absolute",
-          width: 1400,
-          height: 1400,
-          borderRadius: "50%",
-          left: -400 + drift,
-          top: -300,
-          background: "radial-gradient(circle, rgba(99,102,241,0.35) 0%, rgba(99,102,241,0) 70%)",
-          transform: `scale(${scale})`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          width: 1200,
-          height: 1200,
-          borderRadius: "50%",
-          right: -350 - drift,
-          bottom: -250,
-          background: "radial-gradient(circle, rgba(56,189,248,0.30) 0%, rgba(56,189,248,0) 70%)",
-          transform: `scale(${scale})`,
-        }}
+      <div style={{ position: "absolute", inset: 0, transform: `scale(${breathe})` }}>
+        <div
+          style={{
+            position: "absolute",
+            width: 1300,
+            height: 1300,
+            borderRadius: "50%",
+            left: -110 + a.x,
+            top: 50 + a.y,
+            background: "radial-gradient(circle, rgba(168,85,247,0.55) 0%, rgba(168,85,247,0) 70%)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1100,
+            height: 1100,
+            borderRadius: "50%",
+            left: -10 + b.x,
+            top: 550 + b.y,
+            background: "radial-gradient(circle, rgba(56,189,248,0.5) 0%, rgba(56,189,248,0) 70%)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1000,
+            height: 1000,
+            borderRadius: "50%",
+            left: 40 + c.x,
+            top: -100 + c.y,
+            background: "radial-gradient(circle, rgba(244,114,182,0.45) 0%, rgba(244,114,182,0) 70%)",
+          }}
+        />
+      </div>
+      {/* Vignette so text stays legible over the brighter, busier colors. */}
+      <AbsoluteFill
+        style={{ background: "radial-gradient(ellipse at center, rgba(11,18,32,0) 30%, rgba(11,18,32,0.75) 100%)" }}
       />
     </AbsoluteFill>
   );
 };
 
-// Fades a block of children in and out around [startSeconds, endSeconds],
-// clamped to the composition's own bounds. The fade is shortened for very
-// short windows (e.g. a one-word caption) so the four breakpoints interpolate
-// requires stay strictly increasing instead of throwing.
-const useWindowOpacity = (startSeconds: number, endSeconds: number): number => {
+// The silent hook: a floating glass icon that pops in with a spring bounce
+// (the signature motion of product-launch-style ads) and gently bobs, then
+// the title pops in a beat after it. Both fade out together at INTRO_SECONDS
+// so the narration/captions never overlap them.
+const IntroCard: React.FC<{ title: string }> = ({ title }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const startFrame = startSeconds * fps;
-  const endFrame = Math.max(endSeconds * fps, startFrame + 1);
-  // Leaves a small gap between the two middle breakpoints even for very
-  // short windows, since interpolate() requires strictly increasing input.
-  const fadeFrames = Math.min(FADE_SECONDS * fps, ((endFrame - startFrame) / 2) * 0.9);
+  const iconPop = spring({ frame, fps, config: { damping: 11, stiffness: 140, mass: 0.6 } });
+  const titlePop = spring({ frame: Math.max(frame - 6, 0), fps, config: { damping: 12, stiffness: 130, mass: 0.7 } });
+  const bob = Math.sin((frame / fps) * 1.8) * 8;
+  const fadeOut = useFadeOut(INTRO_SECONDS, 0.3);
 
-  return interpolate(
-    frame,
-    [startFrame, startFrame + fadeFrames, endFrame - fadeFrames, endFrame],
-    [0, 1, 1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-};
-
-// Only ever on screen during the silent intro (see the top-level layout
-// below, which doesn't render this past INTRO_SECONDS) -- narration and
-// captions start right as this finishes fading out.
-const TitleCard: React.FC<{ title: string }> = ({ title }) => {
-  const opacity = useWindowOpacity(0, INTRO_SECONDS);
-  const frame = useCurrentFrame();
-  const scale = interpolate(frame, [0, 15], [0.92, 1], { extrapolateRight: "clamp" });
+  const iconScale = interpolate(iconPop, [0, 1], [0.3, 1]);
+  const titleScale = interpolate(titlePop, [0, 1], [0.7, 1]);
+  const titleOpacity = interpolate(titlePop, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
 
   return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", padding: 80 }}>
-      <div
-        style={{
-          opacity,
-          transform: `scale(${scale})`,
-          color: "white",
-          fontFamily,
-          fontWeight: 800,
-          fontSize: 92,
-          textAlign: "center",
-          direction: "rtl",
-          lineHeight: 1.25,
-        }}
-      >
-        {title}
+    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 48, padding: 80 }}>
+        <div
+          style={{
+            transform: `scale(${iconScale}) translateY(${bob}px)`,
+            width: 200,
+            height: 200,
+            borderRadius: 44,
+            background: "linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04))",
+            border: "1px solid rgba(255,255,255,0.28)",
+            boxShadow: "0 30px 70px rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 100,
+          }}
+        >
+          💡
+        </div>
+        <div
+          style={{
+            transform: `scale(${titleScale})`,
+            opacity: titleOpacity,
+            color: "white",
+            fontFamily,
+            fontWeight: 900,
+            fontSize: 88,
+            textAlign: "center",
+            direction: "rtl",
+            lineHeight: 1.25,
+          }}
+        >
+          {title}
+        </div>
       </div>
     </AbsoluteFill>
   );
 };
 
-const CaptionLine: React.FC<{ text: string; startSeconds: number; endSeconds: number }> = ({
-  text,
-  startSeconds,
-  endSeconds,
-}) => {
-  const opacity = useWindowOpacity(startSeconds, endSeconds);
-  if (opacity <= 0) return null;
+// One word, popping in with a spring bounce right as it's spoken (per-word
+// timing from ElevenLabs' alignment, relative to this line's own Sequence).
+// Frozen at full size once its spring has run rather than fading back out --
+// words accumulate and the whole line fades out together at the end.
+const KineticWord: React.FC<{ word: { text: string; startSeconds: number; endSeconds: number } }> = ({ word }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const localFrame = frame - word.startSeconds * fps;
+  const pop = spring({ frame: Math.max(localFrame, 0), fps, config: { damping: 12, stiffness: 200, mass: 0.5 } });
+  const scale = interpolate(pop, [0, 1], [0.4, 1]);
+  const opacity = interpolate(pop, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
 
   return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", padding: 100 }}>
+    <span style={{ display: "inline-block", transform: `scale(${scale})`, opacity, marginInline: 8 }}>
+      {word.text}
+    </span>
+  );
+};
+
+const CaptionLineKinetic: React.FC<z.infer<typeof captionSchema>> = ({ startSeconds, endSeconds, words }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const fadeOut = useFadeOut(endSeconds);
+  const startFrame = startSeconds * fps;
+  const endFrame = Math.max(endSeconds * fps, startFrame + 1);
+  const isActive = frame >= startFrame - 2 && frame <= endFrame + 12;
+  if (!isActive) return null;
+
+  return (
+    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", padding: 90 }}>
       <div
         style={{
-          opacity,
-          color: "white",
-          fontFamily,
-          fontWeight: 700,
-          fontSize: 64,
-          textAlign: "center",
+          opacity: fadeOut,
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "center",
           direction: "rtl",
-          lineHeight: 1.4,
-          textShadow: "0 4px 24px rgba(0,0,0,0.45)",
+          fontFamily,
+          fontWeight: 800,
+          fontSize: 66,
+          color: "white",
+          textShadow: "0 6px 28px rgba(0,0,0,0.5)",
+          lineHeight: 1.35,
         }}
       >
-        {text}
+        {words.map((word, index) => (
+          <KineticWord key={index} word={word} />
+        ))}
       </div>
     </AbsoluteFill>
   );
@@ -199,15 +269,15 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc }) =>
 
   return (
     <AbsoluteFill>
-      <KenBurnsBackground />
+      <VibrantBackground />
       <Sequence durationInFrames={introFrames}>
-        <TitleCard title={title} />
+        <IntroCard title={title} />
       </Sequence>
-      {/* Narration and its captions start only once the title card has
+      {/* Narration and its captions start only once the intro card has
           fully faded out, so the two never share the screen. */}
       <Sequence from={introFrames}>
         {captions.map((caption, index) => (
-          <CaptionLine key={index} {...caption} />
+          <CaptionLineKinetic key={index} {...caption} />
         ))}
         <Audio src={audioSrc} />
       </Sequence>

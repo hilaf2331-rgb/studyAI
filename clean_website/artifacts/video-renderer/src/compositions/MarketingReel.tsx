@@ -371,7 +371,16 @@ const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { fps } = useVideoConfig();
   const t = frame / fps;
 
-  const zoom = interpolate(Math.sin(t * 0.25), [-1, 1], [1.04, 1.1]);
+  const ambientZoom = interpolate(Math.sin(t * 0.25), [-1, 1], [1.04, 1.1]);
+  // The hook: starts punched in tight and settles back to the ambient drift
+  // over the first ~0.6s, so the very first frame already reads as "the
+  // camera is moving" instead of easing in gently -- only the centered
+  // intro card (icon+title) is on screen this early, so a bigger punch is
+  // safe here even though the ambient range above is kept much smaller to
+  // avoid clipping the corner message bubble later in the video.
+  const hookSettle = spring({ frame, fps, config: { damping: 14, stiffness: 120, mass: 0.8 } });
+  const hookPunch = interpolate(hookSettle, [0, 1], [0.32, 0]);
+  const zoom = ambientZoom + hookPunch;
   const panX = Math.sin(t * 0.18 + 1) * 16;
   const panY = Math.cos(t * 0.15 + 0.5) * 14;
   const rotate = Math.sin(t * 0.12) * 0.8;

@@ -167,6 +167,90 @@ const VibrantBackground: React.FC<{ theme: z.infer<typeof colorThemeSchema> }> =
 // (the signature motion of product-launch-style ads) and gently bobs, then
 // the title pops in a beat after it. Both fade out together at INTRO_SECONDS
 // so the narration/captions never overlap them.
+// A little browser/app-window mockup that pops open and "loads in" its
+// content (header bar + two text-line bars, staggered), instead of just a
+// static icon -- a stylized stand-in for the actual FocusStudy UI so the
+// hook reads as "this is a real product," not just an abstract glyph. Sits
+// in 3D perspective with a slow, continuous tilt for extra life, and wears
+// a small badge in the corner with the same per-feature motif icon used
+// elsewhere (see MOTIF_ANIMATIONS) so the two visual languages tie together.
+const AppWindowReveal: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
+  motif,
+  accentColor,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+
+  const openPop = spring({ frame, fps, config: { damping: 12, stiffness: 110, mass: 0.7 } });
+  const scale = interpolate(openPop, [0, 1], [0.25, 1]);
+  const headerPop = spring({ frame: Math.max(frame - 10, 0), fps, config: { damping: 12, stiffness: 170, mass: 0.5 } });
+  const line1Pop = spring({ frame: Math.max(frame - 16, 0), fps, config: { damping: 12, stiffness: 170, mass: 0.5 } });
+  const line2Pop = spring({ frame: Math.max(frame - 21, 0), fps, config: { damping: 12, stiffness: 170, mass: 0.5 } });
+  const badgePop = spring({ frame: Math.max(frame - 26, 0), fps, config: { damping: 10, stiffness: 160, mass: 0.5 } });
+  const badgeScale = interpolate(badgePop, [0, 1], [0.2, 1]);
+
+  const tiltX = Math.sin(t * 0.7) * 4;
+  const tiltY = Math.cos(t * 0.55 + 1) * 5;
+  const MotifIcon = MOTIF_ANIMATIONS[motif];
+
+  return (
+    <div style={{ perspective: 1200 }}>
+      <div
+        style={{
+          width: 620,
+          height: 380,
+          position: "relative",
+          transform: `scale(${scale}) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: 26,
+            background: "rgba(255,255,255,0.97)",
+            boxShadow: "0 50px 90px rgba(0,0,0,0.5)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Browser-chrome top bar. */}
+          <div style={{ height: 42, background: "rgba(15,23,42,0.06)", display: "flex", alignItems: "center", gap: 9, paddingInline: 20 }}>
+            <div style={{ width: 13, height: 13, borderRadius: 7, background: "#ef4444" }} />
+            <div style={{ width: 13, height: 13, borderRadius: 7, background: "#f59e0b" }} />
+            <div style={{ width: 13, height: 13, borderRadius: 7, background: "#22c55e" }} />
+          </div>
+          {/* Content "loading in", right-aligned like real Hebrew UI text. */}
+          <div style={{ padding: "30px 34px", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 18 }}>
+            <div style={{ height: 34, width: 240 * headerPop, borderRadius: 8, background: `rgb(${accentColor})` }} />
+            <div style={{ height: 18, width: 420 * line1Pop, borderRadius: 6, background: "rgba(15,23,42,0.16)" }} />
+            <div style={{ height: 18, width: 300 * line2Pop, borderRadius: 6, background: "rgba(15,23,42,0.16)" }} />
+          </div>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            bottom: -26,
+            left: -26,
+            width: 96,
+            height: 96,
+            borderRadius: 26,
+            background: "linear-gradient(135deg, rgba(255,255,255,0.24), rgba(255,255,255,0.06))",
+            border: "1px solid rgba(255,255,255,0.32)",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transform: `scale(${badgeScale})`,
+          }}
+        >
+          <MotifIcon color={accentColor} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const IntroCard: React.FC<{ title: string; motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
   title,
   motif,
@@ -174,35 +258,16 @@ const IntroCard: React.FC<{ title: string; motif: z.infer<typeof visualMotifSche
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const iconPop = spring({ frame, fps, config: { damping: 11, stiffness: 140, mass: 0.6 } });
   const titlePop = spring({ frame: Math.max(frame - 6, 0), fps, config: { damping: 12, stiffness: 130, mass: 0.7 } });
-  const bob = Math.sin((frame / fps) * 1.8) * 8;
   const fadeOut = useFadeOut(INTRO_SECONDS, 0.3);
 
-  const iconScale = interpolate(iconPop, [0, 1], [0.3, 1]);
   const titleScale = interpolate(titlePop, [0, 1], [0.7, 1]);
   const titleOpacity = interpolate(titlePop, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
-  const MotifIcon = MOTIF_ANIMATIONS[motif];
 
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 48, padding: 80 }}>
-        <div
-          style={{
-            transform: `scale(${iconScale}) translateY(${bob}px)`,
-            width: 200,
-            height: 200,
-            borderRadius: 44,
-            background: "linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04))",
-            border: "1px solid rgba(255,255,255,0.28)",
-            boxShadow: "0 30px 70px rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <MotifIcon color={accentColor} />
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 44, padding: 80 }}>
+        <AppWindowReveal motif={motif} accentColor={accentColor} />
         <div
           style={{
             transform: `scale(${titleScale})`,

@@ -44,6 +44,20 @@ const CAPTION_CHUNK_MAX_CHARS = 42;
 const VISUAL_MOTIFS = ["chat", "recording", "flashcards", "summary", "exam", "podcast", "generic"] as const;
 type VisualMotif = (typeof VISUAL_MOTIFS)[number];
 
+// Keep in sync with colorThemeSchema in MarketingReel.tsx.
+const COLOR_THEMES = ["violet", "sunrise", "ocean", "forest", "berry"] as const;
+type ColorTheme = (typeof COLOR_THEMES)[number];
+
+// Deterministically picks a background palette from the idea's own id, so
+// different ideas naturally render with different-feeling backgrounds
+// instead of every video sharing the exact same colors -- without needing
+// anyone (a person or the idea-writing routine) to hand-assign one.
+function pickColorTheme(ideaId: string): ColorTheme {
+  let hash = 0;
+  for (let i = 0; i < ideaId.length; i++) hash = (hash * 31 + ideaId.charCodeAt(i)) >>> 0;
+  return COLOR_THEMES[hash % COLOR_THEMES.length];
+}
+
 interface BacklogIdea {
   id: string;
   title: string;
@@ -227,6 +241,7 @@ async function renderReel(
     audioSrc: `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`,
     durationInSeconds,
     visualMotif,
+    colorTheme: pickColorTheme(idea.id),
   };
 
   const composition = await selectComposition({ serveUrl, id: "MarketingReel", inputProps });

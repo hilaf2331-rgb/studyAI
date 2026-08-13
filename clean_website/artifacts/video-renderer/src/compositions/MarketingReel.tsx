@@ -41,6 +41,13 @@ const captionSchema = z.object({
 // for anything unrecognized), see VISUAL_MOTIF_ICONS below for the mapping.
 const visualMotifSchema = z.enum(["chat", "recording", "flashcards", "summary", "exam", "podcast", "generic"]);
 
+// Which color palette the background wash uses -- video-agent.ts derives
+// this deterministically from the idea's id (see pickColorTheme there), so
+// different ideas naturally get different-feeling videos instead of every
+// reel sharing the exact same purple/blue/pink, without needing a person to
+// hand-pick a palette per video.
+const colorThemeSchema = z.enum(["violet", "sunrise", "ocean", "forest", "berry"]);
+
 export const marketingReelSchema = z.object({
   title: z.string(),
   captions: z.array(captionSchema),
@@ -53,6 +60,7 @@ export const marketingReelSchema = z.object({
   // composition instead of a fixed guessed duration.
   durationInSeconds: z.number(),
   visualMotif: visualMotifSchema,
+  colorTheme: colorThemeSchema,
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
@@ -65,6 +73,17 @@ const VISUAL_MOTIF_ICONS: Record<z.infer<typeof visualMotifSchema>, string> = {
   exam: "✅",
   podcast: "🎧",
   generic: "💡",
+};
+
+// Each theme is the three background-blob colors, in the same order as the
+// three <div>s in VibrantBackground -- alpha stays fixed per-blob (set
+// where each color is used) so only the hue identity changes per theme.
+const COLOR_THEMES: Record<z.infer<typeof colorThemeSchema>, [string, string, string]> = {
+  violet: ["168,85,247", "56,189,248", "244,114,182"],
+  sunrise: ["251,146,60", "244,63,94", "250,204,21"],
+  ocean: ["45,212,191", "59,130,246", "34,211,238"],
+  forest: ["74,222,128", "45,212,191", "163,230,53"],
+  berry: ["217,70,239", "244,63,94", "139,92,246"],
 };
 
 // A brief silent title card before the narration starts -- long enough to
@@ -93,10 +112,11 @@ const useFadeOut = (endSeconds: number, fadeSeconds = 0.35): number => {
 // product-launch ad than FocusStudy's own dashboard navy. Three blobs
 // orbit their own centers at different speeds/radii/phases so the motion
 // never looks like simple one-directional drift or a repeating loop.
-const VibrantBackground: React.FC = () => {
+const VibrantBackground: React.FC<{ theme: z.infer<typeof colorThemeSchema> }> = ({ theme }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
+  const [colorA, colorB, colorC] = COLOR_THEMES[theme];
 
   const orbit = (speed: number, radius: number, phase: number) => ({
     x: Math.cos(t * speed + phase) * radius,
@@ -118,7 +138,7 @@ const VibrantBackground: React.FC = () => {
             borderRadius: "50%",
             left: -110 + a.x,
             top: 50 + a.y,
-            background: "radial-gradient(circle, rgba(168,85,247,0.55) 0%, rgba(168,85,247,0) 70%)",
+            background: `radial-gradient(circle, rgba(${colorA},0.55) 0%, rgba(${colorA},0) 70%)`,
           }}
         />
         <div
@@ -129,7 +149,7 @@ const VibrantBackground: React.FC = () => {
             borderRadius: "50%",
             left: -10 + b.x,
             top: 550 + b.y,
-            background: "radial-gradient(circle, rgba(56,189,248,0.5) 0%, rgba(56,189,248,0) 70%)",
+            background: `radial-gradient(circle, rgba(${colorB},0.5) 0%, rgba(${colorB},0) 70%)`,
           }}
         />
         <div
@@ -140,7 +160,7 @@ const VibrantBackground: React.FC = () => {
             borderRadius: "50%",
             left: 40 + c.x,
             top: -100 + c.y,
-            background: "radial-gradient(circle, rgba(244,114,182,0.45) 0%, rgba(244,114,182,0) 70%)",
+            background: `radial-gradient(circle, rgba(${colorC},0.45) 0%, rgba(${colorC},0) 70%)`,
           }}
         />
       </div>
@@ -340,14 +360,14 @@ const BrandFooter: React.FC = () => (
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
-export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif }) => {
+export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme }) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
   const icon = VISUAL_MOTIF_ICONS[visualMotif];
 
   return (
     <AbsoluteFill>
-      <VibrantBackground />
+      <VibrantBackground theme={colorTheme} />
       <Sequence durationInFrames={introFrames}>
         <IntroCard title={title} icon={icon} />
       </Sequence>

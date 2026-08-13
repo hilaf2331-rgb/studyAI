@@ -34,6 +34,7 @@ export const RemotionRoot: React.FC = () => {
           audioSrc: "",
           durationInSeconds: 15,
           visualMotif: "generic",
+          colorTheme: "violet",
         }}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(

@@ -22,10 +22,14 @@ const QUEUE_PATH = join(REPO_ROOT, "marketing/video/queue.json");
 const VIDEO_RENDERER_ENTRY = join(REPO_ROOT, "clean_website/artifacts/video-renderer/src/index.ts");
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io";
-// eleven_multilingual_v2 is ElevenLabs' broadest-coverage stable model.
-// Override via ELEVENLABS_MODEL_ID if a newer/better Hebrew model becomes
-// available without needing a code change.
-const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+// eleven_multilingual_v2 (ElevenLabs' older broad-coverage model) does not
+// actually cover Hebrew despite being "multilingual" -- it renders Hebrew
+// input as Arabic-sounding speech instead. Confirmed via ElevenLabs' own
+// Speech Synthesis playground: only eleven_v3 produced clean Hebrew for the
+// same voice/text. It costs more per character than v2, but that's still
+// far cheaper than the per-video HeyGen-avatar pricing this pipeline
+// replaced. Override via ELEVENLABS_MODEL_ID if that changes.
+const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_v3";
 // Caps how many videos one run renders (TTS + a full Remotion render each),
 // so a single invocation can't burn through ElevenLabs credits or take
 // forever locally.

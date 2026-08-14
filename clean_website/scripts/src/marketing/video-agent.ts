@@ -182,8 +182,15 @@ async function resolveVoiceName(client: textToSpeechV1beta1.TextToSpeechClient):
 
   const [result] = await client.listVoices({ languageCode: "he-IL" });
   const voices = result.voices ?? [];
-  const tier = (name: string): number =>
-    /Chirp3-HD/.test(name) ? 0 : /Neural2/.test(name) ? 1 : /Wavenet/.test(name) ? 2 : 3;
+  // Deliberately does NOT prefer Chirp3-HD (Google's newest, most natural
+  // tier) despite it sounding best: Chirp/Journey voices don't support SSML
+  // at all, and even Studio voices that do support SSML drop <mark> tags
+  // specifically -- either way, the <mark> timepoints this whole pipeline
+  // depends on for caption/duration timing get silently dropped, which is
+  // what produced a 3-second video (INTRO+OUTRO padding only, durationInSeconds
+  // came back as 0) the first time this ran with an auto-picked Chirp3-HD
+  // voice. Neural2/Wavenet reliably support classic SSML including <mark>.
+  const tier = (name: string): number => (/Neural2/.test(name) ? 0 : /Wavenet/.test(name) ? 1 : 2);
   const [best] = [...voices].sort((a, b) => tier(a.name ?? "") - tier(b.name ?? ""));
 
   if (!best?.name) {
@@ -256,6 +263,17 @@ async function synthesizeNarration(
     throw new Error("Google Cloud Text-to-Speech response did not include audio.");
   }
   const { words, totalDurationSeconds } = buildWordsFromTimepoints(tokens, response.timepoints ?? []);
+  // A voice that doesn't support SSML <mark> (Chirp/Journey, or Studio
+  // specifically for <mark>) silently returns zero/no timepoints instead of
+  // erroring -- catch that here instead of rendering a video sized to just
+  // the intro/outro padding while the full narration plays underneath and
+  // gets cut off. If this fires, GOOGLE_TTS_VOICE_NAME is likely set (or
+  // will resolve) to an unsupported voice; use a Neural2/Wavenet voice.
+  if (totalDurationSeconds <= 0) {
+    throw new Error(
+      `Google Cloud TTS returned no usable <mark> timepoints for voice "${voiceName}" -- it likely doesn't support SSML marks (Chirp3-HD/Journey/Studio voices don't). Use a Neural2 or Wavenet he-IL voice instead.`,
+    );
+  }
   return { audioBuffer: Buffer.from(response.audioContent as Uint8Array), words, totalDurationSeconds };
 }
 

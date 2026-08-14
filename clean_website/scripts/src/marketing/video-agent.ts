@@ -214,7 +214,7 @@ function buildWordsFromTimepoints(
   tokens: string[],
   timepoints: textToSpeechProtos.google.cloud.texttospeech.v1beta1.ITimepoint[],
 ): { words: Word[]; totalDurationSeconds: number } {
-  const starts = new Array(tokens.length).fill(0);
+  const starts: (number | undefined)[] = new Array(tokens.length).fill(undefined);
   let totalDurationSeconds = 0;
 
   for (const tp of timepoints) {
@@ -225,13 +225,33 @@ function buildWordsFromTimepoints(
     const match = /^w(\d+)$/.exec(tp.markName ?? "");
     if (!match) continue;
     const index = Number(match[1]);
-    if (index >= 0 && index < tokens.length) starts[index] = tp.timeSeconds ?? 0;
+    if (index >= 0 && index < tokens.length) starts[index] = tp.timeSeconds ?? undefined;
+  }
+
+  // Google occasionally drops an individual <mark> timepoint from its
+  // response on longer narrations instead of erroring (seen on a ~40-word
+  // idea) -- left as 0, a dropped mark would jump that word (and the whole
+  // caption line it's grouped into) to the very start of the video, so by
+  // the time playback actually reaches where it's spoken, its window has
+  // long since "ended" and it never displays -- exactly what looked like
+  // captions vanishing partway through. Fill any gap by interpolating
+  // between the nearest words on either side that DID get a real timepoint.
+  for (let i = 0; i < starts.length; i++) {
+    if (starts[i] !== undefined) continue;
+    let before = i - 1;
+    while (before >= 0 && starts[before] === undefined) before--;
+    let after = i + 1;
+    while (after < starts.length && starts[after] === undefined) after++;
+    const beforeTime = before >= 0 ? (starts[before] as number) : 0;
+    const afterTime = after < starts.length ? (starts[after] as number) : totalDurationSeconds;
+    const span = after - before;
+    starts[i] = beforeTime + ((afterTime - beforeTime) * (i - before)) / span;
   }
 
   const words = tokens.map((text, i) => ({
     text,
-    startSeconds: starts[i],
-    endSeconds: i + 1 < tokens.length ? starts[i + 1] : totalDurationSeconds,
+    startSeconds: starts[i] as number,
+    endSeconds: i + 1 < tokens.length ? (starts[i + 1] as number) : totalDurationSeconds,
   }));
   return { words, totalDurationSeconds };
 }

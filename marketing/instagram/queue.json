@@ -12,21 +12,25 @@
   "posts": [
     {
       "target_day": "monday",
-      "status": "approved_pending",
-      "caption": "כמה פעמים שכחת מה שלמדת לפני שבוע? הסקירה היומית של Focus Study אוספת לך אוטומטית את כל הכרטיסיות שהגיע זמנן לחזור עליהן — מכל הקורסים, במקום אחד. 5 דקות ביום, וזה נשאר בראש.\n#FocusStudy #לימודים_חכמים #זיכרון_לטווח_ארוך #חזרה_יומית #סטודנטים",
+      "status": "published",
+      "caption": "כמה פעמים שכחת מה שלמדת לפני שבוע? הסקירה היומית של Focus Study אוספת לך אוטומטית את כל הכרטיסיות שהגיע זמנן לחזור עליהן — מכל הקורסים, במקום אחד. 5 דקות ביום, וזה נשאר בראש.\n\n🔗 הקישור בביו\n\n#FocusStudy #לימודים_חכמים #זיכרון_לטווח_ארוך #חזרה_יומית #סטודנטים",
       "image_url": "https://raw.githubusercontent.com/hilaf2331-rgb/studyAI/claude/focus-study-social-automation-bx66q8/marketing/instagram/daily-review-2026-08-17.png",
       "image_prompt": "Flat design vector illustration, isolated on a plain solid white background, a colorful minimal icon scene of a calendar with a checkmark surrounded by a few floating flashcards, clean modern flat style, color palette of teal, orange and soft purple accents, no gradient background, no shadow ground plane, no text, no words, no letters, centered composition, square 1:1, professional SaaS app illustration, high contrast colorful shapes, isolated icon suitable for placing on a light UI mockup. (composited via HTML/CSS with brand headline, USP pills, and CTA in a split visual/text 1080x1080 layout)",
       "source": "feature:clean_website/artifacts/study-platform/src/pages/daily-review.tsx",
-      "created_at": "2026-08-14T14:10:22Z"
+      "created_at": "2026-08-14T14:10:22Z",
+      "published_at": "2026-08-14T14:14:57Z",
+      "instagram_media_id": "18110923610091056"
     },
     {
       "target_day": "wednesday",
-      "status": "approved_pending",
-      "caption": "מקליטים הרצאה — ומקבלים ערכת לימוד שלמה. Focus Study מתמלל אוטומטית עם Whisper, ובונה לך סיכום, כרטיסיות ושאלון תרגול — בלי לכתוב מילה. פשוט להקליט, והשאר קורה לבד.\n#FocusStudy #הקלטת_הרצאות #AI #סיכומים_אוטומטיים #סטודנטים",
+      "status": "published",
+      "caption": "מקליטים הרצאה — ומקבלים ערכת לימוד שלמה. Focus Study מתמלל אוטומטית עם Whisper, ובונה לך סיכום, כרטיסיות ושאלון תרגול — בלי לכתוב מילה. פשוט להקליט, והשאר קורה לבד.\n\n🔗 הקישור בביו\n\n#FocusStudy #הקלטת_הרצאות #AI #סיכומים_אוטומטיים #סטודנטים",
       "image_url": "https://raw.githubusercontent.com/hilaf2331-rgb/studyAI/claude/focus-study-social-automation-bx66q8/marketing/instagram/recorder-2026-08-19.png",
       "image_prompt": "Flat design vector illustration, isolated on a plain solid white background, a colorful minimal icon scene of a microphone with sound waves next to a stack of flashcards and a checklist clipboard, clean modern flat style, color palette of teal, orange and soft purple accents, no gradient background, no shadow ground plane, no text, no words, no letters, centered composition, square 1:1, professional SaaS app illustration, high contrast colorful shapes, isolated icon suitable for placing on a light UI mockup. (composited via HTML/CSS with brand headline, USP pills, and CTA in a split visual/text 1080x1080 layout)",
       "source": "feature:clean_website/artifacts/study-platform/src/pages/recorder.tsx",
-      "created_at": "2026-08-14T14:10:22Z"
+      "created_at": "2026-08-14T14:10:22Z",
+      "published_at": "2026-08-14T14:14:57Z",
+      "instagram_media_id": "18616335037018741"
     }
   ]
 }

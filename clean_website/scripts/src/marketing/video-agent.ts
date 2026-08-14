@@ -4,14 +4,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
-import { v1beta1 as textToSpeechV1beta1, protos as textToSpeechProtos } from "@google-cloud/text-to-speech";
 import { uploadMarketingVideo } from "./gcs";
 
 // Repo layout: clean_website/scripts/src/marketing/video-agent.ts -> repo
 // root is four levels up.
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-// Loads secrets (GCS_CREDENTIALS_JSON, etc.) from clean_website/.env when
+// Loads secrets (ELEVENLABS_API_KEY, etc.) from clean_website/.env when
 // present, so running this script locally doesn't require exporting every
 // var by hand each time. Never overrides a var already set in the shell/CI
 // environment.
@@ -27,11 +26,17 @@ const VIDEO_RENDERER_ENTRY = join(REPO_ROOT, "clean_website/artifacts/video-rend
 const BROLL_DIR = join(REPO_ROOT, "marketing/assets/broll");
 const BROLL_EXTENSIONS = /\.(mp4|mov|webm|mkv)$/i;
 
-const TIMEPOINT_TYPE = textToSpeechProtos.google.cloud.texttospeech.v1beta1.SynthesizeSpeechRequest.TimepointType;
-
+const ELEVENLABS_API_BASE = "https://api.elevenlabs.io";
+// eleven_multilingual_v2 (ElevenLabs' older broad-coverage model) does not
+// actually cover Hebrew despite being "multilingual" -- it renders Hebrew
+// input as Arabic-sounding speech instead. Confirmed via ElevenLabs' own
+// Speech Synthesis playground: only eleven_v3 produced clean Hebrew for the
+// same voice/text. Requires a Starter-tier ($5-6/mo) subscription or above
+// for commercial-use rights -- the free tier is non-commercial only.
+const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_v3";
 // Caps how many videos one run renders (TTS + a full Remotion render each),
-// so a single invocation can't run forever locally or burn through Google
-// Cloud TTS's free tier in one go.
+// so a single invocation can't burn through ElevenLabs credits or take
+// forever locally.
 const MAX_RENDERS_PER_RUN = 3;
 // Roughly how many characters a caption line holds on screen before
 // wrapping to the next one -- kept short so a vertical-video line never
@@ -47,7 +52,7 @@ type VisualMotif = (typeof VISUAL_MOTIFS)[number];
 const COLOR_THEMES = ["violet", "sunrise", "ocean", "forest", "berry"] as const;
 type ColorTheme = (typeof COLOR_THEMES)[number];
 
-// Words Google mispronounces from plain Hebrew script (which has no
+// Words ElevenLabs mispronounces from plain Hebrew script (which has no
 // niqqud/vowel marks, so any TTS engine is just guessing) -- keyed by the
 // exact spelling as written in voiceover_text, valued as the IPA reading
 // that was actually confirmed correct by ear. This list only ever grows
@@ -57,27 +62,23 @@ type ColorTheme = (typeof COLOR_THEMES)[number];
 const PRONUNCIATION_FIXES: Record<string, string> = {
   // "AHYOS" with a light/almost-silent opening ה, sh at the end -- default
   // Hebrew reading (with a tzere) came out as "האיוש" instead. Confirmed
-  // correct via Google's standard SSML <phoneme> tag (unlike ElevenLabs'
-  // v3 inline syntax, this doesn't stutter/repeat the word).
+  // working when the word sits mid-sentence -- as a standalone word right
+  // before a trailing "!", ElevenLabs stuttered and read it twice (once
+  // wrong, once right).
   "היוש": "ahˈjoʃ",
 };
 
-function escapeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// Wraps a word token in an SSML <phoneme> tag if its core Hebrew spelling
-// matches a known PRONUNCIATION_FIXES entry, leaving any attached
-// punctuation (e.g. the trailing "?" in "עליהן?") outside the tag so Google
-// still reads it as sentence punctuation rather than part of the word.
-function applyPronunciationFix(token: string): string {
+// ElevenLabs v3's inline pronunciation syntax is `/IPA/word` (no classic
+// XML <phoneme> tag support on v3). Applied only to the text sent to TTS --
+// buildWords() strips the "/ipa/" prefix back off before anything reaches
+// the screen, so captions still show plain Hebrew.
+function applyPronunciationFixes(text: string): string {
+  let result = text;
   for (const [word, ipa] of Object.entries(PRONUNCIATION_FIXES)) {
-    const pattern = new RegExp(`(?<![\\u0590-\\u05FF])${word}(?![\\u0590-\\u05FF])`);
-    if (pattern.test(token)) {
-      return token.replace(pattern, `<phoneme alphabet="ipa" ph="${ipa}">${word}</phoneme>`);
-    }
+    const pattern = new RegExp(`(?<![\\u0590-\\u05FF])${word}(?![\\u0590-\\u05FF])`, "g");
+    result = result.replace(pattern, `/${ipa}/${word}`);
   }
-  return escapeXml(token);
+  return result;
 }
 
 // Deterministically picks a background palette from the idea's own id, so
@@ -139,6 +140,17 @@ interface Queue {
   videos: QueueVideo[];
 }
 
+interface ElevenLabsAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+interface ElevenLabsResponse {
+  audio_base64: string;
+  alignment: ElevenLabsAlignment;
+}
+
 interface Word {
   text: string;
   startSeconds: number;
@@ -160,169 +172,104 @@ function saveJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
-function getTtsClient(): textToSpeechV1beta1.TextToSpeechClient {
-  // Same service-account credentials as gcs.ts -- one fewer thing to set up,
-  // as long as the "Cloud Text-to-Speech API" is enabled for that project
-  // (Cloud Console -> APIs & Services -> Library).
-  const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
-  return credentialsJson
-    ? new textToSpeechV1beta1.TextToSpeechClient({ credentials: JSON.parse(credentialsJson) })
-    : new textToSpeechV1beta1.TextToSpeechClient();
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} environment variable is required but was not provided.`);
+  return value;
 }
 
-// Picks which Hebrew voice to render with: GOOGLE_TTS_VOICE_NAME if set,
-// otherwise the best quality tier Google's own catalog currently offers for
-// he-IL on this project (Chirp3-HD > Neural2 > Wavenet > Standard). Resolved
-// via listVoices() instead of a hardcoded name so this doesn't silently
-// break (or silently stay stuck on an older tier) as Google's Hebrew
-// lineup changes.
-async function resolveVoiceName(client: textToSpeechV1beta1.TextToSpeechClient): Promise<string> {
-  const override = process.env.GOOGLE_TTS_VOICE_NAME;
-  if (override) return override;
-
-  const [result] = await client.listVoices({ languageCode: "he-IL" });
-  const voices = result.voices ?? [];
-  // Deliberately does NOT prefer Chirp3-HD (Google's newest, most natural
-  // tier) despite it sounding best: Chirp/Journey voices don't support SSML
-  // at all, and even Studio voices that do support SSML drop <mark> tags
-  // specifically -- either way, the <mark> timepoints this whole pipeline
-  // depends on for caption/duration timing get silently dropped, which is
-  // what produced a 3-second video (INTRO+OUTRO padding only, durationInSeconds
-  // came back as 0) the first time this ran with an auto-picked Chirp3-HD
-  // voice. Neural2/Wavenet reliably support classic SSML including <mark>.
-  const tier = (name: string): number => (/Neural2/.test(name) ? 0 : /Wavenet/.test(name) ? 1 : 2);
-  const [best] = [...voices].sort((a, b) => tier(a.name ?? "") - tier(b.name ?? ""));
-
-  if (!best?.name) {
-    throw new Error(
-      "Google Cloud Text-to-Speech returned no he-IL voices -- check that the Text-to-Speech API is enabled for this GCP project.",
-    );
-  }
-  return best.name;
-}
-
-function tokenizeWords(text: string): string[] {
-  return text.split(/\s+/).filter(Boolean);
-}
-
-// Builds per-word start/end times from Google's SSML <mark> timepoints
-// (one "w{index}" mark placed right before each word, plus a trailing
-// "wEnd" mark after the last one) -- Google only reports each mark's start
-// time, so a word's end is just the next word's start (or, for the last
-// word, the wEnd mark).
-function buildWordsFromTimepoints(
-  tokens: string[],
-  timepoints: textToSpeechProtos.google.cloud.texttospeech.v1beta1.ITimepoint[],
-): { words: Word[]; totalDurationSeconds: number } {
-  const starts: (number | undefined)[] = new Array(tokens.length).fill(undefined);
-  let totalDurationSeconds = 0;
-
-  for (const tp of timepoints) {
-    if (tp.markName === "wEnd") {
-      totalDurationSeconds = tp.timeSeconds ?? totalDurationSeconds;
-      continue;
-    }
-    const match = /^w(\d+)$/.exec(tp.markName ?? "");
-    if (!match) continue;
-    const index = Number(match[1]);
-    if (index >= 0 && index < tokens.length) starts[index] = tp.timeSeconds ?? undefined;
-  }
-
-  // Google occasionally drops an individual <mark> timepoint from its
-  // response on longer narrations instead of erroring (seen on a ~40-word
-  // idea) -- left as 0, a dropped mark would jump that word (and the whole
-  // caption line it's grouped into) to the very start of the video, so by
-  // the time playback actually reaches where it's spoken, its window has
-  // long since "ended" and it never displays -- exactly what looked like
-  // captions vanishing partway through. Fill any gap by interpolating
-  // between the nearest words on either side that DID get a real timepoint.
-  for (let i = 0; i < starts.length; i++) {
-    if (starts[i] !== undefined) continue;
-    let before = i - 1;
-    while (before >= 0 && starts[before] === undefined) before--;
-    let after = i + 1;
-    while (after < starts.length && starts[after] === undefined) after++;
-    const beforeTime = before >= 0 ? (starts[before] as number) : 0;
-    const afterTime = after < starts.length ? (starts[after] as number) : totalDurationSeconds;
-    const span = after - before;
-    starts[i] = beforeTime + ((afterTime - beforeTime) * (i - before)) / span;
-  }
-
-  const words = tokens.map((text, i) => ({
-    text,
-    startSeconds: starts[i] as number,
-    endSeconds: i + 1 < tokens.length ? (starts[i + 1] as number) : totalDurationSeconds,
-  }));
-  return { words, totalDurationSeconds };
-}
-
-// Calls Google Cloud Text-to-Speech's v1beta1 synthesizeSpeech with
-// enableTimePointing -- that's the (v1beta1-only) feature that returns back
-// when each <mark> in the SSML was reached, which is what lets the
-// on-screen captions in MarketingReel.tsx track the narration instead of
-// guessing at a flat reading speed.
+// Calls ElevenLabs' with-timestamps endpoint (rather than the plain TTS
+// endpoint) specifically to get character-level timing back alongside the
+// audio -- that's what lets the on-screen captions in MarketingReel.tsx
+// track the narration instead of guessing at a flat reading speed.
 async function synthesizeNarration(
-  client: textToSpeechV1beta1.TextToSpeechClient,
-  voiceName: string,
+  apiKey: string,
+  voiceId: string,
+  modelId: string,
   text: string,
-): Promise<{ audioBuffer: Buffer; words: Word[]; totalDurationSeconds: number }> {
-  const tokens = tokenizeWords(text);
-  if (tokens.length === 0) throw new Error("voiceover_text has no words to synthesize.");
-
-  const marked = tokens.map((token, i) => `<mark name="w${i}"/>${applyPronunciationFix(token)}`);
-  const ssml = `<speak>${marked.join(" ")}<mark name="wEnd"/></speak>`;
-
-  const [response] = await client.synthesizeSpeech({
-    input: { ssml },
-    voice: { languageCode: "he-IL", name: voiceName },
-    audioConfig: { audioEncoding: "MP3" },
-    enableTimePointing: [TIMEPOINT_TYPE.SSML_MARK],
+): Promise<{ audioBuffer: Buffer; alignment: ElevenLabsAlignment }> {
+  const response = await fetch(`${ELEVENLABS_API_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`, {
+    method: "POST",
+    headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ text, model_id: modelId }),
   });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`ElevenLabs with-timestamps failed (${response.status}): ${body ? JSON.stringify(body) : response.statusText}`);
+  }
+  const parsed = body as ElevenLabsResponse | null;
+  if (!parsed?.audio_base64 || !parsed.alignment?.characters?.length) {
+    throw new Error("ElevenLabs response did not include audio + alignment data.");
+  }
+  return { audioBuffer: Buffer.from(parsed.audio_base64, "base64"), alignment: parsed.alignment };
+}
 
-  if (!response.audioContent) {
-    throw new Error("Google Cloud Text-to-Speech response did not include audio.");
+// Undoes applyPronunciationFixes() for display purposes: a word ElevenLabs
+// received as "/ahˈjoʃ/היוש" comes back through the alignment as that same
+// literal string (no internal whitespace, so buildWords treats it as one
+// word) -- strip the "/ipa/" prefix so captions show only "היוש".
+function stripPronunciationAnnotation(word: string): string {
+  const match = /^\/[^/]+\/(.+)$/.exec(word);
+  return match ? match[1] : word;
+}
+
+// First pass of buildCaptions: turns ElevenLabs' per-character timing into
+// per-word timing (splitting on whitespace) -- this is what lets
+// MarketingReel.tsx pop each word in individually, in sync with when it's
+// actually spoken, instead of fading a whole line in at once.
+function buildWords(alignment: ElevenLabsAlignment): Word[] {
+  const words: Word[] = [];
+  let buffer = "";
+  let wordStart = 0;
+  let lastEnd = 0;
+
+  for (let i = 0; i < alignment.characters.length; i++) {
+    const ch = alignment.characters[i];
+    if (buffer.length === 0) wordStart = alignment.character_start_times_seconds[i];
+    lastEnd = alignment.character_end_times_seconds[i];
+
+    if (/\s/.test(ch)) {
+      if (buffer) words.push({ text: stripPronunciationAnnotation(buffer), startSeconds: wordStart, endSeconds: lastEnd });
+      buffer = "";
+    } else {
+      buffer += ch;
+    }
   }
-  const { words, totalDurationSeconds } = buildWordsFromTimepoints(tokens, response.timepoints ?? []);
-  // A voice that doesn't support SSML <mark> (Chirp/Journey, or Studio
-  // specifically for <mark>) silently returns zero/no timepoints instead of
-  // erroring -- catch that here instead of rendering a video sized to just
-  // the intro/outro padding while the full narration plays underneath and
-  // gets cut off. If this fires, GOOGLE_TTS_VOICE_NAME is likely set (or
-  // will resolve) to an unsupported voice; use a Neural2/Wavenet voice.
-  if (totalDurationSeconds <= 0) {
-    throw new Error(
-      `Google Cloud TTS returned no usable <mark> timepoints for voice "${voiceName}" -- it likely doesn't support SSML marks (Chirp3-HD/Journey/Studio voices don't). Use a Neural2 or Wavenet he-IL voice instead.`,
-    );
-  }
-  return { audioBuffer: Buffer.from(response.audioContent as Uint8Array), words, totalDurationSeconds };
+  if (buffer) words.push({ text: stripPronunciationAnnotation(buffer), startSeconds: wordStart, endSeconds: lastEnd });
+  return words;
 }
 
 // Groups words into short on-screen caption lines (~CAPTION_CHUNK_MAX_CHARS
 // each), keeping each word's own timing so a line's words can pop in one at
 // a time as they're spoken, rather than the whole line appearing at once.
-function buildCaptions(words: Word[]): Caption[] {
+function buildCaptions(alignment: ElevenLabsAlignment): Caption[] {
+  const words = buildWords(alignment);
   const captions: Caption[] = [];
   let line: Word[] = [];
   let lineChars = 0;
 
-  const flush = () => {
-    if (line.length === 0) return;
+  for (const word of words) {
+    line.push(word);
+    lineChars += word.text.length + 1;
+    if (lineChars >= CAPTION_CHUNK_MAX_CHARS) {
+      captions.push({
+        text: line.map((w) => w.text).join(" "),
+        startSeconds: line[0].startSeconds,
+        endSeconds: line[line.length - 1].endSeconds,
+        words: line,
+      });
+      line = [];
+      lineChars = 0;
+    }
+  }
+  if (line.length > 0) {
     captions.push({
       text: line.map((w) => w.text).join(" "),
       startSeconds: line[0].startSeconds,
       endSeconds: line[line.length - 1].endSeconds,
       words: line,
     });
-    line = [];
-    lineChars = 0;
-  };
-
-  for (const word of words) {
-    line.push(word);
-    lineChars += word.text.length + 1;
-    if (lineChars >= CAPTION_CHUNK_MAX_CHARS) flush();
   }
-  flush();
   return captions;
 }
 
@@ -330,22 +277,22 @@ async function renderReel(
   serveUrl: string,
   idea: BacklogIdea,
   audioBuffer: Buffer,
-  words: Word[],
-  totalDurationSeconds: number,
+  alignment: ElevenLabsAlignment,
   broll: string | undefined,
   outputPath: string,
 ): Promise<void> {
+  const durationInSeconds = alignment.character_end_times_seconds.at(-1) ?? 0;
   const visualMotif: VisualMotif = VISUAL_MOTIFS.includes(idea.visual_motif as VisualMotif)
     ? (idea.visual_motif as VisualMotif)
     : "generic";
   const inputProps = {
     title: idea.title,
-    captions: buildCaptions(words),
+    captions: buildCaptions(alignment),
     // Embedding the narration as a data URI skips needing a Remotion
     // public/ dir per render -- the audio never touches disk except as part
     // of the final rendered mp4.
     audioSrc: `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`,
-    durationInSeconds: totalDurationSeconds,
+    durationInSeconds,
     visualMotif,
     colorTheme: pickColorTheme(idea.id),
     broll,
@@ -356,9 +303,12 @@ async function renderReel(
 }
 
 async function main() {
-  const ttsClient = getTtsClient();
-  const voiceName = await resolveVoiceName(ttsClient);
-  console.log(`Using Google Cloud TTS voice: ${voiceName}`);
+  const elevenLabsApiKey = requireEnv("ELEVENLABS_API_KEY");
+  const voiceId = requireEnv("ELEVENLABS_VOICE_ID");
+  // `||` (not `??`) so an empty string -- e.g. ELEVENLABS_MODEL_ID= left
+  // blank in .env, as .env.example itself invites -- also falls back to
+  // the default, instead of sending ElevenLabs an empty model_id.
+  const modelId = process.env.ELEVENLABS_MODEL_ID || DEFAULT_ELEVENLABS_MODEL_ID;
 
   const backlog = loadJson<Backlog>(BACKLOG_PATH);
   const queue = loadJson<Queue>(QUEUE_PATH);
@@ -394,11 +344,12 @@ async function main() {
 
     try {
       console.log(`Synthesizing narration for "${idea.title}" (${idea.id})...`);
-      const { audioBuffer, words, totalDurationSeconds } = await synthesizeNarration(ttsClient, voiceName, idea.voiceover_text);
+      const spokenText = applyPronunciationFixes(idea.voiceover_text);
+      const { audioBuffer, alignment } = await synthesizeNarration(elevenLabsApiKey, voiceId, modelId, spokenText);
 
       const broll = pickBrollClip();
       console.log(`Rendering "${idea.title}" (${idea.id})${broll ? ` with broll clip "${broll}"` : ""}...`);
-      await renderReel(serveUrl, idea, audioBuffer, words, totalDurationSeconds, broll, outputPath);
+      await renderReel(serveUrl, idea, audioBuffer, alignment, broll, outputPath);
 
       console.log(`Uploading "${idea.title}" (${idea.id})...`);
       const { storagePath, signedUrl } = await uploadMarketingVideo(idea.id, outputPath);
@@ -406,7 +357,7 @@ async function main() {
       queue.videos.push({
         idea_id: idea.id,
         status: "ready_for_review",
-        narration_provider: "google-cloud-tts",
+        narration_provider: "elevenlabs",
         rendered_at: new Date().toISOString(),
         storage_path: storagePath,
         video_url: signedUrl,

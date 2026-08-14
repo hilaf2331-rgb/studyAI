@@ -3,9 +3,11 @@ import { z } from "zod";
 import {
   AbsoluteFill,
   Audio,
+  OffthreadVideo,
   Sequence,
   interpolate,
   spring,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
@@ -62,6 +64,12 @@ export const marketingReelSchema = z.object({
   durationInSeconds: z.number(),
   visualMotif: visualMotifSchema,
   colorTheme: colorThemeSchema,
+  // Filename (relative to the video-renderer's public dir, which
+  // video-agent.ts points at marketing/assets/broll/) of a real clip the
+  // user dropped in herself -- shown full-bleed behind the intro card when
+  // present. Optional: the intro falls back to the plain VibrantBackground
+  // wash when no clip was available to pick from.
+  broll: z.string().optional(),
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
@@ -251,11 +259,34 @@ const AppWindowReveal: React.FC<{ motif: z.infer<typeof visualMotifSchema>; acce
   );
 };
 
-const IntroCard: React.FC<{ title: string; motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
-  title,
-  motif,
-  accentColor,
-}) => {
+// A real clip the user generated herself (e.g. in Google Flow) and dropped
+// into marketing/assets/broll/ -- shown full-bleed behind the app-window
+// mockup for the intro's duration, so the hook opens on real footage
+// instead of only the procedural gradient wash. Muted (the narration audio
+// is the only soundtrack) and dimmed with the same vignette style as
+// VibrantBackground so the title text on top stays legible regardless of
+// what the clip itself looks like.
+const BrollBackdrop: React.FC<{ filename: string }> = ({ filename }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const fadeIn = spring({ frame, fps, config: { damping: 20, stiffness: 90 } });
+
+  return (
+    <AbsoluteFill style={{ opacity: fadeIn }}>
+      <OffthreadVideo src={staticFile(filename)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      <AbsoluteFill
+        style={{ background: "linear-gradient(180deg, rgba(11,18,32,0.5) 0%, rgba(11,18,32,0.8) 100%)" }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const IntroCard: React.FC<{
+  title: string;
+  motif: z.infer<typeof visualMotifSchema>;
+  accentColor: string;
+  broll?: string;
+}> = ({ title, motif, accentColor, broll }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const titlePop = spring({ frame: Math.max(frame - 6, 0), fps, config: { damping: 12, stiffness: 130, mass: 0.7 } });
@@ -266,6 +297,7 @@ const IntroCard: React.FC<{ title: string; motif: z.infer<typeof visualMotifSche
 
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut }}>
+      {broll ? <BrollBackdrop filename={broll} /> : null}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 44, padding: 80 }}>
         <AppWindowReveal motif={motif} accentColor={accentColor} />
         <div
@@ -465,7 +497,7 @@ const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
-export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme }) => {
+export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme, broll }) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
   // The motif icon/bubble pick up the theme's first (dominant) blob color,
@@ -477,7 +509,7 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visu
       <CameraDrift>
         <VibrantBackground theme={colorTheme} />
         <Sequence durationInFrames={introFrames}>
-          <IntroCard title={title} motif={visualMotif} accentColor={accentColor} />
+          <IntroCard title={title} motif={visualMotif} accentColor={accentColor} broll={broll} />
         </Sequence>
         {/* Narration and its captions start only once the intro card has
             fully faded out, so the two never share the screen. */}

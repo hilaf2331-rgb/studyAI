@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",
+    "@google-cloud/text-to-speech": "^7.0.0",
     "@remotion/bundler": "^4.0.504",
     "@remotion/renderer": "^4.0.504"
   },

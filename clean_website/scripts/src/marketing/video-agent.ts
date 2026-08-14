@@ -48,6 +48,32 @@ type VisualMotif = (typeof VISUAL_MOTIFS)[number];
 const COLOR_THEMES = ["violet", "sunrise", "ocean", "forest", "berry"] as const;
 type ColorTheme = (typeof COLOR_THEMES)[number];
 
+// Words ElevenLabs mispronounces from plain Hebrew script (which has no
+// niqqud/vowel marks, so any TTS engine is just guessing) -- keyed by the
+// exact spelling as written in voiceover_text, valued as the IPA reading
+// that was actually confirmed correct by ear. This list only ever grows
+// reactively: write voiceover_text normally, listen to a render, and if a
+// specific word comes out wrong, add ONE entry here for it. There is no way
+// to pre-guess which slang will need this, so don't try.
+const PRONUNCIATION_FIXES: Record<string, string> = {
+  // "AHYOS" with a light/almost-silent opening ה, sh at the end -- default
+  // Hebrew reading (with a tzere) came out as "האיוש" instead.
+  "היוש": "ahˈjoʃ",
+};
+
+// ElevenLabs v3's inline pronunciation syntax is `/IPA/word` (no classic
+// XML <phoneme> tag support on v3). Applied only to the text sent to TTS --
+// buildWords() strips the "/ipa/" prefix back off before anything reaches
+// the screen, so captions still show plain Hebrew.
+function applyPronunciationFixes(text: string): string {
+  let result = text;
+  for (const [word, ipa] of Object.entries(PRONUNCIATION_FIXES)) {
+    const pattern = new RegExp(`(?<![\\u0590-\\u05FF])${word}(?![\\u0590-\\u05FF])`, "g");
+    result = result.replace(pattern, `/${ipa}/${word}`);
+  }
+  return result;
+}
+
 // Deterministically picks a background palette from the idea's own id, so
 // different ideas naturally render with different-feeling backgrounds
 // instead of every video sharing the exact same colors -- without needing
@@ -161,6 +187,15 @@ async function synthesizeNarration(
   return { audioBuffer: Buffer.from(parsed.audio_base64, "base64"), alignment: parsed.alignment };
 }
 
+// Undoes applyPronunciationFixes() for display purposes: a word ElevenLabs
+// received as "/ahˈjoʃ/היוש" comes back through the alignment as that same
+// literal string (no internal whitespace, so buildWords treats it as one
+// word) -- strip the "/ipa/" prefix so captions show only "היוש".
+function stripPronunciationAnnotation(word: string): string {
+  const match = /^\/[^/]+\/(.+)$/.exec(word);
+  return match ? match[1] : word;
+}
+
 // First pass of buildCaptions: turns ElevenLabs' per-character timing into
 // per-word timing (splitting on whitespace) -- this is what lets
 // MarketingReel.tsx pop each word in individually, in sync with when it's
@@ -177,13 +212,13 @@ function buildWords(alignment: ElevenLabsAlignment): Word[] {
     lastEnd = alignment.character_end_times_seconds[i];
 
     if (/\s/.test(ch)) {
-      if (buffer) words.push({ text: buffer, startSeconds: wordStart, endSeconds: lastEnd });
+      if (buffer) words.push({ text: stripPronunciationAnnotation(buffer), startSeconds: wordStart, endSeconds: lastEnd });
       buffer = "";
     } else {
       buffer += ch;
     }
   }
-  if (buffer) words.push({ text: buffer, startSeconds: wordStart, endSeconds: lastEnd });
+  if (buffer) words.push({ text: stripPronunciationAnnotation(buffer), startSeconds: wordStart, endSeconds: lastEnd });
   return words;
 }
 
@@ -286,7 +321,8 @@ async function main() {
 
     try {
       console.log(`Synthesizing narration for "${idea.title}" (${idea.id})...`);
-      const { audioBuffer, alignment } = await synthesizeNarration(elevenLabsApiKey, voiceId, modelId, idea.voiceover_text);
+      const spokenText = applyPronunciationFixes(idea.voiceover_text);
+      const { audioBuffer, alignment } = await synthesizeNarration(elevenLabsApiKey, voiceId, modelId, spokenText);
 
       console.log(`Rendering "${idea.title}" (${idea.id})...`);
       await renderReel(serveUrl, idea, audioBuffer, alignment, outputPath);

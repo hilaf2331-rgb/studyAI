@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, coursesTable, materialsTable, glossaryTermsTable, courseAssetsTable, questionSetsTable, questionsTable, examsTable } from "@workspace/db";
 import { eq, count, and, inArray } from "drizzle-orm";
 import { deleteCourseAudio } from "../lib/storage";
+import { getOwnedCourseId } from "../lib/course-ownership";
 import {
   CreateCourseBody, UpdateCourseBody, GetCourseParams, UpdateCourseParams, DeleteCourseParams,
   ListGlossaryTermsParams, CreateGlossaryTermParams, CreateGlossaryTermBody,
@@ -133,12 +134,8 @@ router.get("/courses/:id/exam-questions", async (req, res) => {
 // Ownership of the parent course is checked on every glossary route below
 // (not just a glossaryTermsTable.id lookup) since glossary terms have no
 // userId column of their own -- the course is the only link back to the
-// owning user.
-async function getOwnedCourseId(courseId: number, userId: number): Promise<number | null> {
-  const [course] = await db.select({ id: coursesTable.id }).from(coursesTable)
-    .where(and(eq(coursesTable.id, courseId), eq(coursesTable.userId, userId)));
-  return course ? course.id : null;
-}
+// owning user. (getOwnedCourseId now lives in lib/course-ownership.ts so
+// materials.ts/recordings.ts can reuse it when a client supplies a courseId.)
 
 router.get("/courses/:id/glossary", async (req, res) => {
   const userId = req.user!.userId;

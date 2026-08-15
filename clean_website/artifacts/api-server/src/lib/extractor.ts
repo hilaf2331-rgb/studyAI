@@ -10,6 +10,8 @@ import {
 import { Readable } from "stream";
 import FormData from "form-data";
 import fetch from "node-fetch";
+import { lookup } from "dns/promises";
+import { isIP } from "net";
 import { sanitizeExtractedText } from "./sanitize";
 import { probeDurationSeconds, transcodeAndSegment } from "./audio-chunker";
 import { MAX_RECORDING_SECONDS } from "./validation";
@@ -515,12 +517,83 @@ export async function transcribeAudio(
 // either, since some sites nest a sidebar/ad block inside their <main>.
 const BOILERPLATE_TAGS = ["script", "style", "noscript", "iframe", "svg", "form", "nav", "header", "footer", "aside", "button"];
 
+function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return true; // malformed -- fail closed
+  const [a, b] = parts;
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local + cloud metadata (169.254.169.254)
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 carrier-grade NAT
+  return false;
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  if (normalized === "::1" || normalized === "::") return true; // loopback / unspecified
+  if (/^fe[89ab][0-9a-f]:/.test(normalized)) return true; // fe80::/10 link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // fc00::/7 unique local
+  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/); // IPv4-mapped IPv6
+  if (mapped) return isPrivateIPv4(mapped[1]);
+  return false;
+}
+
+function isPrivateIP(ip: string): boolean {
+  const version = isIP(ip);
+  if (version === 4) return isPrivateIPv4(ip);
+  if (version === 6) return isPrivateIPv6(ip);
+  return true; // not a recognizable literal IP -- fail closed
+}
+
+// Blocks SSRF via a user-supplied sourceUrl: only http/https is allowed, and
+// the hostname is resolved via DNS (not just pattern-matched as text) so a
+// public-looking domain that resolves to an internal/loopback/cloud-metadata
+// address is rejected too, not just a literal "http://169.254.169.254/...".
+// Called again on every redirect hop in extractFromUrl below, since a public
+// host can still 30x to an internal address after the initial check passes.
+async function assertSafeUrl(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Invalid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only http/https URLs are supported");
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 literal brackets, e.g. "[::1]"
+  const addresses = isIP(hostname)
+    ? [hostname]
+    : (await lookup(hostname, { all: true })).map((a) => a.address);
+  if (addresses.length === 0 || addresses.some(isPrivateIP)) {
+    throw new Error("This URL points to a restricted network address and cannot be fetched");
+  }
+  return parsed;
+}
+
+const MAX_URL_REDIRECTS = 5;
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+
 export async function extractFromUrl(url: string, onProgress?: ProgressCallback): Promise<ExtractedContent> {
   onProgress?.(20);
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyAI/1.0)" },
-    redirect: "follow",
-  });
+
+  let currentUrl = await assertSafeUrl(url);
+  let res: Awaited<ReturnType<typeof fetch>>;
+  let redirectCount = 0;
+  for (;;) {
+    res = await fetch(currentUrl.toString(), {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyAI/1.0)" },
+      redirect: "manual",
+    });
+    if (!REDIRECT_STATUS_CODES.has(res.status)) break;
+    const location = res.headers.get("location");
+    if (!location) throw new Error(`Redirect response (${res.status}) had no Location header`);
+    if (++redirectCount > MAX_URL_REDIRECTS) throw new Error("Too many redirects");
+    currentUrl = await assertSafeUrl(new URL(location, currentUrl).toString());
+  }
   if (!res.ok) throw new Error(`Failed to fetch URL: ${res.status}`);
   const html = await res.text();
   onProgress?.(60);

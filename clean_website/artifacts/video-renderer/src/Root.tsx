@@ -1,7 +1,14 @@
 import type React from "react";
 import { Composition } from "remotion";
 import { HelloWorld } from "./compositions/HelloWorld";
-import { MarketingReel, marketingReelSchema, INTRO_SECONDS, OUTRO_TAIL_SECONDS } from "./compositions/MarketingReel";
+import {
+  MarketingReel,
+  marketingReelSchema,
+  INTRO_SECONDS,
+  OUTRO_TAIL_SECONDS,
+  HIGHLIGHT_BEAT_SECONDS,
+} from "./compositions/MarketingReel";
+import { TechniqueShowcase, techniqueShowcaseSchema } from "./compositions/TechniqueShowcase";
 
 export const MARKETING_REEL_FPS = 30;
 
@@ -37,12 +44,30 @@ export const RemotionRoot: React.FC = () => {
           colorTheme: "violet",
           broll: undefined,
           sfx: undefined,
+          keyPhrase: undefined,
         }}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(
-            (INTRO_SECONDS + props.durationInSeconds + OUTRO_TAIL_SECONDS) * MARKETING_REEL_FPS,
+            (INTRO_SECONDS +
+              (props.keyPhrase ? HIGHLIGHT_BEAT_SECONDS : 0) +
+              props.durationInSeconds +
+              OUTRO_TAIL_SECONDS) *
+              MARKETING_REEL_FPS,
           ),
         })}
+      />
+      {/* Evidence/preview composition for the remotion-video-editing
+          skill's terminal-inserts and article-highlights techniques -- see
+          TechniqueShowcase.tsx. Not part of the video-agent.ts render path. */}
+      <Composition
+        id="TechniqueShowcase"
+        component={TechniqueShowcase}
+        fps={30}
+        width={1080}
+        height={1920}
+        durationInFrames={30 * 10}
+        schema={techniqueShowcaseSchema}
+        defaultProps={{ accentColor: "45,212,191" }}
       />
     </>
   );

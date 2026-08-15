@@ -1,136 +1,186 @@
 import type React from "react";
-import { useLayoutEffect, useRef, useState } from "react";
-import rough from "roughjs";
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { useMemo } from "react";
+import rough from "roughjs/bin/rough";
+import type { Op, OpSet } from "roughjs/bin/core";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 
-// An editorial/news-card style callout -- a lighter, more "human" beat to
-// break up the vibrant gradient look elsewhere in the reel, styled like a
-// screenshot of a real article with a highlighter mark drawn under the key
-// phrase (the way you'd mark up a printout by hand). Built with roughjs
-// instead of a plain CSS underline/box specifically so the mark reads as
-// hand-drawn -- imperfect, slightly wobbly -- rather than a machine-generated
-// rectangle, which is what makes this style recognizable in the first place.
-//
-// The highlight itself is measured, not guessed: a useLayoutEffect reads the
-// actual rendered size of the highlighted span (fonts/kerning make character
-// counting unreliable) and only then draws the roughjs annotation, sized and
-// positioned to match. useLayoutEffect (not useEffect) matters here --  it
-// runs synchronously before the browser paints, so by the time Remotion
-// captures this frame the measurement has already happened; useEffect would
-// risk Remotion grabbing a frame before the highlight ever appears.
-export interface ArticleHighlightCardProps {
-  eyebrow: string; // small category label above the headline, e.g. "FEATURE"
-  headline: string; // the full headline text
-  highlightedPhrase: string; // must be an exact substring of headline -- gets the hand-drawn mark
-  accentColor: string; // "r,g,b" -- same format as COLOR_THEMES entries
+// Technique 4 ("article-highlights") from the remotion-video-editing skill
+// -- an editorial/news-style card with a hand-drawn highlighter stroke over
+// the key phrase, a blur-in entrance, and a subtle 3D settle.
+
+interface ArticleHighlightCardProps {
+  kicker: string; // small label above the headline, e.g. a section/category tag
+  headline: string;
+  body?: string;
+  highlightPhrase: string; // must appear verbatim inside `headline`
+  accentColor: string; // "r,g,b"
+  width?: number;
 }
 
-// Fixed (not random) seed -- roughjs uses it to pick the specific "wobble"
-// of the hand-drawn line. A random seed would make the mark redraw
-// differently every frame, which reads as flickering/jittery instead of a
-// single confident highlighter stroke.
-const HIGHLIGHT_SEED = 7412;
+// roughjs's generator calls Math.random() internally for its "sketchy"
+// jitter unless given a fixed seed -- Remotion keeps this component mounted
+// for the composition's whole duration and re-renders it every frame (only
+// useCurrentFrame() changes), so an unseeded generator would redraw a
+// *different* wobbly line on every single frame, reading as a flickering
+// scribble instead of one stroke. The seed's exact value doesn't matter,
+// only that it's fixed, so the same shape comes out every render.
+const ROUGH_SEED = 7412;
+
+// Converts a roughjs OpSet (move/lineTo/bcurveTo commands) into a plain SVG
+// path `d` string. Using the no-DOM generator (rough/bin/rough's
+// `generator()`) instead of rough/bin/svg's DOM-attaching API, because we
+// need the raw path data ourselves to drive a strokeDasharray "draw-on"
+// reveal keyed to the video's frame -- rough/svg would hand us a finished
+// <path> node with no reveal control.
+function opSetToPathD(opSet: OpSet): string {
+  return opSet.ops
+    .map((op: Op) => {
+      switch (op.op) {
+        case "move":
+          return `M${op.data[0]} ${op.data[1]}`;
+        case "lineTo":
+          return `L${op.data[0]} ${op.data[1]}`;
+        case "bcurveTo":
+          return `C${op.data[0]} ${op.data[1]}, ${op.data[2]} ${op.data[3]}, ${op.data[4]} ${op.data[5]}`;
+        default:
+          return "";
+      }
+    })
+    .join(" ");
+}
+
+// A generous overestimate of the rough rectangle's own path length, in its
+// normalized 0-100/0-34 coordinate space (see viewBox below) -- exact
+// length isn't worth computing here since the dash pattern is a single
+// [length, length] pair: any value at or above the true length draws the
+// same "line appears, then nothing" reveal, just with more empty gap
+// budgeted after it, which is invisible either way.
+const DASH_LENGTH = 420;
+
+// Builds the rough "highlighter" shape once (empty deps -- the geometry is
+// fully deterministic given ROUGH_SEED, nothing here varies per prop)
+// rather than re-running roughjs's generator every frame. Only extracts
+// *geometry*: paint (color/width) is applied on the <path> element itself
+// where this is used, since generator.rectangle()'s own stroke/fill options
+// only matter to roughjs's own canvas/svg renderers, which opSetToPathD
+// bypasses entirely.
+function useHighlighterPath(): string {
+  return useMemo(() => {
+    const generator = rough.generator();
+    // A slightly-overlapping double-pass rectangle (roughjs's own
+    // "roughness" already draws each edge more than once) reads as a real
+    // highlighter mark -- a single clean stroke looks too much like a
+    // plain underline.
+    const drawable = generator.rectangle(2, 4, 96, 26, {
+      seed: ROUGH_SEED,
+      roughness: 2.2,
+      bowing: 1.5,
+    });
+    return drawable.sets.map(opSetToPathD).join(" ");
+  }, []);
+}
 
 export const ArticleHighlightCard: React.FC<ArticleHighlightCardProps> = ({
-  eyebrow,
+  kicker,
   headline,
-  highlightedPhrase,
+  body,
+  highlightPhrase,
   accentColor,
+  width = 760,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const highlightRef = useRef<HTMLSpanElement>(null);
-  const [highlightBox, setHighlightBox] = useState<{ width: number; height: number } | null>(null);
 
-  useLayoutEffect(() => {
-    const el = highlightRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setHighlightBox({ width: rect.width, height: rect.height });
-  }, [headline, highlightedPhrase]);
-
-  const entrance = spring({ frame, fps, config: { damping: 18, stiffness: 110, mass: 0.8 } });
-  const blurPx = interpolate(entrance, [0, 1], [18, 0], { extrapolateRight: "clamp" });
+  const entrance = spring({ frame, fps, config: { damping: 14, stiffness: 120, mass: 0.8 } });
+  const scale = interpolate(entrance, [0, 1], [0.9, 1]);
   const opacity = interpolate(entrance, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
-  const scale = interpolate(entrance, [0, 1], [0.94, 1]);
+  const blurPx = interpolate(entrance, [0, 1], [14, 0], { extrapolateLeft: "clamp" });
+  const rotateY = interpolate(entrance, [0, 1], [6, 0]);
 
-  // The same slow, continuous tilt used elsewhere (AppWindowReveal) so this
-  // card reads as part of the same visual family instead of a flat insert.
-  const t = frame / fps;
-  const tiltX = Math.sin(t * 0.6) * 2.5;
-  const tiltY = Math.cos(t * 0.5 + 1) * 3;
+  // Highlighter stroke starts drawing a beat after the card itself has
+  // mostly settled -- reads as "the pen underlines it" after the text has
+  // already appeared, not simultaneously with the card popping in.
+  const strokeStart = 14;
+  const strokeReveal = interpolate(frame, [strokeStart, strokeStart + 16], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const dashOffset = interpolate(strokeReveal, [0, 1], [DASH_LENGTH, 0]);
 
-  // Highlighter mark pops in a beat after the card itself, once the phrase
-  // it's marking is actually on screen and measured.
-  const highlightPop = spring({ frame: Math.max(frame - 10, 0), fps, config: { damping: 14, stiffness: 140, mass: 0.6 } });
+  const pathD = useHighlighterPath();
 
-  const [before, after] = headline.includes(highlightedPhrase)
-    ? headline.split(highlightedPhrase)
-    : [headline, ""];
+  const headlineParts = headline.split(highlightPhrase);
+  // If highlightPhrase isn't actually found inside headline, fall back to
+  // showing the plain headline with no highlight rather than silently
+  // dropping the phrase -- a caller typo shouldn't produce a card that's
+  // missing words.
+  const hasHighlight = headlineParts.length > 1;
 
   return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", padding: 90 }}>
+    <div style={{ perspective: 1400 }}>
       <div
         style={{
-          transform: `perspective(1200px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) scale(${scale})`,
-          filter: `blur(${blurPx}px)`,
+          width,
+          transform: `scale(${scale}) rotateY(${rotateY}deg)`,
           opacity,
-          background: "white",
-          borderRadius: 22,
-          padding: "48px 52px",
-          boxShadow: "0 40px 80px rgba(0,0,0,0.35)",
-          maxWidth: 820,
+          filter: `blur(${blurPx}px)`,
         }}
       >
         <div
           style={{
-            color: `rgb(${accentColor})`,
-            fontWeight: 800,
-            fontSize: 22,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-            marginBottom: 18,
+            background: "rgba(255,255,255,0.98)",
+            borderRadius: 24,
+            boxShadow: "0 50px 90px rgba(0,0,0,0.5)",
+            padding: "40px 44px",
+            direction: "rtl",
+            textAlign: "right",
           }}
         >
-          {eyebrow}
-        </div>
-        <div style={{ fontSize: 46, fontWeight: 800, lineHeight: 1.3, color: "#0f172a", direction: "rtl" }}>
-          {before}
-          <span ref={highlightRef} style={{ position: "relative", display: "inline-block" }}>
-            {highlightBox ? (
-              <svg
-                width={highlightBox.width + 16}
-                height={highlightBox.height + 14}
-                style={{
-                  position: "absolute",
-                  left: -8,
-                  top: -6,
-                  pointerEvents: "none",
-                  opacity: interpolate(highlightPop, [0, 1], [0, 1], { extrapolateLeft: "clamp" }),
-                }}
-                ref={(svgEl) => {
-                  if (!svgEl) return;
-                  svgEl.innerHTML = "";
-                  const rc = rough.svg(svgEl);
-                  const progress = interpolate(highlightPop, [0, 1], [0, 1], { extrapolateLeft: "clamp" });
-                  const drawnWidth = (highlightBox.width + 16) * progress;
-                  const node = rc.rectangle(2, 2, Math.max(drawnWidth - 4, 0), highlightBox.height + 10, {
-                    seed: HIGHLIGHT_SEED,
-                    roughness: 1.8,
-                    strokeWidth: 6,
-                    stroke: `rgb(${accentColor})`,
-                    fill: `rgba(${accentColor},0.14)`,
-                    fillStyle: "solid",
-                  });
-                  svgEl.appendChild(node);
-                }}
-              />
-            ) : null}
-            {highlightedPhrase}
-          </span>
-          {after}
+          <div
+            style={{
+              color: `rgb(${accentColor})`,
+              fontWeight: 700,
+              fontSize: 22,
+              letterSpacing: 0.5,
+              marginBottom: 14,
+            }}
+          >
+            {kicker}
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 44, lineHeight: 1.35, color: "#0f172a" }}>
+            {hasHighlight ? (
+              <>
+                {headlineParts[0]}
+                <span style={{ position: "relative", display: "inline-block" }}>
+                  {highlightPhrase}
+                  <svg
+                    viewBox="0 0 100 34"
+                    preserveAspectRatio="none"
+                    style={{ position: "absolute", inset: "-6px -8px", width: "calc(100% + 16px)", height: "calc(100% + 12px)" }}
+                  >
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke={`rgba(${accentColor},0.9)`}
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray={DASH_LENGTH}
+                      strokeDashoffset={dashOffset}
+                    />
+                  </svg>
+                </span>
+                {headlineParts.slice(1).join(highlightPhrase)}
+              </>
+            ) : (
+              headline
+            )}
+          </div>
+          {body ? (
+            <div style={{ marginTop: 18, fontSize: 26, lineHeight: 1.6, color: "rgba(15,23,42,0.72)" }}>{body}</div>
+          ) : null}
         </div>
       </div>
-    </AbsoluteFill>
+    </div>
   );
 };

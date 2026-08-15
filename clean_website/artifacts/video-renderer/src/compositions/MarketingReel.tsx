@@ -13,6 +13,7 @@ import {
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/Heebo";
 import { MOTIF_ANIMATIONS } from "./MotifAnimation";
+import { ArticleHighlightCard } from "./ArticleHighlightCard";
 
 // Loaded once at module scope per Remotion's own guidance (not per-frame) --
 // Heebo is a clean, widely-used Hebrew webfont, bundled so the render never
@@ -83,6 +84,14 @@ export const marketingReelSchema = z.object({
       whoosh: z.string(),
     })
     .optional(),
+  // The exact phrase inside `title` to underline with the rough.js
+  // highlighter stroke during the HighlightBeat (Technique 4 of the
+  // remotion-video-editing skill). video-agent.ts sources this from the
+  // idea's own key_phrase field -- optional and deliberately NOT defaulted
+  // to some auto-picked word, per the skill's authenticity gate: a video
+  // with no real designated phrase skips the beat entirely (see
+  // MarketingReel below) rather than showing a highlight over a guess.
+  keyPhrase: z.string().optional(),
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
@@ -104,6 +113,12 @@ const COLOR_THEMES: Record<z.infer<typeof colorThemeSchema>, [string, string, st
 // title card and the first caption never occupy the screen at once.
 const INTRO_SECONDS = 1.8;
 const OUTRO_TAIL_SECONDS = 1.2;
+// How long the HighlightBeat (Technique 4 -- ArticleHighlightCard) holds the
+// screen when a video has a keyPhrase. Long enough to read the headline and
+// see the highlighter stroke finish drawing (ArticleHighlightCard's own
+// reveal runs ~30 frames / 1s at 30fps), short enough to stay a "beat" and
+// not compete with the narration for attention.
+const HIGHLIGHT_BEAT_SECONDS = 1.8;
 
 // One-directional fade-out ending at endSeconds -- entrances in this
 // composition are all handled by spring() pops instead, so nothing needs a
@@ -355,6 +370,27 @@ const IntroCard: React.FC<{
   );
 };
 
+// Technique 4 (ArticleHighlightCard) as an actual beat in the reel, not
+// just a demo -- sits between the intro card fading out and the narration
+// starting, so the video's headline gets one more moment on screen with its
+// key phrase visibly underlined, before the captions take over telling the
+// same story in motion. Only rendered when the caller has a real keyPhrase
+// (see marketingReelSchema) -- no beat at all, rather than a highlight over
+// an auto-picked word, when there isn't one.
+const HighlightBeat: React.FC<{ title: string; keyPhrase: string; accentColor: string }> = ({
+  title,
+  keyPhrase,
+  accentColor,
+}) => {
+  const fadeOut = useFadeOut(HIGHLIGHT_BEAT_SECONDS, 0.3);
+
+  return (
+    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut, padding: 70 }}>
+      <ArticleHighlightCard kicker="FocusStudy" headline={title} highlightPhrase={keyPhrase} accentColor={accentColor} />
+    </AbsoluteFill>
+  );
+};
+
 // A floating speech/chat-bubble companion that lives alongside the
 // captions for the whole narration (not just the intro) -- the layered
 // "app UI" element requested on top of plain text-over-background. Pops
@@ -543,9 +579,20 @@ const CameraDrift: React.FC<{ children: React.ReactNode; sfx?: Props["sfx"] }> =
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
-export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme, broll, sfx }) => {
+export const MarketingReel: React.FC<Props> = ({
+  title,
+  captions,
+  audioSrc,
+  visualMotif,
+  colorTheme,
+  broll,
+  sfx,
+  keyPhrase,
+}) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
+  const highlightFrames = keyPhrase ? Math.round(HIGHLIGHT_BEAT_SECONDS * fps) : 0;
+  const narrationStartFrame = introFrames + highlightFrames;
   // The motif icon/bubble pick up the theme's first (dominant) blob color,
   // so they read as part of the same palette rather than a fixed white/gray.
   const [accentColor] = COLOR_THEMES[colorTheme];
@@ -557,9 +604,17 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visu
         <Sequence durationInFrames={introFrames}>
           <IntroCard title={title} motif={visualMotif} accentColor={accentColor} broll={broll} sfx={sfx} />
         </Sequence>
-        {/* Narration and its captions start only once the intro card has
-            fully faded out, so the two never share the screen. */}
-        <Sequence from={introFrames}>
+        {/* See marketingReelSchema.keyPhrase -- skipped entirely (zero
+            duration) when there's no real phrase to highlight. */}
+        {keyPhrase ? (
+          <Sequence from={introFrames} durationInFrames={highlightFrames}>
+            <HighlightBeat title={title} keyPhrase={keyPhrase} accentColor={accentColor} />
+          </Sequence>
+        ) : null}
+        {/* Narration and its captions start only once the intro card (and,
+            if present, the highlight beat) has fully faded out, so none of
+            the three ever share the screen. */}
+        <Sequence from={narrationStartFrame}>
           <MessageBubble motif={visualMotif} accentColor={accentColor} sfx={sfx} />
           {captions.map((caption, index) => (
             <CaptionLineKinetic key={index} {...caption} />
@@ -572,4 +627,4 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visu
   );
 };
 
-export { INTRO_SECONDS, OUTRO_TAIL_SECONDS };
+export { INTRO_SECONDS, OUTRO_TAIL_SECONDS, HIGHLIGHT_BEAT_SECONDS };

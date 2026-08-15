@@ -6,6 +6,7 @@
     "trend_reference": "optional -- which researched social trend (see marketing/trends/*.md) the script is modeled on",
     "voiceover_text": "optional -- exact words for the narration voice to speak (no stage directions), used by the video-agent",
     "visual_motif": "optional, channel_hint:\"video\" only -- chat | recording | flashcards | summary | exam | podcast | generic. Picks the floating icon/bubble the rendered reel shows; falls back to generic if absent",
+    "key_phrase": "optional, channel_hint:\"video\" only -- an exact substring of `title` to underline with a hand-drawn highlighter stroke during a brief on-screen beat before the narration starts (remotion-video-editing skill, Technique 4). Leave unset to skip that beat entirely -- never auto-picked from the title.",
     "caption": "optional -- the actual Instagram/Facebook post caption + hashtags, used by the publish-agent"
   },
   "ideas": [
@@ -31,6 +32,7 @@
       "script_or_caption_draft": "מקליטים שיעור. תוך דקות מקבלים: סיכום, כרטיסיות ומבחן תרגול - בלי לשבת שעות לעבד לבד. ככה נראה ללמוד ב-2026.",
       "voiceover_text": "עוד שיעור, עוד הרצאה, ועוד ערימת הקלטות שאף פעם לא תספיקו לעבור עליהן? עם FocusStudy פשוט מקליטים את השיעור, והמערכת עושה את השאר - הופכת אותו לסיכום מסודר, כרטיסיות לחזרה, ומבחן תרגול אמיתי, תוך דקות. ככה נראה ללמוד נכון.",
       "visual_motif": "recording",
+      "key_phrase": "חומר לימוד מלא",
       "caption": "מקליטים שיעור אחד, ומקבלים סיכום, כרטיסיות ומבחן - תוך דקות. ככה לומדים ב-FocusStudy. #FocusStudy #לומדים_חכם #סטודנטים #AI #טיפים_ללמידה",
       "status": "new"
     },
@@ -67,6 +69,7 @@
       "script_or_caption_draft": "לא הבנת קטע בחומר? פשוט תשאלו אותו. הצ'אט שלנו עונה ישירות מתוך הסיכום, ההרצאה או המאמר שהעלית.",
       "voiceover_text": "תקועים על משפט אחד בחומר ולא מבינים מה הוא בכלל אומר? פשוט תשאלו אותו. הצ'אט של FocusStudy עונה ישירות מתוך הסיכום, ההרצאה או המאמר שהעלתם - לא ניחוש כללי, אלא תשובה מדויקת מהחומר שלכם.",
       "visual_motif": "chat",
+      "key_phrase": "עם חומר הלימוד שלך",
       "caption": "לא מבינים קטע בחומר? פשוט שואלים. הצ'אט שלנו עונה ישירות מתוך מה שהעליתם. #FocusStudy #לומדים_חכם #סטודנטים #AI",
       "status": "new"
     },

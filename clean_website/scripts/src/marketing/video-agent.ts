@@ -114,6 +114,12 @@ interface BacklogIdea {
   // Which floating icon/bubble the reel shows -- see VISUAL_MOTIFS above.
   // Falls back to "generic" if absent or unrecognized.
   visual_motif?: string;
+  // Exact substring of `title` to underline with the rough.js highlighter
+  // stroke during MarketingReel's HighlightBeat (Technique 4 of the
+  // remotion-video-editing skill). Optional and never auto-picked -- an
+  // idea with no real key_phrase just skips the beat (see renderReel
+  // below), per that skill's authenticity gate.
+  key_phrase?: string;
   status: string;
   [key: string]: unknown;
 }
@@ -298,6 +304,7 @@ async function renderReel(
     colorTheme: pickColorTheme(idea.id),
     broll,
     sfx: buildSfxDataUris(),
+    keyPhrase: idea.key_phrase,
   };
 
   const composition = await selectComposition({ serveUrl, id: "MarketingReel", inputProps });

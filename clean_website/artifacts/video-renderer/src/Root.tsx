@@ -1,7 +1,13 @@
 import type React from "react";
 import { Composition } from "remotion";
 import { HelloWorld } from "./compositions/HelloWorld";
-import { MarketingReel, marketingReelSchema, INTRO_SECONDS, OUTRO_TAIL_SECONDS } from "./compositions/MarketingReel";
+import {
+  MarketingReel,
+  marketingReelSchema,
+  INTRO_SECONDS,
+  OUTRO_TAIL_SECONDS,
+  HIGHLIGHT_BEAT_SECONDS,
+} from "./compositions/MarketingReel";
 import { TechniqueShowcase, techniqueShowcaseSchema } from "./compositions/TechniqueShowcase";
 
 export const MARKETING_REEL_FPS = 30;
@@ -37,10 +43,15 @@ export const RemotionRoot: React.FC = () => {
           visualMotif: "generic",
           colorTheme: "violet",
           broll: undefined,
+          keyPhrase: undefined,
         }}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(
-            (INTRO_SECONDS + props.durationInSeconds + OUTRO_TAIL_SECONDS) * MARKETING_REEL_FPS,
+            (INTRO_SECONDS +
+              (props.keyPhrase ? HIGHLIGHT_BEAT_SECONDS : 0) +
+              props.durationInSeconds +
+              OUTRO_TAIL_SECONDS) *
+              MARKETING_REEL_FPS,
           ),
         })}
       />

@@ -10,6 +10,7 @@ import { mediaTooLargeMessage, MIN_AUDIO_TRANSCRIPT_LENGTH, insufficientAudioCon
 import { runExclusive } from "../lib/processing-queue";
 import { getGenerationProgress, setGenerationProgress } from "../lib/progress";
 import { logger } from "../lib/logger";
+import { getOwnedCourseId } from "../lib/course-ownership";
 
 const router = Router();
 
@@ -245,7 +246,10 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const title = (req.body.title as string) || `הקלטה ${new Date().toLocaleDateString("he-IL")}`;
   const recordedAt = req.body.recordedAt ? new Date(req.body.recordedAt) : new Date();
   const durationSeconds = req.body.durationSeconds ? Number(req.body.durationSeconds) : undefined;
-  const courseId = req.body.courseId ? Number(req.body.courseId) : undefined;
+  // A client-supplied courseId is only trusted once verified as the caller's
+  // own course -- see the identical guard in routes/materials.ts.
+  const requestedCourseId = req.body.courseId ? Number(req.body.courseId) : undefined;
+  const courseId = requestedCourseId ? (await getOwnedCourseId(requestedCourseId, userId)) ?? undefined : undefined;
   const mimeType = req.file.mimetype || "audio/webm";
 
   // Real-time bookmarks the student tapped during the live recording

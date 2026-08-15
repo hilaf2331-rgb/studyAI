@@ -14,6 +14,7 @@ import { generationRateLimiter } from "../lib/rate-limit";
 import { sanitizeExtractedText } from "../lib/sanitize";
 import { getAudioAffordability, isPayingCustomer, deductTokensForTranscription } from "../lib/tokens";
 import { logger } from "../lib/logger";
+import { getOwnedCourseId } from "../lib/course-ownership";
 
 const router = Router();
 
@@ -285,7 +286,12 @@ router.post("/materials", generationRateLimiter, uploadFields, async (req, res) 
   const title = sanitizeExtractedText(body.title || "Untitled Material");
   const contentType = body.contentType || "text";
   const language = body.language || "he";
-  const courseId = body.courseId ? Number(body.courseId) : undefined;
+  // A client-supplied courseId is only trusted once verified as the caller's
+  // own course -- an unowned/foreign id is treated as if none was sent,
+  // rather than silently associating this material (and letting downstream
+  // glossary lookups leak) with another user's course.
+  const requestedCourseId = body.courseId ? Number(body.courseId) : undefined;
+  const courseId = requestedCourseId ? (await getOwnedCourseId(requestedCourseId, userId)) ?? undefined : undefined;
   const sourceUrl = body.sourceUrl || undefined;
   const uploadId = body.uploadId || undefined;
   const subjectType = body.subjectType || "other";
@@ -698,7 +704,11 @@ router.get("/materials/upload-progress/:uploadId", async (req, res) => {
 });
 
 router.get("/materials/:id/progress", async (req, res) => {
+  const userId = req.user!.userId;
   const { id } = GetMaterialParams.parse({ id: Number(req.params.id) });
+  const [material] = await db.select({ id: materialsTable.id }).from(materialsTable)
+    .where(and(eq(materialsTable.id, id), eq(materialsTable.userId, userId)));
+  if (!material) return res.status(404).json({ error: "Not found" });
   const progress = getGenerationProgress(id);
   res.json(progress ?? { currentChunk: 0, totalChunks: 0, percentage: 0, stage: "idle" });
 });

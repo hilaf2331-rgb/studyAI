@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { uploadMarketingVideo } from "./gcs";
+import { buildSfxDataUris } from "./sfx";
 
 // Repo layout: clean_website/scripts/src/marketing/video-agent.ts -> repo
 // root is four levels up.
@@ -296,6 +297,7 @@ async function renderReel(
     visualMotif,
     colorTheme: pickColorTheme(idea.id),
     broll,
+    sfx: buildSfxDataUris(),
   };
 
   const composition = await selectComposition({ serveUrl, id: "MarketingReel", inputProps });

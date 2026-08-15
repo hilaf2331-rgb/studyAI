@@ -70,6 +70,19 @@ export const marketingReelSchema = z.object({
   // present. Optional: the intro falls back to the plain VibrantBackground
   // wash when no clip was available to pick from.
   broll: z.string().optional(),
+  // Three short, procedurally-synthesized sound effects (see
+  // scripts/src/marketing/sfx.ts) as data URIs -- "pop" plays on each
+  // spring pop-in (kinetic caption words, AppWindowReveal's lines/badge),
+  // "whoosh" plays once on the opening hook's zoom-punch, "click" is a
+  // sharper accent layered under a couple of the UI-reveal beats. Optional:
+  // older renders / a missing prop just play silently, same as broll.
+  sfx: z
+    .object({
+      pop: z.string(),
+      click: z.string(),
+      whoosh: z.string(),
+    })
+    .optional(),
 });
 
 type Props = z.infer<typeof marketingReelSchema>;
@@ -182,10 +195,11 @@ const VibrantBackground: React.FC<{ theme: z.infer<typeof colorThemeSchema> }> =
 // in 3D perspective with a slow, continuous tilt for extra life, and wears
 // a small badge in the corner with the same per-feature motif icon used
 // elsewhere (see MOTIF_ANIMATIONS) so the two visual languages tie together.
-const AppWindowReveal: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
-  motif,
-  accentColor,
-}) => {
+const AppWindowReveal: React.FC<{
+  motif: z.infer<typeof visualMotifSchema>;
+  accentColor: string;
+  sfx?: Props["sfx"];
+}> = ({ motif, accentColor, sfx }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
@@ -255,6 +269,26 @@ const AppWindowReveal: React.FC<{ motif: z.infer<typeof visualMotifSchema>; acce
           <MotifIcon color={accentColor} />
         </div>
       </div>
+      {/* Sound design: a click on each UI element "appearing" (matches the
+          keyboard-click/mouse-click texture the user described from a
+          reference reel of a similar UI-build-up animation), landing at the
+          exact same frame offsets as the spring pops above. */}
+      {sfx ? (
+        <>
+          <Sequence from={10}>
+            <Audio src={sfx.click} />
+          </Sequence>
+          <Sequence from={16}>
+            <Audio src={sfx.click} />
+          </Sequence>
+          <Sequence from={21}>
+            <Audio src={sfx.click} />
+          </Sequence>
+          <Sequence from={26}>
+            <Audio src={sfx.pop} />
+          </Sequence>
+        </>
+      ) : null}
     </div>
   );
 };
@@ -286,7 +320,8 @@ const IntroCard: React.FC<{
   motif: z.infer<typeof visualMotifSchema>;
   accentColor: string;
   broll?: string;
-}> = ({ title, motif, accentColor, broll }) => {
+  sfx?: Props["sfx"];
+}> = ({ title, motif, accentColor, broll, sfx }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const titlePop = spring({ frame: Math.max(frame - 6, 0), fps, config: { damping: 12, stiffness: 130, mass: 0.7 } });
@@ -299,7 +334,7 @@ const IntroCard: React.FC<{
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: fadeOut }}>
       {broll ? <BrollBackdrop filename={broll} /> : null}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 44, padding: 80 }}>
-        <AppWindowReveal motif={motif} accentColor={accentColor} />
+        <AppWindowReveal motif={motif} accentColor={accentColor} sfx={sfx} />
         <div
           style={{
             transform: `scale(${titleScale})`,
@@ -325,10 +360,11 @@ const IntroCard: React.FC<{
 // "app UI" element requested on top of plain text-over-background. Pops
 // in with a spring right as the narration starts, then gently bobs and
 // sways for the rest of the video.
-const MessageBubble: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accentColor: string }> = ({
-  motif,
-  accentColor,
-}) => {
+const MessageBubble: React.FC<{
+  motif: z.infer<typeof visualMotifSchema>;
+  accentColor: string;
+  sfx?: Props["sfx"];
+}> = ({ motif, accentColor, sfx }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const pop = spring({ frame, fps, config: { damping: 10, stiffness: 120, mass: 0.6 } });
@@ -379,6 +415,11 @@ const MessageBubble: React.FC<{ motif: z.infer<typeof visualMotifSchema>; accent
           />
         </div>
       </div>
+      {sfx ? (
+        <Sequence from={0}>
+          <Audio src={sfx.pop} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 };
@@ -463,7 +504,7 @@ const BrandFooter: React.FC = () => (
 // footer is deliberately kept *outside* this wrapper (a fixed watermark
 // that doesn't ride along), both because it sits closest to an edge and
 // because a static logo reads more like a real video overlay.
-const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const CameraDrift: React.FC<{ children: React.ReactNode; sfx?: Props["sfx"] }> = ({ children, sfx }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
@@ -490,6 +531,11 @@ const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       }}
     >
       {children}
+      {sfx ? (
+        <Sequence from={0}>
+          <Audio src={sfx.whoosh} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 };
@@ -497,7 +543,7 @@ const CameraDrift: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // durationInSeconds isn't read here -- calculateMetadata in Root.tsx uses it
 // (via the same props, together with INTRO_SECONDS/OUTRO_TAIL_SECONDS) to
 // size the composition before this component mounts.
-export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme, broll }) => {
+export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visualMotif, colorTheme, broll, sfx }) => {
   const { fps } = useVideoConfig();
   const introFrames = Math.round(INTRO_SECONDS * fps);
   // The motif icon/bubble pick up the theme's first (dominant) blob color,
@@ -506,15 +552,15 @@ export const MarketingReel: React.FC<Props> = ({ title, captions, audioSrc, visu
 
   return (
     <AbsoluteFill>
-      <CameraDrift>
+      <CameraDrift sfx={sfx}>
         <VibrantBackground theme={colorTheme} />
         <Sequence durationInFrames={introFrames}>
-          <IntroCard title={title} motif={visualMotif} accentColor={accentColor} broll={broll} />
+          <IntroCard title={title} motif={visualMotif} accentColor={accentColor} broll={broll} sfx={sfx} />
         </Sequence>
         {/* Narration and its captions start only once the intro card has
             fully faded out, so the two never share the screen. */}
         <Sequence from={introFrames}>
-          <MessageBubble motif={visualMotif} accentColor={accentColor} />
+          <MessageBubble motif={visualMotif} accentColor={accentColor} sfx={sfx} />
           {captions.map((caption, index) => (
             <CaptionLineKinetic key={index} {...caption} />
           ))}

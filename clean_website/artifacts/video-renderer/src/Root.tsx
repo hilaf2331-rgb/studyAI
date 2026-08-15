@@ -36,6 +36,7 @@ export const RemotionRoot: React.FC = () => {
           visualMotif: "generic",
           colorTheme: "violet",
           broll: undefined,
+          sfx: undefined,
         }}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(

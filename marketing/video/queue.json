@@ -11,5 +11,22 @@
     "instagram_publish": "{ status: container_processing|published|failed, container_id?, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent",
     "facebook_publish": "{ status: published|failed, media_id?, error?, attempted_at, published_at? } -- set by the publish-agent"
   },
-  "videos": []
+  "videos": [
+    {
+      "idea_id": "idea-2026-07-31-002",
+      "status": "ready_for_review",
+      "narration_provider": "elevenlabs",
+      "rendered_at": "2026-08-15T20:42:22.709Z",
+      "storage_path": "marketing-video/idea-2026-07-31-002.mp4",
+      "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-07-31-002.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260815%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260815T204222Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=66c02b0a7e9a4e9696b8c5900e50e9c3b1015a3ad52fbb03a130b1c893d2f8800dff94c79fdc68e397773684a6d33a5da598a53066410ffbb6085178ea7f439c078d202545e254a1663224b8faa62740144d55d4837b9f97baa9d880bb7f888ab21792fc889f22b88929e3fb1c05ec34a6719aaea38b434a5475f9475d5dafbda5a6cea5ee49417feeac96ecb56f850819cab3b4a2b22eaa1bd98422eee6d5c4321b29f0bc233ef9671b059e1b9b0dd8817de4f68dd8db57e7a898ed6c03a49f21931d94b5fd3da137c34d0756e487bd1e2a1e4dbbe3f1a8719645e3ca666661d145799d69ffe9e89b784aea9a4f6a02cfe6c8248acb1720d5171a1a5595a856"
+    },
+    {
+      "idea_id": "idea-2026-07-31-005",
+      "status": "ready_for_review",
+      "narration_provider": "elevenlabs",
+      "rendered_at": "2026-08-15T20:43:29.558Z",
+      "storage_path": "marketing-video/idea-2026-07-31-005.mp4",
+      "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-07-31-005.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260815%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260815T204329Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=751cdaaa01d0ef002cceddaad623bbdf0aeb30b2fa1b5faf83193a1d3d51065354752c27ea804430e749012faaebee95abe50b0019b8cb3f4572b0072dc3fba22a15f6afec3b58e1b34663763dd584f3592e345a09f174189e15c2931b5a10fb8da8f54479474f81ff494292f3d93f22d7ea036f6f22a64cbb8402964b8011d1188142ed7df657aaedfc2ee5e4e5177e8ad26a32703e546229c09e2d1099d8e83605289305aec6f21c5ca9a63bcbdb1a38d5ae1081ef31253082cb0660f65ce9d31c84229191662105b3a327d3fced80285567f6238d7c553d360608666e38cec81beb3d80230b3f66d7f8b6a272c6c9eb77769d35c16f5c30594bf339427ec7"
+    }
+  ]
 }

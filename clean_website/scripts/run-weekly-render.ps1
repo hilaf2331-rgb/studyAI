@@ -35,8 +35,19 @@ $changed = git status --porcelain -- marketing/ideas/backlog.json marketing/vide
 if ($changed) {
     git add marketing/ideas/backlog.json marketing/video/queue.json
     git commit -m "Weekly render: $(Get-Date -Format 'yyyy-MM-dd')"
+    # GIT_TERMINAL_PROMPT=0 makes an auth failure fail fast and land in this
+    # log with a clear message, instead of git trying to pop up an
+    # interactive login prompt that has no screen to appear on (Task
+    # Scheduler has no desktop session) and silently hanging/failing.
+    $env:GIT_TERMINAL_PROMPT = "0"
     git push origin claude/focusstudy-publish-automation-nqyxss 2>&1
-    Write-Host "Pushed render results."
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Pushed render results."
+    } else {
+        Write-Host "PUSH FAILED (exit code $LASTEXITCODE) -- the commit is saved locally but did NOT reach GitHub."
+        Write-Host "This almost always means git needs to authenticate interactively, which Task Scheduler can't show a prompt for."
+        Write-Host "Fix: run 'git config credential.helper store' once, then do one manual 'git push' from a normal PowerShell window and enter a GitHub Personal Access Token as the password when asked -- after that, this script will push silently every time."
+    }
 } else {
     Write-Host "No new videos rendered this run -- nothing to push."
 }

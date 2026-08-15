@@ -1,6 +1,6 @@
 ---
 name: remotion-video-editing
-description: Use whenever creating, editing, or reviewing a Remotion composition in clean_website/artifacts/video-renderer (the FocusStudy Reels pipeline driven by clean_website/scripts/src/marketing/video-agent.ts). Encodes four editing techniques -- an authenticity/QA gate, cinematic camera movement, terminal-insert cards, and article-highlight cards -- so every reel that gets rendered follows the same visual language instead of each session inventing its own style. Trigger on "edit the reel", "new composition", "add a scene", "make it more cinematic", "add a terminal/code insert", "add an article/news card", or any work touching MarketingReel.tsx, MotifAnimation.tsx, or Root.tsx.
+description: Use whenever creating, editing, or reviewing a Remotion composition in clean_website/artifacts/video-renderer (the FocusStudy Reels pipeline driven by clean_website/scripts/src/marketing/video-agent.ts). Encodes five editing techniques -- an authenticity/QA gate, cinematic camera movement, terminal-insert cards, article-highlight cards, and synced sound design -- so every reel that gets rendered follows the same visual/audio language instead of each session inventing its own style. Trigger on "edit the reel", "new composition", "add a scene", "make it more cinematic", "add a terminal/code insert", "add an article/news card", "add sound effects", or any work touching MarketingReel.tsx, MotifAnimation.tsx, or Root.tsx.
 ---
 
 # Remotion Video Editing — FocusStudy Reels
@@ -174,6 +174,37 @@ Concrete build notes:
   keep the rotation small (2-6°) since this card is meant to feel like a
   settling document, not a spinning object.
 
+## Technique 5 — Sound Design (synced to motion)
+
+Every visual pop deserves a sound, matched to the moment it lands on --
+not narration-competing music, but short UI-style effects: a soft "pop" on
+spring pop-ins, a sharper "click" on UI-build moments (element-by-element
+reveals), a "whoosh" on camera movement (the hook-punch, most notably).
+
+Concrete build notes:
+- **Synthesize, don't source.** `clean_website/scripts/src/marketing/sfx.ts`
+  generates all three effects from plain math (a decaying sine for "pop", a
+  filtered-noise burst for "click", a frequency-swept noise envelope for
+  "whoosh") into raw 16-bit PCM WAV buffers, base64-encoded as data URIs --
+  the same reasoning as `MotifAnimation.tsx`'s hand-built SVG icons and
+  Technique 4's `roughjs` choice: no external audio-library asset means no
+  licensing question to ever chase down.
+- **Wiring**: `video-agent.ts` calls `buildSfxDataUris()` once per render
+  and passes the result as the `sfx` prop (`{ pop, click, whoosh }`, each a
+  `data:audio/wav;base64,...` URI) through `marketingReelSchema`. Inside
+  `MarketingReel.tsx`, drop a `<Sequence from={N}><Audio src={sfx.pop} />
+  </Sequence>` at the exact same frame offset as the visual spring it's
+  paired with -- see `AppWindowReveal`'s click cues at its header/line/badge
+  reveal offsets (10/16/21/26) for the pattern. `sfx` is optional throughout
+  (like `broll`/`keyPhrase`) -- an older cached render or a missing prop
+  just plays silently, it doesn't error.
+- **Don't spam it.** Reserve `pop`/`click` for distinct, discrete UI-build
+  moments (a handful per video: `AppWindowReveal`'s 4 reveals,
+  `MessageBubble`'s entrance) -- not every kinetic caption word. A caption
+  line can have a dozen+ words; a click on each one reads as noise, not
+  polish. `whoosh` is a one-shot, reserved for the camera's opening
+  hook-punch.
+
 ## Conventions to reuse everywhere (don't reinvent these)
 
 - **Fonts**: Heebo (already loaded via `@remotion/google-fonts/Heebo` in
@@ -203,3 +234,15 @@ improvising a new style per session. If you want `video-agent.ts` itself to
 rendering the single `MarketingReel` composition), that's a separate,
 larger change to its selection logic — flag it explicitly rather than
 assuming this skill already does it.
+
+## A note on honesty about status
+
+Two parallel sessions once built overlapping versions of Technique 4 at the
+same time without realizing it -- one of them, before actually building
+anything, told the user a component "already existed" on the video-pipeline
+branch when it didn't. That confusion cost real time to untangle. If you
+update this skill (or any status claim in it) with a new technique or a
+change to an existing one, verify against the actual files first --
+`git grep`, read the file, run the typecheck -- before writing "done" or
+"built." A skill documenting something that isn't real is worse than no
+skill at all, because it's trusted by default.

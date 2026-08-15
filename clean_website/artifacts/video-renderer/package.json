@@ -17,6 +17,7 @@
     "@remotion/renderer": "^4.0.504",
     "@remotion/bundler": "^4.0.504",
     "@remotion/google-fonts": "^4.0.504",
+    "roughjs": "^4.6.6",
     "zod": "catalog:"
   },
   "devDependencies": {

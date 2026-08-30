@@ -51,6 +51,30 @@
       "rendered_at": "2026-08-24T10:09:36.140Z",
       "storage_path": "marketing-video/idea-2026-08-23-003.mp4",
       "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-08-23-003.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260824%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260824T100936Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=c40b3a90777544e463a4c1b6c2089d786f30d22415ffc4ab1247bd14c88bc292b61ca8bd8fb9b81230e9e63d47735844f73a8320b7dd56567bf74a54f376e6293bb3c76fe19e3c7fd34fab5206f1445d00331834944518a40f7fa5085249f8e3111e14cbfab34f74413eb43adead21744aa98dfbef1cc49e78bb9ac99456253929d3c89c41fd70ce3fb31d1901e1879b466d3b496cb6450e7b451d0239adcea51d493b7ee28a9af3d0f21d2601a6b89ee5a3954b4515aaa653fbea7a664b4005717ad7703ebcbb2e29d067cd7d1f4db11bce319144426d2f96f8f88b66f292e502f7adf4b093b23501bdb40154062e8ab162349ab6db96b17192e10e11ca5026"
+    },
+    {
+      "idea_id": "idea-2026-08-30-001",
+      "status": "ready_for_review",
+      "narration_provider": "elevenlabs",
+      "rendered_at": "2026-08-30T17:12:36.737Z",
+      "storage_path": "marketing-video/idea-2026-08-30-001.mp4",
+      "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-08-30-001.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260830%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260830T171236Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=274994eed5ecc804dfadeccc6daf2f2520fd78d5dbb2b0aca18bad62042753d4112560ff94a9d772a7edd9c7bddf707b14ee90e9af4969bf4c5edf6af3030159faaf0d02e0f0706e4e88bab7450badf254be09ce4ae54115a7980584d480994dc204e06056e3536dad995c39220d0334c9924f87d7539f2c3604e57a538c86ec8ffc32c79a52c04492219256b029c81fde237a72985214a05821fef6ddbb1af61d4e2def3211f21fd88ca863eab513a5fc1332bd71416c2787fe342b8a6b33f3c73422421e475835fe60446d46e58036eaca2188480a053116dccd6ccedd7d9aa1df2a4b110c73b65c5ed27e80b52a83ea991406734c75a78bef37416d050070"
+    },
+    {
+      "idea_id": "idea-2026-08-30-003",
+      "status": "ready_for_review",
+      "narration_provider": "elevenlabs",
+      "rendered_at": "2026-08-30T17:14:51.074Z",
+      "storage_path": "marketing-video/idea-2026-08-30-003.mp4",
+      "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-08-30-003.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260830%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260830T171451Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=4a2df578553ef0957b126b2021b1acfc57a9fce727a7d3aa694b9f074b777050be549b3060469da148d1917811b84f08b3b867ad0e8ae498da66936f58abef27d9bbb83ccfef4b091e4c2a604234d0739a38f72c6a38027213d04577d8d37b53584ebbfa74707baf6a23b27cbc55ff2fc242a3344f958f41c8ebd01ad3d6f9f159136a30259433ca2a1d8aa43d4f3427100e93e5e99d8c44f9a276bb62530713641a99d8ccc5dd80c76764ae41b1f52a582e620ad47592bd56cf08fdac5043df4c38de1ce5a47eb6925561778addbc9dcac04c694f3dfe68027ff52e1fd4f5722797aec71c3640616d685b3c7b6252b62e838dc604eb60be5022b5bf8a866b97"
+    },
+    {
+      "idea_id": "idea-2026-08-30-005",
+      "status": "ready_for_review",
+      "narration_provider": "elevenlabs",
+      "rendered_at": "2026-08-30T17:17:22.168Z",
+      "storage_path": "marketing-video/idea-2026-08-30-005.mp4",
+      "video_url": "https://storage.googleapis.com/focus-study-audio/marketing-video/idea-2026-08-30-005.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=focus-study-audio-714%40gen-lang-client-0725155786.iam.gserviceaccount.com%2F20260830%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260830T171722Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=67b4a724a3a4ed823a78539919b88e32a84c25ce5096912982af1bd1a2dc19bf2186660ff368e104432d1840013494cb4c447d5b10f372da7872604e9ae97b39155e9d792a2632fc72965c040a361922ac4da7306b95166757973b335e75af09368fa567ae92cc77966972a6acb6e3979b119101a3cd9faf958b78d0d9d46ab1b5e6fcdfb41a1c3287b756377347e086508baab695a817ba0cd348c019421d4153eb95104e7791aefe474f8285d0d8d567575cf9babf4ecd7f01bcfc378e1a0dc44276f2b8abf11a0ffb616c3b7b8701798032649b33f0a720ae009a5d698e80195354ff0c3c2bb1655b786f54dc47f0b06f90e7507699ab4f4f4ed8fde82e7d"
     }
   ]
 }
